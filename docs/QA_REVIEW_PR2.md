@@ -75,7 +75,7 @@ No regressions introduced by flag-align or ACL tighten that elevate to HIGH/CRIT
 |---|---|---|
 | F-M3 | Cross-day fingerprint | Unchanged; Phase 2. |
 | F-M4 | Fully Reconciled ignores ATS residual / non-terminal deals | Close gate still exception-list only. |
-| F-M7 | Empty rate band auto-approves | `rate_in_band` True when floor & ceiling None. |
+| F-M7 | Empty rate band auto-approves | **CLOSED Gate 1:** `policy_resolved` + `RATE_POLICY_MISSING` → Approval Required. |
 | F-M8 | Duplicate fingerprint side-effects swallowed | Bare `except` in `_raise_duplicate_fingerprint`. |
 
 ### LOW / INFO

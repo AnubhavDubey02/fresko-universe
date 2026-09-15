@@ -26,7 +26,7 @@ Or use `scripts/ci_bench.sh` which reads `.github/frappe-versions.json`.
 - Primary: `.github/workflows/ci.yml`
   - Job `smoke-unit`: offline Gate 1 / D4 / constants + pin assert (fast)
   - Job `frappe-bench`: runs `scripts/ci_bench.sh` (pinned SHAs → migrate → `run-tests --app fresko_universe`)
-- Alternate: `.github/workflows/frappe-bench.yml` (inline bench steps; same pins)
+- Alternate: `.github/workflows/ci.yml` (inline bench steps; same pins)
 - Local fallback: `docker-compose.bench.yml` + `scripts/ci_bench.sh`
 - Failures on install / migrate / tests fail the PR (no fake green).
 

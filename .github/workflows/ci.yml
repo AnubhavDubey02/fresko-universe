@@ -22,11 +22,11 @@ jobs:
           python-version: "3.11"
       - name: Run offline smoke suite
         working-directory: fresko_universe
-        run: python -m unittest tests.test_smoke_unit -v
+        run: python3 -m unittest tests.test_smoke_unit -v
       - name: Assert pin file present
         run: |
           test -f .github/frappe-versions.json
-          python - <<'PY'
+          python3 - <<'PY'
           import json
           from pathlib import Path
           p = json.loads(Path(".github/frappe-versions.json").read_text())

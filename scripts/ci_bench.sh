@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 # Gate 2: fresh bench → pinned Frappe/ERPNext → install fresko_universe → migrate → tests.
-# Intended for GitHub Actions (MariaDB service) or a sufficiently large local/CI runner.
-# Pins: .github/frappe-versions.json / docs/VERSIONS.md
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -17,16 +15,15 @@ if [[ ! -f "${PIN_FILE}" ]]; then
   exit 1
 fi
 
-eval "$(python3 - <<PY
+eval "$(python3 -c "
 import json
 from pathlib import Path
-pins = json.loads(Path("${PIN_FILE}").read_text())
-print(f"export FRAPPE_SHA={pins['frappe']['sha']}")
-print(f"export ERPNEXT_SHA={pins['erpnext']['sha']}")
-print(f"export FRAPPE_TAG={pins['frappe']['tag']}")
-print(f"export ERPNEXT_TAG={pins['erpnext']['tag']}")
-PY
-)"
+pins = json.loads(Path(r'${PIN_FILE}').read_text())
+print('export FRAPPE_SHA=' + pins['frappe']['sha'])
+print('export ERPNEXT_SHA=' + pins['erpnext']['sha'])
+print('export FRAPPE_TAG=' + pins['frappe']['tag'])
+print('export ERPNEXT_TAG=' + pins['erpnext']['tag'])
+")"
 
 echo "==> Pins: Frappe ${FRAPPE_TAG} @ ${FRAPPE_SHA}"
 echo "==> Pins: ERPNext ${ERPNEXT_TAG} @ ${ERPNEXT_SHA}"
@@ -49,25 +46,22 @@ git -C apps/frappe checkout --force "${FRAPPE_SHA}"
 
 if [[ ! -d apps/erpnext ]]; then
   echo "==> get-app erpnext"
-  bench get-app erpnext https://github.com/frappe/erpnext --branch version-15 --skip-assets || \
-    bench get-app https://github.com/frappe/erpnext --branch version-15
+  bench get-app https://github.com/frappe/erpnext --branch version-15 || \
+    bench get-app erpnext https://github.com/frappe/erpnext --branch version-15
 fi
 git -C apps/erpnext fetch --tags origin
 git -C apps/erpnext checkout --force "${ERPNEXT_SHA}"
 
-# Installable app root is monorepo subfolder fresko_universe/
 APP_SRC="${ROOT}/fresko_universe"
 if [[ ! -d apps/fresko_universe ]]; then
   echo "==> Link fresko_universe from ${APP_SRC}"
   ln -sfn "${APP_SRC}" apps/fresko_universe
 fi
-# Ensure bench sees the app
-if ! grep -qx 'fresko_universe' sites/apps.txt 2>/dev/null; then
+if [[ -f sites/apps.txt ]] && ! grep -qx 'fresko_universe' sites/apps.txt 2>/dev/null; then
   echo fresko_universe >> sites/apps.txt
 fi
 bench setup requirements || true
 
-# MariaDB common.conf for CI (remote TCP root)
 mkdir -p sites
 cat > sites/common_site_config.json <<JSON
 {
