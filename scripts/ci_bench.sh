@@ -131,6 +131,13 @@ git -C apps/fresko_universe commit -qm "ci: vendor fresko_universe for Gate 2 be
 echo "==> pip install -e fresko_universe"
 ./env/bin/pip install -q -e ./apps/fresko_universe
 
+# Register after pip install (must not be present during new-site).
+mkdir -p sites
+touch sites/apps.txt
+if ! grep -qx 'fresko_universe' sites/apps.txt; then
+  echo fresko_universe >> sites/apps.txt
+fi
+
 echo "==> install-app fresko_universe"
 if ! bench --site "${SITE}" list-apps 2>/dev/null | grep -q '^fresko_universe'; then
   bench --site "${SITE}" install-app fresko_universe
