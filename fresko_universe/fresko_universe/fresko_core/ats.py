@@ -2,6 +2,7 @@
 
 D3: PROPOSED / APPROVAL_REQUIRED / COUNTERED do not reduce ATS.
 APPROVED / AUTO_APPROVED (and successor commercial statuses) do.
+Cancelled reserves already-dispatched qty only (QA cancel-after-partial).
 Never posts Stock Ledger Entry.
 """
 
@@ -74,11 +75,7 @@ def _reserved_qty(container: str, lot_no: str, *, exclude_deal: Optional[str] = 
     )
     total = 0.0
     for r in rows:
-        qty = flt(r.qty)
-        if r.status == "Partially Dispatched":
-            total += max(qty - flt(r.dispatched_qty), 0.0)
-        else:
-            total += qty
+        total += commercial_qty_for_ats(r)
     return total
 
 
@@ -110,7 +107,8 @@ def commercial_qty_for_ats(deal) -> float:
     if status == "Partially Dispatched":
         return max(qty - dispatched, 0.0)
     if status == "Cancelled":
-        return 0.0
+        # QA: cancel after partial must not free already-dispatched qty
+        return max(dispatched, 0.0)
     return qty
 
 

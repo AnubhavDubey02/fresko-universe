@@ -6,7 +6,8 @@ import frappe
 from frappe import _
 from frappe.utils import flt
 
-from fresko_universe.fresko_core.ats import available_to_sell
+from fresko_universe.ats import available_to_sell
+from fresko_universe.constants import COMMERCIAL_LOCK_STATUSES, MATERIAL_REVISION_FIELDS
 from fresko_universe.rate_rules import rate_in_band, resolve_rate_band
 
 
@@ -65,6 +66,7 @@ def apply_rate_rules(deal_name: str):
 def accept_counter(deal_name: str):
     """
     D4: salesperson/originator explicitly accepts COUNTER → Approved.
+    Only path from Countered → Approved (F-C1).
     """
     deal = frappe.get_doc("Fresko Deal", deal_name)
     if deal.status != "Countered":
@@ -74,7 +76,6 @@ def accept_counter(deal_name: str):
     is_originator = user == deal.owner or user == (deal.salesperson_user or "")
     roles = set(frappe.get_roles())
     if not is_originator and "System Manager" not in roles and "Fresko Approver" not in roles:
-        # Approver may also accept on behalf in ops; salesperson/originator preferred
         if "Fresko Salesperson" not in roles:
             frappe.throw(_("Only deal originator/salesperson (or Approver/SM) may accept a counter"))
         if deal.salesperson_user and user != deal.salesperson_user and user != deal.owner:
@@ -95,6 +96,84 @@ def accept_counter(deal_name: str):
 
 
 @frappe.whitelist()
+def cancel_deal(deal_name: str, cancel_reason: str):
+    """Whitelist cancel — reason required. ATS keeps dispatched_qty after cancel."""
+    if not cancel_reason:
+        frappe.throw(_("cancel_reason is required"))
+    deal = frappe.get_doc("Fresko Deal", deal_name)
+    if deal.status == "Cancelled":
+        return {"name": deal.name, "status": deal.status}
+    deal.cancel_reason = cancel_reason
+    deal.set_status("Cancelled")
+    deal.save(ignore_permissions=True)
+    frappe.db.commit()
+    return {"name": deal.name, "status": deal.status}
+
+
+@frappe.whitelist()
+def record_dispatch(deal_name: str, dispatched_qty):
+    """
+    Server-only dispatched_qty update (Phase 1 stub).
+    Physical ceiling: dispatched_qty may never exceed deal qty or lot inward residual.
+    """
+    deal = frappe.get_doc("Fresko Deal", deal_name)
+    qty = flt(dispatched_qty)
+    if qty < 0:
+        frappe.throw(_("dispatched_qty cannot be negative"))
+    if qty > flt(deal.qty):
+        frappe.throw(
+            _("dispatched_qty {0} cannot exceed deal qty {1} (physical ceiling)").format(
+                qty, deal.qty
+            )
+        )
+    # Lot physical: sum of dispatched on lot cannot exceed lot inward
+    lot_inward = frappe.db.sql(
+        """
+        SELECT inward_qty FROM `tabFresko Container Lot`
+        WHERE parent=%s AND parenttype='Fresko Container' AND lot_no=%s LIMIT 1
+        """,
+        (deal.container, deal.lot_no),
+    )
+    if lot_inward:
+        inward = flt(lot_inward[0][0])
+        others = frappe.db.sql(
+            """
+            SELECT COALESCE(SUM(dispatched_qty), 0) FROM `tabFresko Deal`
+            WHERE container=%s AND lot_no=%s AND name!=%s
+            """,
+            (deal.container, deal.lot_no, deal.name),
+        )
+        other_disp = flt(others[0][0]) if others else 0.0
+        if other_disp + qty > inward:
+            frappe.throw(
+                _(
+                    "Physical dispatch ceiling: lot {0} inward {1}, other dispatched {2}, "
+                    "requested {3}"
+                ).format(deal.lot_no, inward, other_disp, qty)
+            )
+
+    deal.flags.allow_dispatch_write = True
+    deal.dispatched_qty = qty
+    if qty > 0 and qty < flt(deal.qty) and deal.status in (
+        "Approved",
+        "Auto Approved",
+        "Outward Pending",
+        "Dispatched",
+    ):
+        deal.set_status("Partially Dispatched")
+    elif qty >= flt(deal.qty) and deal.status in (
+        "Approved",
+        "Auto Approved",
+        "Outward Pending",
+        "Partially Dispatched",
+    ):
+        deal.set_status("Dispatched")
+    deal.save(ignore_permissions=True)
+    frappe.db.commit()
+    return {"name": deal.name, "dispatched_qty": deal.dispatched_qty, "status": deal.status}
+
+
+@frappe.whitelist()
 def request_revision(
     deal_name: str,
     fieldname: str,
@@ -103,8 +182,8 @@ def request_revision(
     supporting_evidence: str | None = None,
 ):
     """
-    Controlled post-approval change. Rate/qty/lot revisions require subsequent Approval
-    before apply; non-rate customer mapping may apply with Approver role.
+    Controlled post-approval change.
+    Material fields (rate/qty/lot/customer) require Approval + evidence before apply.
     """
     if not reason:
         frappe.throw(_("Revision reason is mandatory"))
@@ -122,6 +201,13 @@ def request_revision(
     if fieldname not in allowed_fields:
         frappe.throw(_("Field {0} is not revision-eligible").format(fieldname))
 
+    if fieldname in MATERIAL_REVISION_FIELDS and not supporting_evidence:
+        # Require evidence when commercially locked (post-approval)
+        if deal.status in COMMERCIAL_LOCK_STATUSES:
+            frappe.throw(
+                _("Material revision of {0} requires supporting_evidence").format(fieldname)
+            )
+
     old_value = deal.get(fieldname)
     rev = frappe.get_doc(
         {
@@ -138,22 +224,23 @@ def request_revision(
     )
     rev.insert(ignore_permissions=True)
 
-    # Customer mapping alone: Approver/SM may apply immediately (helps D6 resolve)
-    if fieldname == "customer":
-        roles = set(frappe.get_roles())
-        if "Fresko Approver" in roles or "System Manager" in roles:
-            return apply_revision(rev.name)
-
     return {
         "revision": rev.name,
         "status": rev.status,
-        "message": "Revision pending approval — call approvals.decide or apply_revision after Approval",
+        "message": (
+            "Revision pending — link Fresko Approval then call apply_revision"
+            if fieldname in MATERIAL_REVISION_FIELDS
+            else "Revision pending approval — call apply_revision after Approval"
+        ),
     }
 
 
 @frappe.whitelist()
 def apply_revision(revision_name: str, approval_name: str | None = None):
-    """Apply a Pending Fresko Revision onto its parent Deal (requires allow flags)."""
+    """Apply a Pending Fresko Revision onto its parent Deal.
+
+    Material fields require a Fresko Approval reference — role alone is insufficient.
+    """
     rev = frappe.get_doc("Fresko Revision", revision_name)
     if rev.status != "Pending":
         frappe.throw(_("Revision {0} is not Pending").format(revision_name))
@@ -164,43 +251,92 @@ def apply_revision(revision_name: str, approval_name: str | None = None):
     fieldname = rev.fieldname
     new_value = rev.new_value
 
-    # Coerce numeric fields
     if fieldname in ("approved_rate", "qty"):
         new_value = flt(new_value)
 
-    if fieldname in ("approved_rate", "qty", "lot_no", "container_lot"):
-        # Requires Approval reference for commercial fields
-        if not approval_name and not rev.approval_reference:
-            roles = set(frappe.get_roles())
-            if "Fresko Approver" not in roles and "System Manager" not in roles:
-                frappe.throw(_("Commercial revision requires Approval or Approver role"))
-        # ATS if qty/lot change
+    if fieldname in MATERIAL_REVISION_FIELDS:
+        approval_ref = approval_name or rev.approval_reference
+        if not approval_ref:
+            frappe.throw(
+                _(
+                    "Material revision of {0} requires a Fresko Approval reference "
+                    "(Approver role alone cannot apply)"
+                ).format(fieldname)
+            )
+        if not frappe.db.exists("Fresko Approval", approval_ref):
+            frappe.throw(_("Fresko Approval {0} not found").format(approval_ref))
+        if not rev.supporting_evidence:
+            if deal.status in COMMERCIAL_LOCK_STATUSES:
+                frappe.throw(
+                    _("Material revision of {0} requires supporting_evidence").format(fieldname)
+                )
+        rev.approval_reference = approval_ref
+
         if fieldname in ("qty", "lot_no", "container_lot"):
             probe_lot = new_value if fieldname == "lot_no" else deal.lot_no
             probe_qty = new_value if fieldname == "qty" else deal.qty
-            ats = available_to_sell(deal.container, probe_lot, exclude_deal=deal.name, for_update=True)
+            ats = available_to_sell(
+                deal.container, probe_lot, exclude_deal=deal.name, for_update=True
+            )
             if flt(probe_qty) > ats:
-                frappe.throw(_("Revision blocked: qty {0} > ATS {1}").format(probe_qty, ats))
+                frappe.throw(
+                    _("Revision blocked: qty {0} > ATS {1}").format(probe_qty, ats)
+                )
 
     deal.flags.allow_commercial_revision = True
     if fieldname == "approved_rate":
         deal.flags.allow_approval_write = True
     deal.set(fieldname, new_value)
-
-    # If lot_no changes, re-validate membership on save
     deal.save(ignore_permissions=True)
 
     if approval_name:
         rev.approval_reference = approval_name
     rev.status = "Applied"
+    rev.flags.allow_applied_write = True
     rev.save(ignore_permissions=True)
 
-    # Resolve BUYER_UNRESOLVED when customer set
     if fieldname == "customer" and new_value:
         _resolve_buyer_exceptions(deal.name)
 
     frappe.db.commit()
-    return {"deal": deal.name, "revision": rev.name, "fieldname": fieldname, "status": "Applied"}
+    return {
+        "deal": deal.name,
+        "revision": rev.name,
+        "fieldname": fieldname,
+        "status": "Applied",
+        "approval_reference": rev.approval_reference,
+    }
+
+
+@frappe.whitelist()
+def set_dispatched_qty(deal_name: str, dispatched_qty):
+    """Server-only setter for dispatched_qty (Desk read_only; Phase 1 provisional)."""
+    deal = frappe.get_doc("Fresko Deal", deal_name)
+    qty = flt(dispatched_qty)
+    if qty < 0:
+        frappe.throw(_("dispatched_qty cannot be negative"))
+    if qty > flt(deal.qty):
+        frappe.throw(
+            _("dispatched_qty {0} cannot exceed approved deal qty {1}").format(qty, deal.qty)
+        )
+    deal.flags.allow_dispatched_qty_write = True
+    deal.dispatched_qty = qty
+    deal.save(ignore_permissions=True)
+    frappe.db.commit()
+    return {"name": deal.name, "dispatched_qty": deal.dispatched_qty, "qty": deal.qty}
+
+
+@frappe.whitelist()
+def cancel_deal(deal_name: str, cancel_reason: str):
+    """Whitelist cancel — already-dispatched qty remains reserved in ATS."""
+    if not cancel_reason:
+        frappe.throw(_("cancel_reason is required"))
+    deal = frappe.get_doc("Fresko Deal", deal_name)
+    deal.cancel_reason = cancel_reason
+    deal.set_status("Cancelled")
+    deal.save(ignore_permissions=True)
+    frappe.db.commit()
+    return {"name": deal.name, "status": deal.status, "dispatched_qty": deal.dispatched_qty}
 
 
 def _maybe_open_buyer_unresolved(deal):

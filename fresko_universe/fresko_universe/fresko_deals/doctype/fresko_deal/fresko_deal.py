@@ -35,6 +35,7 @@ class FreskoDeal(Document):
         self._validate_idempotency_keys()
         self._validate_status_transition()
         self._enforce_commercial_lock()
+        self._enforce_dispatched_qty_lock()
         self._validate_reconciled_gate()
         self._compute_amount()
         if self.status == "Cancelled" and not self.cancel_reason:
@@ -67,6 +68,30 @@ class FreskoDeal(Document):
     def _validate_qty(self):
         if flt(self.qty) <= 0:
             frappe.throw("Deal qty must be > 0")
+
+    def _validate_dispatched_qty(self):
+        """dispatched_qty is read_only on Desk; only whitelist setters may change it."""
+        dq = flt(self.dispatched_qty)
+        if dq < 0:
+            frappe.throw("dispatched_qty cannot be negative")
+        if dq > flt(self.qty):
+            frappe.throw(
+                f"dispatched_qty {dq} cannot exceed approved deal qty {flt(self.qty)}"
+            )
+        if self.is_new():
+            if dq and not self.flags.get("allow_dispatched_qty_write"):
+                frappe.throw(
+                    "dispatched_qty can only be set via server methods "
+                    "(deals.set_dispatched_qty)"
+                )
+            return
+        if self.has_value_changed("dispatched_qty") and not self.flags.get(
+            "allow_dispatched_qty_write"
+        ):
+            frappe.throw(
+                "dispatched_qty is read_only — use deals.set_dispatched_qty "
+                "(Desk edits blocked)"
+            )
 
     def _validate_lot_belongs_to_container(self):
         if not self.container or not self.lot_no:
@@ -217,6 +242,26 @@ class FreskoDeal(Document):
                 frappe.throw(
                     f"Cannot change {f} after commercial approval without revision flow"
                 )
+
+    def _enforce_dispatched_qty_lock(self):
+        """Server-only writes + physical ceiling (never forge ATS via Desk edit)."""
+        if flt(self.dispatched_qty or 0) < 0:
+            frappe.throw("dispatched_qty cannot be negative")
+        if flt(self.dispatched_qty or 0) > flt(self.qty):
+            frappe.throw(
+                f"dispatched_qty {self.dispatched_qty} cannot exceed deal qty {self.qty} "
+                "(physical ceiling; even under commercial oversell)"
+            )
+        if self.is_new():
+            if flt(self.dispatched_qty or 0) != 0 and not self.flags.get("allow_dispatch_write"):
+                frappe.throw("dispatched_qty is server-only; use deals.record_dispatch")
+            return
+        if self.has_value_changed("dispatched_qty") and not self.flags.get("allow_dispatch_write"):
+            frappe.throw(
+                "dispatched_qty is server-only (read_only + validate). "
+                "Desk/API direct edits rejected — use deals.record_dispatch. "
+                "frappe.db.set_value bypass is unsupported and must not be used."
+            )
 
     def _validate_reconciled_gate(self):
         if self.status != "Reconciled":

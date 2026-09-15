@@ -24,7 +24,10 @@ def decide(
     APPROVE with decision_rate → Approved (immediate different rate; not COUNTER).
     COUNTER → Countered (D4: requires accept_counter before Approved).
     REJECT → Rejected.
-    OVERSELL_OVERRIDE → Owner/Admin only (D10); commercial commitment + Exception.
+    OVERSELL_OVERRIDE → System Manager only (D10); commercial commitment + Exception.
+
+    Allowed only from Approval Required (F-H2 / F-C1): not Proposed, not Countered.
+    Countered → Approved exclusively via deals.accept_counter.
     """
     decision = (decision or "").upper().strip()
     if decision not in {"APPROVE", "COUNTER", "REJECT", "OVERSELL_OVERRIDE"}:
@@ -37,19 +40,36 @@ def decide(
         frappe.throw(_("Only Fresko Approver / System Manager may decide"))
 
     deal = frappe.get_doc("Fresko Deal", deal_name)
-    if deal.status not in ("Approval Required", "Proposed", "Countered"):
-        # Allow decide from Approval Required primarily; Proposed if forced
-        if deal.status != "Approval Required":
+
+    # F-C1 / F-H2: decide only from Approval Required
+    if deal.status != "Approval Required":
+        if deal.status == "Countered":
             frappe.throw(
-                _("Cannot decide deal in status {0}").format(deal.status)
+                _(
+                    "Cannot decide from Countered — use deals.accept_counter "
+                    "for originator accept (D4). Approver who wants an immediate "
+                    "rate must APPROVE with decision_rate from Approval Required."
+                )
             )
+        if deal.status == "Proposed":
+            frappe.throw(
+                _(
+                    "Cannot decide from Proposed — call deals.apply_rate_rules "
+                    "first so floor/ceiling are snapshotted (F-H2)."
+                )
+            )
+        frappe.throw(_("Cannot decide deal in status {0}").format(deal.status))
 
     oversell_override = int(oversell_override or 0)
     if decision == "OVERSELL_OVERRIDE":
         if not (roles & OVERSELL_OVERRIDE_ROLES):
-            frappe.throw(_("Oversell override restricted to Owner/Admin roles (D10)"))
+            frappe.throw(_("Oversell override restricted to System Manager (D10)"))
         oversell_override = 1
         decision = "APPROVE"  # commercial approve with override flag
+    elif oversell_override:
+        # Plain APPROVE with oversell_override=1 still needs D10 roles
+        if not (roles & OVERSELL_OVERRIDE_ROLES):
+            frappe.throw(_("Oversell override restricted to System Manager (D10)"))
 
     # Snapshot rates on Approval row
     rate = flt(decision_rate) if decision_rate is not None else None
@@ -75,7 +95,14 @@ def decide(
         else:
             ex = None
 
-        approval = _insert_approval(deal, "OVERSELL_OVERRIDE" if oversell_override else "APPROVE", rate, reason, oversell_override, ex)
+        approval = _insert_approval(
+            deal,
+            "OVERSELL_OVERRIDE" if oversell_override else "APPROVE",
+            rate,
+            reason,
+            oversell_override,
+            ex,
+        )
         deal.flags.allow_approval_write = True
         deal.approved_rate = rate
         deal.approval = approval.name

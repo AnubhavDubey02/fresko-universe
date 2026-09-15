@@ -51,7 +51,9 @@ _install_frappe_stub()
 
 from fresko_universe.constants import (  # noqa: E402
     ATS_ACTIVE_STATUSES,
+    COMMERCIAL_LOCK_STATUSES,
     DEAL_TRANSITIONS,
+    MATERIAL_REVISION_FIELDS,
     OVERSELL_OVERRIDE_ROLES,
 )
 from fresko_universe.rate_rules import rate_in_band, resolve_rate_band  # noqa: E402
@@ -114,9 +116,15 @@ class TestATS(unittest.TestCase):
         d = MagicMock(status="Partially Dispatched", qty=100, dispatched_qty=40)
         self.assertEqual(commercial_qty_for_ats(d), 60)
 
-    def test_cancelled(self):
+    def test_cancelled_zero_dispatch(self):
         d = MagicMock(status="Cancelled", qty=100, dispatched_qty=0)
         self.assertEqual(commercial_qty_for_ats(d), 0)
+
+    def test_cancelled_keeps_dispatched(self):
+        # QA: cancel after partial must not free already-dispatched qty
+        d = MagicMock(status="Cancelled", qty=100, dispatched_qty=40)
+        self.assertEqual(commercial_qty_for_ats(d), 40)
+        self.assertIn("Cancelled", ATS_ACTIVE_STATUSES)
 
 
 class TestD4(unittest.TestCase):
@@ -127,7 +135,17 @@ class TestD4(unittest.TestCase):
 class TestD10(unittest.TestCase):
     def test_roles(self):
         self.assertIn("System Manager", OVERSELL_OVERRIDE_ROLES)
-        self.assertIn("Fresko Approver", OVERSELL_OVERRIDE_ROLES)
+        self.assertNotIn("Fresko Approver", OVERSELL_OVERRIDE_ROLES)
+        self.assertNotIn("Fresko Owner", OVERSELL_OVERRIDE_ROLES)
+        self.assertEqual(OVERSELL_OVERRIDE_ROLES, frozenset({"System Manager"}))
+
+
+class TestCommercialLock(unittest.TestCase):
+    def test_approval_required_locked(self):
+        # F-H4
+        self.assertIn("Approval Required", COMMERCIAL_LOCK_STATUSES)
+        self.assertIn("approved_rate", MATERIAL_REVISION_FIELDS)
+        self.assertIn("qty", MATERIAL_REVISION_FIELDS)
 
 
 class TestLayout(unittest.TestCase):
@@ -160,6 +178,30 @@ class TestLayout(unittest.TestCase):
             matches = list((ROOT / "fresko_universe").rglob(f"{key}.json"))
             self.assertTrue(matches, key)
             self.assertEqual(json.loads(matches[0].read_text())["name"], name)
+
+    def test_evidence_hash_field_canonical(self):
+        # content_sha256 in JSON; controller must match (no content_hash dual name)
+        ev_json = next((ROOT / "fresko_universe").rglob("fresko_evidence.json"))
+        data = json.loads(ev_json.read_text())
+        fields = {f["fieldname"] for f in data["fields"]}
+        self.assertIn("content_sha256", fields)
+        self.assertNotIn("content_hash", fields)
+        ev_py = (
+            ROOT / "fresko_universe" / "fresko_core" / "doctype" /
+            "fresko_evidence" / "fresko_evidence.py"
+        ).read_text()
+        self.assertIn("content_sha256", ev_py)
+        self.assertNotIn("content_hash", ev_py)
+
+    def test_approval_revision_under_core(self):
+        core = ROOT / "fresko_universe" / "fresko_core" / "doctype"
+        self.assertTrue((core / "fresko_approval" / "fresko_approval.json").exists())
+        self.assertTrue((core / "fresko_revision" / "fresko_revision.json").exists())
+        self.assertTrue((core / "fresko_approval" / "fresko_approval.py").exists())
+        self.assertTrue((core / "fresko_revision" / "fresko_revision.py").exists())
+        deals = ROOT / "fresko_universe" / "fresko_deals" / "doctype"
+        self.assertFalse((deals / "fresko_approval").exists())
+        self.assertFalse((deals / "fresko_revision").exists())
 
 
 if __name__ == "__main__":

@@ -13,6 +13,7 @@ class FreskoContainer(Document):
         self._validate_unique_container_no()
         self._validate_lots()
         self._validate_inward_qty()
+        self._validate_inward_vs_approved_sold()
         self._validate_status_transition()
         self._validate_close_gate()
 
@@ -69,6 +70,28 @@ class FreskoContainer(Document):
                     "Cannot change Inward Qty after selling started without an explicit reason"
                 )
 
+    def _validate_inward_vs_approved_sold(self):
+        """F-H1: cannot lower lot/container inward below approved_sold."""
+        if self.is_new():
+            return
+        from fresko_universe.fresko_core.ats import approved_sold
+
+        for row in self.get("lots") or []:
+            sold = approved_sold(self.name, row.lot_no)
+            if flt(row.inward_qty) + 1e-9 < flt(sold):
+                frappe.throw(
+                    f"Lot {row.lot_no}: inward_qty {row.inward_qty} cannot be below "
+                    f"approved_sold {sold} (F-H1 / DATA_INTEGRITY)"
+                )
+        # Container total vs sum of approved across lots
+        if self.get("lots"):
+            total_sold = approved_sold(self.name, None)
+            if flt(self.inward_qty) + 1e-9 < flt(total_sold):
+                frappe.throw(
+                    f"Container inward_qty {self.inward_qty} cannot be below "
+                    f"total approved_sold {total_sold} (F-H1)"
+                )
+
     def _validate_status_transition(self):
         if self.is_new():
             return
@@ -107,7 +130,6 @@ class FreskoContainer(Document):
             frappe.throw(
                 "Cannot set Fully Reconciled while open material Exceptions exist on this container"
             )
-
 
 
 @frappe.whitelist()

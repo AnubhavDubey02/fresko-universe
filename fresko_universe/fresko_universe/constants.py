@@ -52,12 +52,14 @@ ATS_ACTIVE_STATUSES = frozenset(
         "Partially Paid",
         "Reconciled",
         "Disputed",
+        "Cancelled",  # reserves dispatched_qty only via commercial_qty_for_ats
     }
 )
 ATS_REDUCING_STATUSES = ATS_ACTIVE_STATUSES
 
 COMMERCIAL_LOCK_STATUSES = frozenset(
     {
+        "Approval Required",  # F-H4: freeze qty/lot/container after apply_rate_rules
         "Auto Approved",
         "Approved",
         "Countered",
@@ -112,4 +114,18 @@ MATERIAL_EXCEPTION_TYPES = frozenset(
 )
 
 EXCEPTION_OPEN_STATUSES = frozenset({"Open", "In Progress"})
-OVERSELL_OVERRIDE_ROLES = frozenset({"System Manager", "Fresko Approver", "Fresko Owner"})
+OVERSELL_OVERRIDE_ROLES = frozenset({"System Manager"})  # D10 / DV4: Approver cannot oversell
+
+# Post-approval commercial revisions require Approval + evidence (Controls B2)
+MATERIAL_REVISION_FIELDS = frozenset(
+    {
+        "approved_rate",
+        "qty",
+        "lot_no",
+        "container_lot",
+        "customer",
+    }
+)
+
+# Cancelled still reduces ATS by already-dispatched qty (QA: cancel-after-partial)
+ATS_CANCEL_KEEPS_DISPATCHED = True

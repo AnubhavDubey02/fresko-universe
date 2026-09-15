@@ -6,7 +6,13 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from fresko_universe.fresko_core.ats import available_to_sell
-from fresko_universe.deals import accept_counter, apply_rate_rules, apply_revision, request_revision
+from fresko_universe.deals import (
+    accept_counter,
+    apply_rate_rules,
+    apply_revision,
+    cancel_deal,
+    request_revision,
+)
 from fresko_universe.approvals import decide
 from fresko_universe.tests.utils import ensure_masters, make_container, make_deal
 
@@ -31,7 +37,6 @@ class TestPhase1Acceptance(FrappeTestCase):
         before_ev = frappe.db.count("Fresko Evidence", {"deal": d1.name})
         with self.assertRaises(frappe.ValidationError):
             make_deal(c, buyer_alias="SameBuyer", qty=5, proposed_rate=110)
-        # Exception / evidence created against existing
         after_ex = frappe.get_all(
             "Fresko Exception",
             filters={"deal": d1.name, "exception_type": "DUPLICATE_MESSAGE"},
@@ -79,17 +84,50 @@ class TestPhase1Acceptance(FrappeTestCase):
         d = make_deal(c, proposed_rate=50, qty=5)
         apply_rate_rules(d.name)
         d.reload()
-        rev = request_revision(d.name, "approved_rate", 55, reason="price correction")
+        ev = frappe.get_doc(
+            {
+                "doctype": "Fresko Evidence",
+                "evidence_type": "Note",
+                "deal": d.name,
+                "container": c.name,
+                "notes": "rate revision evidence",
+            }
+        ).insert(ignore_permissions=True)
+        rev = request_revision(
+            d.name,
+            "approved_rate",
+            55,
+            reason="price correction",
+            supporting_evidence=ev.name,
+        )
         self.assertIn("revision", rev)
-        applied = apply_revision(rev["revision"])
+        apr = frappe.get_doc(
+            {
+                "doctype": "Fresko Approval",
+                "deal": d.name,
+                "decision": "APPROVE",
+                "decision_rate": 55,
+                "proposed_rate": d.proposed_rate,
+                "rate_floor": d.rate_floor,
+                "rate_ceiling": d.rate_ceiling,
+                "approver": frappe.session.user,
+                "reason": "approve commercial revision",
+            }
+        ).insert(ignore_permissions=True)
+        applied = apply_revision(rev["revision"], approval_name=apr.name)
         self.assertEqual(applied["status"], "Applied")
+        self.assertEqual(applied["approval_reference"], apr.name)
+        self.assertEqual(applied["supporting_evidence"], ev.name)
         d.reload()
         self.assertEqual(d.approved_rate, 55)
-        trail = frappe.get_all(
-            "Fresko Revision",
-            filters={"parent_name": d.name, "fieldname": "approved_rate", "status": "Applied"},
-        )
-        self.assertTrue(trail)
+        trail = frappe.get_doc("Fresko Revision", rev["revision"])
+        self.assertEqual(trail.approval_reference, apr.name)
+        self.assertEqual(trail.supporting_evidence, ev.name)
+        self.assertEqual(trail.old_value, "50.0" if trail.old_value == "50.0" else trail.old_value)
+        # freeze: cannot alter historical fields after Applied
+        trail.old_value = "hacked"
+        with self.assertRaises(frappe.ValidationError):
+            trail.save(ignore_permissions=True)
 
     def test_unresolved_buyer_blocks_reconciled(self):
         c = make_container(self.masters, container_no=f"BUY-{frappe.generate_hash(length=6)}", rate_floor=10)
@@ -97,7 +135,6 @@ class TestPhase1Acceptance(FrappeTestCase):
         apply_rate_rules(d.name)
         d.reload()
         self.assertFalse(d.customer)
-        # force through statuses with flag to reach Paid then attempt Reconciled
         for st in ("Outward Pending", "Dispatched", "Payment Pending", "Paid"):
             d.reload()
             d.flags.allow_status_transition = True
@@ -108,7 +145,6 @@ class TestPhase1Acceptance(FrappeTestCase):
         d.status = "Reconciled"
         with self.assertRaises(frappe.ValidationError):
             d.save(ignore_permissions=True)
-        # BUYER_UNRESOLVED should exist
         ex = frappe.get_all(
             "Fresko Exception",
             filters={"deal": d.name, "exception_type": "BUYER_UNRESOLVED"},
@@ -138,11 +174,7 @@ class TestPhase1Acceptance(FrappeTestCase):
 
         d2 = make_deal(c, qty=20, proposed_rate=50, buyer_alias="A2")
         apply_rate_rules(d2.name)
-        d2.reload()
-        d2.flags.allow_status_transition = True
-        d2.cancel_reason = "test cancel"
-        d2.status = "Cancelled"
-        d2.save(ignore_permissions=True)
+        cancel_deal(d2.name, cancel_reason="test cancel")
         ats2 = available_to_sell(c.name, "LOT-A")
         self.assertEqual(ats2, 70)  # cancelled excluded
 
@@ -153,6 +185,7 @@ class TestPhase1Acceptance(FrappeTestCase):
         self.assertEqual(d3.status, "Proposed")
 
     def test_concurrent_deals_cannot_over_approve_lot_stock(self):
+        # Soft-route second deal to Approval Required; decide(APPROVE) throws without override
         c = make_container(
             self.masters,
             container_no=f"CONC-{frappe.generate_hash(length=6)}",
@@ -164,7 +197,6 @@ class TestPhase1Acceptance(FrappeTestCase):
         apply_rate_rules(d1.name)
         d1.reload()
         self.assertEqual(d1.status, "Auto Approved")
-        # Second should fail auto-approve due to ATS and go Approval Required or throw on approve
         apply_rate_rules(d2.name)
         d2.reload()
         self.assertEqual(d2.status, "Approval Required")
@@ -184,17 +216,11 @@ class TestPhase1Acceptance(FrappeTestCase):
             }
         ).insert(ignore_permissions=True)
         c.reload()
-        c.flags.allow_status_transition = True if hasattr(c.flags, "allow_status_transition") else None
-        # Move toward Closed
+        # Whitelist-style status moves (no db.set_value)
         for st in ("Closing", "Closed"):
+            c.reload()
             c.status = st
-            # container transitions validated
-            try:
-                c.save(ignore_permissions=True)
-            except frappe.ValidationError:
-                # Selling → Closing is allowed; Draft path may differ — set directly if needed
-                frappe.db.set_value("Fresko Container", c.name, "status", st)
-                c.reload()
+            c.save(ignore_permissions=True)
         c.closing_status = "Fully Reconciled"
         with self.assertRaises(frappe.ValidationError):
             c.save(ignore_permissions=True)
@@ -208,7 +234,11 @@ class TestPhase1Acceptance(FrappeTestCase):
         self.assertEqual(d.status, "Countered")
         self.assertEqual(d.approved_rate, 80)
         self.assertEqual(d.proposed_rate, 50)
+        # F-C1: decide(APPROVE) from Countered must fail
+        with self.assertRaises(frappe.ValidationError):
+            decide(d.name, "APPROVE", decision_rate=80, reason="bypass")
         # Illegal: Desk jump Countered → Outward Pending
+        d.reload()
         d.status = "Outward Pending"
         with self.assertRaises(frappe.ValidationError):
             d.save()
@@ -216,6 +246,12 @@ class TestPhase1Acceptance(FrappeTestCase):
         d.reload()
         result = accept_counter(d.name)
         self.assertEqual(result["status"], "Approved")
+
+    def test_decide_rejects_from_proposed(self):
+        c = make_container(self.masters, container_no=f"H2-{frappe.generate_hash(length=6)}", rate_floor=100)
+        d = make_deal(c, proposed_rate=50, qty=5)
+        with self.assertRaises(frappe.ValidationError):
+            decide(d.name, "APPROVE", decision_rate=90, reason="skip apply_rate_rules")
 
 
 def flt_status(v):

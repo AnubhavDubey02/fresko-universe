@@ -4,6 +4,19 @@
 import frappe
 from frappe.model.document import Document
 
+_HISTORICAL_FIELDS = (
+    "old_value",
+    "new_value",
+    "reason",
+    "fieldname",
+    "parent_doctype",
+    "parent_name",
+    "supporting_evidence",
+    "approval_reference",
+    "changed_by",
+    "changed_at",
+)
+
 
 class FreskoRevision(Document):
     def before_insert(self):
@@ -15,5 +28,31 @@ class FreskoRevision(Document):
             frappe.throw("Revision reason is mandatory")
 
     def validate(self):
-        if not self.is_new() and self.has_value_changed("old_value"):
+        if self.is_new():
+            return
+        old_status = self.get_db_value("status")
+        # After Applied: freeze all historical trail fields (Controls B2)
+        if old_status == "Applied" or self.status == "Applied":
+            if self.has_value_changed("status") and old_status == "Applied":
+                frappe.throw("Cannot change status of an Applied revision")
+            for f in _HISTORICAL_FIELDS:
+                if self.has_value_changed(f):
+                    # Allow linking approval_reference only while transitioning Pending → Applied
+                    if (
+                        f == "approval_reference"
+                        and old_status == "Pending"
+                        and self.status == "Applied"
+                        and self.flags.get("allow_revision_apply")
+                    ):
+                        continue
+                    frappe.throw(f"Cannot alter historical revision field '{f}' after Applied")
+            if old_status == "Pending" and self.status == "Applied":
+                if not self.flags.get("allow_revision_apply"):
+                    frappe.throw("Revision status Applied only via deals.apply_revision")
+            return
+        # Pending: still freeze old_value trail seed
+        if self.has_value_changed("old_value"):
             frappe.throw("Cannot alter historical revision old_value")
+        for f in ("fieldname", "parent_doctype", "parent_name"):
+            if self.has_value_changed(f):
+                frappe.throw(f"Cannot alter revision identity field '{f}'")
