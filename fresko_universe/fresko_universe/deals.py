@@ -73,13 +73,16 @@ def accept_counter(deal_name: str):
         frappe.throw(_("accept_counter only valid from Countered (current: {0})").format(deal.status))
 
     user = frappe.session.user
-    is_originator = user == deal.owner or user == (deal.salesperson_user or "")
     roles = set(frappe.get_roles())
-    if not is_originator and "System Manager" not in roles and "Fresko Approver" not in roles:
-        if "Fresko Salesperson" not in roles:
-            frappe.throw(_("Only deal originator/salesperson (or Approver/SM) may accept a counter"))
-        if deal.salesperson_user and user != deal.salesperson_user and user != deal.owner:
-            frappe.throw(_("Only the deal originator/salesperson may accept this counter (D4)"))
+    is_privileged = "System Manager" in roles or "Fresko Approver" in roles
+    # F-M6: if salesperson_user empty, only owner (or Approver/SM) — not any Salesperson
+    allowed = {deal.owner}
+    if deal.salesperson_user:
+        allowed.add(deal.salesperson_user)
+    if user not in allowed and not is_privileged:
+        frappe.throw(
+            _("Only the deal originator/salesperson (or Approver/SM) may accept a counter (D4)")
+        )
 
     if deal.approved_rate is None:
         frappe.throw(_("Countered deal has no approved_rate (decision_rate) to accept"))
@@ -102,12 +105,20 @@ def cancel_deal(deal_name: str, cancel_reason: str):
         frappe.throw(_("cancel_reason is required"))
     deal = frappe.get_doc("Fresko Deal", deal_name)
     if deal.status == "Cancelled":
-        return {"name": deal.name, "status": deal.status}
+        return {
+            "name": deal.name,
+            "status": deal.status,
+            "dispatched_qty": deal.dispatched_qty,
+        }
     deal.cancel_reason = cancel_reason
     deal.set_status("Cancelled")
     deal.save(ignore_permissions=True)
     frappe.db.commit()
-    return {"name": deal.name, "status": deal.status}
+    return {
+        "name": deal.name,
+        "status": deal.status,
+        "dispatched_qty": deal.dispatched_qty,
+    }
 
 
 @frappe.whitelist()
@@ -292,7 +303,7 @@ def apply_revision(revision_name: str, approval_name: str | None = None):
     if approval_name:
         rev.approval_reference = approval_name
     rev.status = "Applied"
-    rev.flags.allow_applied_write = True
+    rev.flags.allow_revision_apply = True
     rev.save(ignore_permissions=True)
 
     if fieldname == "customer" and new_value:
@@ -305,38 +316,14 @@ def apply_revision(revision_name: str, approval_name: str | None = None):
         "fieldname": fieldname,
         "status": "Applied",
         "approval_reference": rev.approval_reference,
+        "supporting_evidence": rev.supporting_evidence,
     }
 
 
 @frappe.whitelist()
 def set_dispatched_qty(deal_name: str, dispatched_qty):
-    """Server-only setter for dispatched_qty (Desk read_only; Phase 1 provisional)."""
-    deal = frappe.get_doc("Fresko Deal", deal_name)
-    qty = flt(dispatched_qty)
-    if qty < 0:
-        frappe.throw(_("dispatched_qty cannot be negative"))
-    if qty > flt(deal.qty):
-        frappe.throw(
-            _("dispatched_qty {0} cannot exceed approved deal qty {1}").format(qty, deal.qty)
-        )
-    deal.flags.allow_dispatched_qty_write = True
-    deal.dispatched_qty = qty
-    deal.save(ignore_permissions=True)
-    frappe.db.commit()
-    return {"name": deal.name, "dispatched_qty": deal.dispatched_qty, "qty": deal.qty}
-
-
-@frappe.whitelist()
-def cancel_deal(deal_name: str, cancel_reason: str):
-    """Whitelist cancel — already-dispatched qty remains reserved in ATS."""
-    if not cancel_reason:
-        frappe.throw(_("cancel_reason is required"))
-    deal = frappe.get_doc("Fresko Deal", deal_name)
-    deal.cancel_reason = cancel_reason
-    deal.set_status("Cancelled")
-    deal.save(ignore_permissions=True)
-    frappe.db.commit()
-    return {"name": deal.name, "status": deal.status, "dispatched_qty": deal.dispatched_qty}
+    """Compat shim — prefer record_dispatch; same allow_dispatch_write flag (F-H6)."""
+    return record_dispatch(deal_name, dispatched_qty)
 
 
 def _maybe_open_buyer_unresolved(deal):

@@ -204,5 +204,40 @@ class TestLayout(unittest.TestCase):
         self.assertFalse((deals / "fresko_revision").exists())
 
 
+class TestFlagContracts(unittest.TestCase):
+    """Source-level contracts for F-H5 / F-H6 (no bench required)."""
+
+    def test_apply_revision_uses_allow_revision_apply(self):
+        deals_py = (ROOT / "fresko_universe" / "deals.py").read_text()
+        rev_py = (
+            ROOT / "fresko_universe" / "fresko_core" / "doctype"
+            / "fresko_revision" / "fresko_revision.py"
+        ).read_text()
+        self.assertIn("allow_revision_apply", rev_py)
+        self.assertIn("rev.flags.allow_revision_apply", deals_py)
+        self.assertNotIn("allow_applied_write", deals_py)
+        self.assertNotIn("allow_applied_write", rev_py)
+        # Return dict must include supporting_evidence (acceptance KeyError fix)
+        self.assertIn('"supporting_evidence": rev.supporting_evidence', deals_py)
+
+    def test_dispatch_flag_unified_to_allow_dispatch_write(self):
+        deals_py = (ROOT / "fresko_universe" / "deals.py").read_text()
+        deal_py = (
+            ROOT / "fresko_universe" / "fresko_deals" / "doctype"
+            / "fresko_deal" / "fresko_deal.py"
+        ).read_text()
+        self.assertIn("allow_dispatch_write", deals_py)
+        self.assertIn("allow_dispatch_write", deal_py)
+        self.assertNotIn("allow_dispatched_qty_write", deals_py)
+        self.assertNotIn("allow_dispatched_qty_write", deal_py)
+        # Single cancel_deal definition (F-M1 duplicate removed)
+        self.assertEqual(deals_py.count("def cancel_deal"), 1)
+        # set_dispatched_qty delegates to record_dispatch
+        self.assertIn("def set_dispatched_qty", deals_py)
+        self.assertIn("return record_dispatch(", deals_py)
+
+
+
+
 if __name__ == "__main__":
     unittest.main()

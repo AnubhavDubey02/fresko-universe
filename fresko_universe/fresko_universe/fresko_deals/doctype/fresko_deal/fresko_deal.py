@@ -69,30 +69,6 @@ class FreskoDeal(Document):
         if flt(self.qty) <= 0:
             frappe.throw("Deal qty must be > 0")
 
-    def _validate_dispatched_qty(self):
-        """dispatched_qty is read_only on Desk; only whitelist setters may change it."""
-        dq = flt(self.dispatched_qty)
-        if dq < 0:
-            frappe.throw("dispatched_qty cannot be negative")
-        if dq > flt(self.qty):
-            frappe.throw(
-                f"dispatched_qty {dq} cannot exceed approved deal qty {flt(self.qty)}"
-            )
-        if self.is_new():
-            if dq and not self.flags.get("allow_dispatched_qty_write"):
-                frappe.throw(
-                    "dispatched_qty can only be set via server methods "
-                    "(deals.set_dispatched_qty)"
-                )
-            return
-        if self.has_value_changed("dispatched_qty") and not self.flags.get(
-            "allow_dispatched_qty_write"
-        ):
-            frappe.throw(
-                "dispatched_qty is read_only — use deals.set_dispatched_qty "
-                "(Desk edits blocked)"
-            )
-
     def _validate_lot_belongs_to_container(self):
         if not self.container or not self.lot_no:
             return

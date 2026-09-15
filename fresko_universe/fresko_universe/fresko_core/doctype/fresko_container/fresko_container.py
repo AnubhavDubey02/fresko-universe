@@ -71,10 +71,29 @@ class FreskoContainer(Document):
                 )
 
     def _validate_inward_vs_approved_sold(self):
-        """F-H1: cannot lower lot/container inward below approved_sold."""
+        """F-H1: cannot lower lot/container inward below approved_sold.
+
+        Also blocks deleting a lot row that still has approved_sold > 0
+        (otherwise removing the lot would bypass the inward floor check).
+        """
         if self.is_new():
             return
         from fresko_universe.fresko_core.ats import approved_sold
+
+        current_lots = {row.lot_no for row in self.get("lots") or [] if row.lot_no}
+        db_lots = frappe.get_all(
+            "Fresko Container Lot",
+            filters={"parent": self.name, "parenttype": "Fresko Container"},
+            fields=["lot_no"],
+        )
+        for db_row in db_lots:
+            lot_no = db_row.lot_no
+            if lot_no and lot_no not in current_lots:
+                sold = approved_sold(self.name, lot_no)
+                if flt(sold) > 1e-9:
+                    frappe.throw(
+                        f"Cannot remove lot {lot_no}: approved_sold {sold} > 0 (F-H1)"
+                    )
 
         for row in self.get("lots") or []:
             sold = approved_sold(self.name, row.lot_no)
@@ -91,6 +110,12 @@ class FreskoContainer(Document):
                     f"Container inward_qty {self.inward_qty} cannot be below "
                     f"total approved_sold {total_sold} (F-H1)"
                 )
+        elif flt(approved_sold(self.name, None)) > 1e-9:
+            # All lots removed but commercial sold remains
+            frappe.throw(
+                f"Cannot clear all lots while approved_sold remains "
+                f"(F-H1 / DATA_INTEGRITY)"
+            )
 
     def _validate_status_transition(self):
         if self.is_new():
