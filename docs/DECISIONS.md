@@ -54,3 +54,15 @@ Anubhav locked dependency policy:
 
 Canonical docs: `docs/DEPENDENCY_POLICY.md`, `docs/THIRD_PARTY.md`.
 
+## 2026-09-15 — Security & Red Team Engineer (LOCKED)
+
+Permanent independent role: **Fresko Security** (Security & Red Team Engineer).
+
+- Not a dependency scanner alone — continuous adversarial + senior AppSec review.
+- Independent of implementers; implementer claims are not proof of security.
+- Owns `docs/security/` ledger (architecture, threat model, permission matrix, findings, testing, baseline).
+- CRITICAL blocks production; HIGH normally blocks unless authorized human acceptance recorded.
+- AI inputs untrusted; AI must never become financial/inventory/accounting truth without deterministic controls.
+- No autonomous production destructive actions (delete data, rotate prod secrets, disable services, attack third parties, mutate financials) without explicit authorization.
+- Initial assignment: baseline assessment of CURRENT repo with MUST FIX NOW / BEFORE PRODUCTION / LATER HARDENING backlog and concrete evidence.
+
