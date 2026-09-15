@@ -53,8 +53,6 @@ jobs:
           --health-interval=10s
           --health-timeout=5s
           --health-retries=20
-          --character-set-server=utf8mb4
-          --collation-server=utf8mb4_unicode_ci
       redis:
         image: redis:7
         ports:
@@ -96,6 +94,14 @@ jobs:
             python3-dev build-essential \
             libffi-dev libssl-dev wkhtmltopdf \
             libjpeg-dev zlib1g-dev liblcms2-dev libwebp-dev
+
+      - name: Wait for MariaDB + utf8mb4
+        run: |
+          for i in $(seq 1 60); do
+            mysqladmin ping -h 127.0.0.1 -uroot -proot --silent && break
+            sleep 2
+          done
+          mysql -h 127.0.0.1 -uroot -proot -e "SET GLOBAL character_set_server='utf8mb4'; SET GLOBAL collation_server='utf8mb4_unicode_ci';"
 
       - name: MariaDB root remote access (CI)
         run: |
