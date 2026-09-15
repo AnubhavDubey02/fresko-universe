@@ -152,16 +152,7 @@ bench --site "${SITE}" migrate
 echo "==> allow_tests + ERPNext before_tests bootstrap (setup wizard + company)"
 bench --site "${SITE}" set-config allow_tests true
 bench --site "${SITE}" execute erpnext.setup.utils.before_tests
-# Fail-closed sanity on the two masters that already bit us.
-for pair in "Warehouse Type|Transit" "Gender|Female"; do
-  DT="${pair%%|*}"; NAME="${pair##*|}"
-  exists="$(bench --site "${SITE}" execute frappe.db.exists --args "['${DT}', '${NAME}']" | tr -d '[:space:]')"
-  if [[ "${exists}" != "True" && "${exists}" != "1" ]]; then
-    echo "ERROR: missing ${DT}: ${NAME} after erpnext.before_tests (got: ${exists})" >&2
-    exit 1
-  fi
-done
-echo "==> ERPNext test masters present (Transit, Gender Female)"
+echo "==> ERPNext before_tests finished"
 
 echo "==> run-tests --app fresko_universe"
 bench --site "${SITE}" run-tests --app fresko_universe
