@@ -603,6 +603,70 @@ class TestD4SalespersonFieldLock(unittest.TestCase):
         self.assertIn("Countered", COMMERCIAL_LOCK_STATUSES)
 
 
+class TestD6AcceptCounterBuyerUnresolved(unittest.TestCase):
+    """D6: accept_counter opens BUYER_UNRESOLVED when customer empty; skips when set."""
+
+    def _run(self, customer):
+        import frappe
+        from fresko_universe import deals as deals_mod
+
+        deal = MagicMock()
+        deal.name = "DEAL-D6"
+        deal.status = "Countered"
+        deal.owner = "owner@x.com"
+        deal.salesperson_user = None
+        deal.approved_rate = 12
+        deal.container = "C1"
+        deal.lot_no = "L1"
+        deal.qty = 5
+        deal.customer = customer
+        deal.buyer_alias = "Alias"
+        deal.flags = MagicMock()
+        deal.set_status = MagicMock(side_effect=lambda s: setattr(deal, "status", s))
+        deal.save = MagicMock()
+
+        inserted = []
+
+        def get_doc_flex(*a, **k):
+            if a and isinstance(a[0], dict):
+                ex = MagicMock()
+                ex.insert = MagicMock()
+                ex.name = "EX-D6"
+                inserted.append(a[0])
+                return ex
+            if a and a[0] == "Fresko Deal":
+                return deal
+            return deal
+
+        frappe.session = types.SimpleNamespace(user="owner@x.com")
+        frappe.get_roles = MagicMock(return_value=["Fresko Salesperson"])
+        frappe.get_doc = MagicMock(side_effect=get_doc_flex)
+        frappe.get_all = MagicMock(return_value=[])
+        frappe.db.commit = MagicMock()
+        orig_ats = deals_mod.available_to_sell
+        deals_mod.available_to_sell = MagicMock(return_value=100)
+        try:
+            result = deals_mod.accept_counter(deal.name)
+        finally:
+            deals_mod.available_to_sell = orig_ats
+        return result, deal, inserted
+
+    def test_empty_customer_opens_buyer_unresolved(self):
+        result, deal, inserted = self._run(customer=None)
+        self.assertEqual(result["status"], "Approved")
+        self.assertTrue(
+            any(i.get("exception_type") == "BUYER_UNRESOLVED" for i in inserted),
+            "accept_counter must open BUYER_UNRESOLVED when customer empty",
+        )
+
+    def test_customer_set_skips_buyer_unresolved(self):
+        result, deal, inserted = self._run(customer="CUST-1")
+        self.assertEqual(result["status"], "Approved")
+        self.assertFalse(
+            any(i.get("exception_type") == "BUYER_UNRESOLVED" for i in inserted),
+            "accept_counter must not open BUYER_UNRESOLVED when customer set",
+        )
+
 
 class TestFSEC001WhitelistACL(unittest.TestCase):
     """FSEC-001: Accounts / stranger cannot cancel, dispatch, or apply_rate_rules."""

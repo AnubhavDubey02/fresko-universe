@@ -297,6 +297,71 @@ class TestFreskoDeal(FrappeTestCase):
         self.assertEqual(deal.status, "Approved")
         self.assertEqual(available_to_sell(self.container.name, "LOT-A"), 90)
 
+    def test_accept_counter_empty_customer_opens_buyer_unresolved(self):
+        """D6: Countered→Approved via accept_counter must open BUYER_UNRESOLVED when customer empty."""
+        deal = _make_deal(self.container, rate=5, alias="D6EmptyCust")
+        self.assertFalse(deal.customer)
+        deals_api.apply_rate_rules(deal.name)
+        approvals_api.decide(
+            deal.name, "COUNTER", decision_rate=11, reason="counter"
+        )
+        deal.reload()
+        self.assertEqual(deal.status, "Countered")
+        before = frappe.get_all(
+            "Fresko Exception",
+            filters={
+                "deal": deal.name,
+                "exception_type": "BUYER_UNRESOLVED",
+                "status": ("in", ["Open", "In Progress"]),
+            },
+        )
+        self.assertFalse(before)
+        deals_api.accept_counter(deal.name)
+        deal.reload()
+        self.assertEqual(deal.status, "Approved")
+        self.assertFalse(deal.customer)
+        ex = frappe.get_all(
+            "Fresko Exception",
+            filters={
+                "deal": deal.name,
+                "exception_type": "BUYER_UNRESOLVED",
+                "status": ("in", ["Open", "In Progress"]),
+            },
+        )
+        self.assertTrue(ex, "accept_counter must open BUYER_UNRESOLVED when customer empty (D6)")
+
+    def test_accept_counter_with_customer_no_buyer_unresolved(self):
+        """D6: accept_counter with customer set must not open BUYER_UNRESOLVED."""
+        if not frappe.db.exists("Customer", "FRESKO-TEST-CUSTOMER"):
+            group = frappe.db.get_value("Customer Group", {}, "name") or "All Customer Groups"
+            frappe.get_doc(
+                {
+                    "doctype": "Customer",
+                    "customer_name": "FRESKO-TEST-CUSTOMER",
+                    "customer_group": group,
+                    "territory": frappe.db.get_value("Territory", {}, "name") or "All Territories",
+                }
+            ).insert(ignore_permissions=True)
+        deal = _make_deal(
+            self.container, rate=5, alias="D6WithCust", customer="FRESKO-TEST-CUSTOMER"
+        )
+        self.assertEqual(deal.customer, "FRESKO-TEST-CUSTOMER")
+        deals_api.apply_rate_rules(deal.name)
+        approvals_api.decide(
+            deal.name, "COUNTER", decision_rate=11, reason="counter"
+        )
+        deal.reload()
+        self.assertEqual(deal.status, "Countered")
+        deals_api.accept_counter(deal.name)
+        deal.reload()
+        self.assertEqual(deal.status, "Approved")
+        self.assertEqual(deal.customer, "FRESKO-TEST-CUSTOMER")
+        ex = frappe.get_all(
+            "Fresko Exception",
+            filters={"deal": deal.name, "exception_type": "BUYER_UNRESOLVED"},
+        )
+        self.assertFalse(ex, "accept_counter must not open BUYER_UNRESOLVED when customer set")
+
     def test_revision_plus_approval_changes_rate_with_trail(self):
         deal = _make_deal(self.container, rate=20, alias="RevBuyer")
         deals_api.apply_rate_rules(deal.name)

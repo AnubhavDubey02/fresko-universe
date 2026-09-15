@@ -141,6 +141,7 @@ def accept_counter(deal_name: str):
         frappe.throw(_("Cannot accept counter: qty {0} > ATS {1}").format(deal.qty, ats))
 
     deal.set_status("Approved")
+    _maybe_open_buyer_unresolved(deal)
     # FSEC-001 audit: ignore_permissions AFTER D4 ownership ACL above.
     deal.save(ignore_permissions=True)
     frappe.db.commit()

@@ -22,7 +22,7 @@ Canonical sources: `docs/DECISIONS.md`, `docs/OPEN_QUESTIONS.md`, `docs/PHASE1_B
 | **D3** | PROPOSED does not reduce ATS; APPROVED / AUTO_APPROVED do; re-read ATS under lock before approval | `constants.ATS_REDUCING_STATUSES` excludes Proposed / Approval Required / Countered; includes Auto Approved / Approved (+ successors). Lock: `ats.available_to_sell(..., for_update=True)` → `SELECT … FOR UPDATE` on Container. Call sites: `deals.apply_rate_rules` (auto), `approvals.decide` (APPROVE), `deals.accept_counter`, material `apply_revision` qty/lot | `TestStateMachine.test_proposed_does_not_reduce_ats` / `test_approved_reduces_ats`; bench `test_available_to_sell_excludes_cancelled_includes_approved`; `test_concurrent_deals_*` | **IMPLEMENTED** (status sets + FOR UPDATE + sequential soft-route). True parallel race: see §3 |
 | **D4** | COUNTERED requires originator/`salesperson_user` accept; Approver immediate different rate = APPROVE+decision_rate; SM must not accept on behalf | `approvals.decide`: COUNTER → Countered; decide blocked from Countered. `deals.accept_counter`: ACL `{owner} ∪ {salesperson_user}` only. G-M1: `salesperson_user` in `LOCKED_COMMERCIAL_FIELDS` | Smoke `TestD4AcceptCounterACL` (5), `TestD4SalespersonFieldLock`; bench `test_counter_requires_accept`, `test_decide_cannot_approve_from_countered_*`, `test_system_manager_cannot_accept_counter_unless_owner`; acceptance `test_d4_counter_requires_accept_before_approved` | **IMPLEMENTED** |
 | **D5** | Rate-floor hierarchy: Lot override → Container+Count/Size → Container default; no buyer floor V1 | `rate_rules.resolve_rate_band` | Smoke `TestRateFloorD5` (incl. currency-0 fallthrough); `TestRateBandHierarchy`; Gate1 suite | **IMPLEMENTED** |
-| **D6** | May approve with unresolved buyer; preserve `buyer_alias`; **open BUYER_UNRESOLVED**; block RECONCILED until Customer | Alias immutable: `FreskoDeal._validate_buyer_alias_immutable`. Open exception: `_maybe_open_buyer_unresolved` from **auto-approve** (`deals.apply_rate_rules`) and **`approvals.decide` APPROVE** only. Reconcile gate: `FreskoDeal._validate_reconciled_gate` (customer + open BUYER_UNRESOLVED). **`deals.accept_counter` does NOT call `_maybe_open_buyer_unresolved`** | Bench/acceptance `test_unresolved_buyer_blocks_reconciled` (auto/approve paths). **No test that accept_counter opens BUYER_UNRESOLVED** | **PARTIAL — gap on Countered→Approved path** (see BLOCKED) |
+| **D6** | May approve with unresolved buyer; preserve `buyer_alias`; **open BUYER_UNRESOLVED**; block RECONCILED until Customer | Alias immutable: `FreskoDeal._validate_buyer_alias_immutable`. Open exception: `_maybe_open_buyer_unresolved` from **auto-approve** (`deals.apply_rate_rules`), **`approvals.decide` APPROVE**, and **`deals.accept_counter`** (after ATS + `set_status("Approved")`, before save/commit). Reconcile gate: `FreskoDeal._validate_reconciled_gate` (customer + open BUYER_UNRESOLVED) | Bench/acceptance `test_unresolved_buyer_blocks_reconciled` (auto/approve); bench `test_accept_counter_empty_customer_opens_buyer_unresolved` / `test_accept_counter_with_customer_no_buyer_unresolved`; smoke `TestD6AcceptCounterBuyerUnresolved` | **IMPLEMENTED** |
 | **D7** | Physical inward: PR vs Stock Entry | — | — | **NOT IMPLEMENTED** (Phase 3 / OPEN_QUESTIONS) |
 | **D8** | Project vs Accounting Dimension for container P&L | — | — | **NOT IMPLEMENTED** (Later / OPEN_QUESTIONS) |
 | **D9** | GST / invoice timing | — | — | **NOT IMPLEMENTED** (CA / OPEN_QUESTIONS) |
@@ -68,7 +68,7 @@ Source ledger: `docs/security/SECURITY_FINDINGS.md`. Enforcement = runtime gate,
 | **Concurrent approval** | **PARTIAL** | Sequential soft-route: first auto-approves, second → AR then `decide(APPROVE)` throws (`test_concurrent_deals_*`). Uses `FOR UPDATE` on Container. **True multi-worker simultaneous decide:** **NOT COVERED** |
 | **Stale state** | **PARTIAL** | `assert_approval_not_stale` blocks Approval reused on another Applied revision. Stale Deal status on long-lived Approval (deal cancelled then apply): **NOT COVERED** explicitly |
 | **Partial failure** (Exception/Approval inserted, Deal not) | **NOT COVERED** | Multi-doc writes then `frappe.db.commit()`; no savepoint / rollback unit tests — see §4 |
-| **Unresolved buyer** | **PARTIAL** | Auto/decide paths open BUYER_UNRESOLVED + block Reconciled. **`accept_counter` path: Exception NOT opened** — **NOT COVERED** / code risk to container Fully Reconciled close-gate (looks for open BUYER_UNRESOLVED) |
+| **Unresolved buyer** | **COVERED** | Auto/decide/`accept_counter` open BUYER_UNRESOLVED when customer empty; with customer set no exception; Reconciled blocked while open. Bench D6 accept_counter tests + smoke `TestD6AcceptCounterBuyerUnresolved` |
 | **Oversell** | **COVERED** (commercial) | Approver denied; SM OVERSELL_OVERRIDE + Exception. Physical dispatch ceiling covered in `record_dispatch` / validate. Phase 3 DN/SLE: N/A |
 | **Owner/Admin override** | **COVERED** as System Manager only | No dual-control; SM may delete Approvals (`FreskoApproval.on_trash`). D10 “Owner” ≠ separate role |
 
@@ -82,7 +82,7 @@ Source ledger: `docs/security/SECURITY_FINDINGS.md`. Enforcement = runtime gate,
 | ATS lock | `FOR UPDATE` on Container before ATS-sensitive approve/accept/revision qty |
 | Explicit commits | `frappe.db.commit()` at end of `apply_rate_rules`, `accept_counter`, `cancel_deal`, `record_dispatch`, `apply_revision`, `decide` |
 | Multi-doc sequences | e.g. `decide` OVERSELL: `_open_exception` → `_insert_approval` → Deal.save → commit; `apply_rate_rules`: Exception insert → Deal.save → `db.set_value` null fields → commit; `apply_revision`: Deal.save → Revision.save → optional Exception resolve → commit |
-| Atomicity proof | **UNKNOWN / UNPROVEN** — no test forces mid-sequence crash or asserts rollback of Exception/Approval when Deal save fails. Relies on ambient Frappe request transaction until explicit commit; not independently proven here |
+| Atomicity proof | **ASSUMPTION** — Frappe single transaction until explicit `frappe.db.commit()`; **NOT COVERED** mid-crash / forced-rollback test that Exception/Approval roll back with Deal |
 | Fingerprint duplicate path | Throw after best-effort Evidence/Exception; bare except may leave **neither** side-effect nor second Deal — Deal blocked, audit trail **may be incomplete** |
 
 ---
@@ -94,7 +94,7 @@ Source ledger: `docs/security/SECURITY_FINDINGS.md`. Enforcement = runtime gate,
 | **PROPOSED** | Initial Deal.status; does **not** reduce ATS | Low |
 | **COUNTERED** | After `decide(COUNTER)`; `approved_rate` holds **counter decision_rate** awaiting accept; **does not** reduce ATS | **FLAG:** field named `approved_rate` stores **unaccepted** counter — readers may treat as commercially approved. `amount` uses `approved_rate if not None else proposed_rate` → Countered amount reflects counter before accept |
 | **ACCEPTED / APPROVED** | Status string is **`Approved`** (and **`Auto Approved`**). No status named ACCEPTED; accept = `accept_counter` → Approved | Do not invent ACCEPTED status |
-| **BUYER_UNRESOLVED** | Exception type (not a Deal.status). Opened on auto-approve / decide APPROVE when `customer` empty | **FLAG:** not opened on `accept_counter` → Approved (D6 gap) |
+| **BUYER_UNRESOLVED** | Exception type (not a Deal.status). Opened on auto-approve / decide APPROVE / `accept_counter` when `customer` empty | Low — all commercial approve paths covered |
 | **PENDING** | `Fresko Revision.status = Pending` (and payment statuses Payment Pending — different domain) | Avoid conflating Revision Pending with Deal Payment Pending |
 | **UNKNOWN** | Not a Deal.status. Gate 1 uses SQL **NULL** for unresolved floor/ceiling/approved_rate (post-save `set_value`) | Currency 0 coerced to “unset” via `_optional_rate` — intentional Gate 1, but **0 is never a valid floor** by policy |
 | Approval Required | Soft fail-closed / out-of-band / stock shortfall on auto path | Out-of-band does **not** open RATE_FLOOR_BREACH Exception (FSEC-008) — status certainty without matching exception signal |
@@ -145,8 +145,8 @@ Source ledger: `docs/security/SECURITY_FINDINGS.md`. Enforcement = runtime gate,
 2. **Call:** `approvals.decide(..., COUNTER, decision_rate=11, reason=…)`.  
 3. **Stored:** Approval row decision=COUNTER; Deal.status=`Countered`; `approved_rate=11`; ATS **unchanged** (Countered not reducing).  
 4. **Bypass attempt:** `decide(APPROVE)` from Countered → throw (must `accept_counter`).  
-5. **Accept:** Owner/`salesperson_user` `accept_counter` → `Approved`; ATS reduces. SM non-owner denied.  
-6. **Gap:** BUYER_UNRESOLVED **not** opened on this Approved path (§1 D6).
+5. **Accept:** Owner/`salesperson_user` `accept_counter` → `Approved`; ATS reduces; `_maybe_open_buyer_unresolved` if `customer` empty. SM non-owner denied.  
+6. **D6:** empty customer → open BUYER_UNRESOLVED; customer set → no new exception.
 
 ### E2E-C — Concurrent soft oversell then D10 override
 
@@ -242,8 +242,9 @@ Bench **59** is taken from immutable CI run `34954607466` on `d785b63` — **not
 
 ## RC conclusion (not a merge certificate)
 
-**Do not merge.** Hold Phase 2. App-verified green remains `d785b63` / run `34954607466`.  
+**Do not merge.** Hold Phase 2. D6 Countered→Approved path fixed: `deals.accept_counter` calls `_maybe_open_buyer_unresolved` after ATS + `set_status("Approved")` (same as auto-approve / `decide(APPROVE)`), with bench + smoke coverage.
 
-Primary correctness gap vs locked **D6**: `deals.accept_counter` transitions to **Approved** without `_maybe_open_buyer_unresolved`, so BUYER_UNRESOLVED Exception may be absent while container Fully Reconciled gating depends on that Exception type. Secondary: multi-doc atomicity under failure **UNKNOWN**; `db.set_value` Desk-bypass residual; FSEC-004/005/006 OPEN (non-CRITICAL for scaffold but not “secure”).
+**ASSUMPTION (residual NOT COVERED):** multi-doc atomicity = Frappe single request transaction until explicit `frappe.db.commit()` — no mid-crash / forced-rollback test proving Exception/Approval roll back with Deal.  
+**Residual (Anubhav-accepted, non-blocking):** `frappe.db.set_value` can bypass Document.validate (documented in `_enforce_dispatched_qty_lock` / Desk-bypass notes).
 
-BLOCKED: D6 accept_counter omits BUYER_UNRESOLVED open; multi-doc commit atomicity unproven (UNKNOWN); db.set_value validate bypass residual
+READY FOR INDEPENDENT REVIEW
