@@ -1,0 +1,30 @@
+# Local / CI fallback for Gate 2 bench validation.
+# Usage: ./scripts/ci_bench.sh
+# Pins: see docs/VERSIONS.md
+
+services:
+  mariadb:
+    image: mariadb:10.6
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+    ports:
+      - "3307:3306"
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --skip-character-set-client-handshake
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-uroot", "-proot", "--silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  redis-cache:
+    image: redis:6.2
+    ports:
+      - "6379:6379"
+
+  redis-queue:
+    image: redis:6.2
+    ports:
+      - "6380:6379"

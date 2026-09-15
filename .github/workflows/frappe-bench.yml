@@ -1,0 +1,127 @@
+name: Frappe Bench (Gate 2)
+
+on:
+  push:
+    branches: [phase1-doctype-scaffold]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: frappe-bench-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bench-migrate-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    services:
+      mariadb:
+        image: mariadb:10.6
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -uroot -proot"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+      redis-cache:
+        image: redis:6.2
+        ports:
+          - 6379:6379
+      redis-queue:
+        image: redis:6.2
+        ports:
+          - 6380:6379
+
+    env:
+      FRAPPE_TAG: v15.120.1
+      FRAPPE_SHA: 9f8ae9cd25b6735be345da6cc12e9f5a96050c68
+      ERPNEXT_TAG: v15.121.2
+      ERPNEXT_SHA: df8b7f9648c2ec4da12db8c4022edc8dd1018c6b
+      MYSQL_ROOT_PASSWORD: root
+      CI: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          path: fresko-universe-repo
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+
+      - name: Install OS deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            git python3-dev python3-pip python3-venv \
+            redis-tools mariadb-client \
+            libffi-dev libssl-dev wkhtmltopdf \
+            libmysqlclient-dev pkg-config curl
+
+      - name: Wait for MariaDB
+        run: |
+          for i in $(seq 1 30); do
+            mysqladmin ping -h127.0.0.1 -uroot -proot --silent && break
+            sleep 2
+          done
+          mysql -h127.0.0.1 -uroot -proot -e "SET GLOBAL character_set_server='utf8mb4'; SET GLOBAL collation_server='utf8mb4_unicode_ci';"
+
+      - name: Install bench + create site
+        working-directory: ${{ github.workspace }}
+        run: |
+          pip install --upgrade pip
+          pip install frappe-bench==5.22.9
+          bench init --frappe-branch "$FRAPPE_TAG" --skip-redis-config-generation --skip-assets frappe-bench
+          cd frappe-bench
+          # Pin Frappe SHA
+          git -C apps/frappe fetch --tags origin
+          git -C apps/frappe checkout "$FRAPPE_SHA"
+          ./env/bin/pip install -e apps/frappe
+
+          # ERPNext at pinned tag/SHA
+          bench get-app erpnext --branch "$ERPNEXT_TAG"
+          git -C apps/erpnext fetch --tags origin
+          git -C apps/erpnext checkout "$ERPNEXT_SHA"
+          ./env/bin/pip install -e apps/erpnext
+
+          # Wire Redis / MariaDB for CI services
+          bench set-config -g db_host 127.0.0.1
+          bench set-config -g redis_cache redis://127.0.0.1:6379
+          bench set-config -g redis_queue redis://127.0.0.1:6380
+          bench set-config -g redis_socketio redis://127.0.0.1:6379
+
+          bench new-site test.localhost \
+            --mariadb-root-password "$MYSQL_ROOT_PASSWORD" \
+            --admin-password admin \
+            --no-mariadb-socket \
+            --db-root-username root
+
+          bench --site test.localhost install-app erpnext
+
+          # Install fresko_universe from checkout
+          ln -sfn "$GITHUB_WORKSPACE/fresko-universe-repo/fresko_universe" apps/fresko_universe
+          ./env/bin/pip install -e apps/fresko_universe
+          bench --site test.localhost install-app fresko_universe
+
+      - name: Migrate
+        working-directory: ${{ github.workspace }}/frappe-bench
+        run: bench --site test.localhost migrate
+
+      - name: Run fresko_universe tests
+        working-directory: ${{ github.workspace }}/frappe-bench
+        run: bench --site test.localhost run-tests --app fresko_universe
+
+      - name: Smoke unit (no bench) — always
+        working-directory: ${{ github.workspace }}/fresko-universe-repo/fresko_universe
+        run: python3 -m unittest tests.test_smoke_unit -v
