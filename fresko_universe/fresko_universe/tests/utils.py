@@ -66,13 +66,16 @@ def make_container(masters=None, lot_no="LOT-A", inward_qty=100, rate_floor=100,
 
 def make_deal(container, lot_no="LOT-A", qty=10, proposed_rate=120, **kwargs):
     masters = ensure_masters()
+    # Unique default alias so same-day fingerprint (buyer|container|lot|qty|rate|uom|day)
+    # does not collide across multiple make_deal() calls in one test.
+    default_alias = f"TestBuyer-{frappe.generate_hash(length=10)}"
     doc = frappe.get_doc(
         {
             "doctype": "Fresko Deal",
             "naming_series": "DEAL-.YYYY.-.",
             "company": container.company,
             "container": container.name,
-            "buyer_alias": kwargs.pop("buyer_alias", "TestBuyer"),
+            "buyer_alias": kwargs.pop("buyer_alias", default_alias),
             "item": container.item,
             "lot_no": lot_no,
             "qty": qty,
