@@ -34,7 +34,8 @@ def apply_rate_rules(deal_name: str):
         deal.set_status("Approval Required")
         # Do not assign approved_rate on the Document: Currency None→0.0 plus
         # has_value_changed trips commercial lock without allow_approval_write.
-        # Preserve proposed_rate; force SQL NULL after save (Gate 1 unset).
+        # Preserve proposed_rate; force SQL NULL after save (Gate 1; cols nullable
+        # via install.after_migrate).
         _open_exception(
             deal,
             "RATE_POLICY_MISSING",
@@ -48,7 +49,7 @@ def apply_rate_rules(deal_name: str):
         if flt(deal.qty) > ats:
             deal.approval_required = 1
             deal.set_status("Approval Required")
-            # Keep approved_rate untouched on Document; NULL via post-save set_value.
+            # Keep approved_rate untouched on Document; SQL NULL via post-save set_value.
             _open_exception(
                 deal,
                 "STOCK_SHORTFALL",
