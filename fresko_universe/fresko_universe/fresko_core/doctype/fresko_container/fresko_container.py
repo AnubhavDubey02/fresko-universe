@@ -107,3 +107,36 @@ class FreskoContainer(Document):
             frappe.throw(
                 "Cannot set Fully Reconciled while open material Exceptions exist on this container"
             )
+
+
+
+@frappe.whitelist()
+def container_snapshot(container: str, lot_no: str | None = None):
+    from fresko_universe.fresko_core.ats import available_to_sell
+    from frappe.utils import flt
+
+    doc = frappe.get_doc("Fresko Container", container)
+    lots_out = []
+    for row in doc.get("lots") or []:
+        if lot_no and row.lot_no != lot_no:
+            continue
+        ats = available_to_sell(container, row.lot_no)
+        inward = flt(row.inward_qty)
+        lots_out.append({
+            "lot_no": row.lot_no,
+            "inward_qty": inward,
+            "approved_sold": inward - ats,
+            "available_to_sell": ats,
+            "count_size": row.count_size,
+            "uom": row.uom,
+        })
+    return {
+        "container": doc.name,
+        "container_no": doc.container_no,
+        "status": doc.status,
+        "inward_qty": flt(doc.inward_qty),
+        "uom": doc.uom,
+        "lots": lots_out,
+        "approved_sold_total": sum(l["approved_sold"] for l in lots_out),
+        "available_to_sell_total": sum(l["available_to_sell"] for l in lots_out),
+    }

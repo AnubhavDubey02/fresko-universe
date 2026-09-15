@@ -1,7 +1,7 @@
 {
  "doctype": "DocType",
  "name": "Fresko Revision",
- "module": "Fresko Deals",
+ "module": "Fresko Core",
  "engine": "InnoDB",
  "autoname": "hash",
  "track_changes": 0,

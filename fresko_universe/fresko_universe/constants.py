@@ -1,5 +1,7 @@
 """Locked Phase 1 constants — do not drift from PHASE1_BLUEPRINT_FINAL.md."""
 
+from __future__ import annotations
+
 DEAL_STATUSES = [
     "Proposed",
     "Auto Approved",
@@ -18,7 +20,7 @@ DEAL_STATUSES = [
     "Disputed",
 ]
 
-# D4: Countered → Approved only via accept_counter (not Outward Pending).
+# D4: Countered → Approved only via accept_counter
 DEAL_TRANSITIONS = {
     "Proposed": {"Auto Approved", "Approval Required", "Cancelled"},
     "Approval Required": {"Approved", "Countered", "Rejected", "Cancelled"},
@@ -37,47 +39,54 @@ DEAL_TRANSITIONS = {
     "Disputed": {"Outward Pending", "Payment Pending", "Cancelled"},
 }
 
-# Statuses that reduce ATS (D3). PROPOSED / APPROVAL_REQUIRED do NOT.
-ATS_ACTIVE_STATUSES = {
-    "Auto Approved",
-    "Approved",
-    # Countered intentionally excluded (D3 literal); accept_counter re-reads ATS under lock
-    "Outward Pending",
-    "Dispatched",
-    "Partially Dispatched",
-    "Payment Pending",
-    "Paid",
-    "Partially Paid",
-    "Reconciled",
-    "Disputed",
-}
+# D3: PROPOSED / Approval Required / Countered do NOT reduce ATS
+ATS_ACTIVE_STATUSES = frozenset(
+    {
+        "Auto Approved",
+        "Approved",
+        "Outward Pending",
+        "Dispatched",
+        "Partially Dispatched",
+        "Payment Pending",
+        "Paid",
+        "Partially Paid",
+        "Reconciled",
+        "Disputed",
+    }
+)
+ATS_REDUCING_STATUSES = ATS_ACTIVE_STATUSES
 
-COMMERCIAL_LOCK_STATUSES = {
-    "Auto Approved",
-    "Approved",
-    "Countered",
-    "Outward Pending",
-    "Dispatched",
-    "Partially Dispatched",
-    "Payment Pending",
-    "Paid",
-    "Partially Paid",
-    "Reconciled",
-}
+COMMERCIAL_LOCK_STATUSES = frozenset(
+    {
+        "Auto Approved",
+        "Approved",
+        "Countered",
+        "Outward Pending",
+        "Dispatched",
+        "Partially Dispatched",
+        "Payment Pending",
+        "Paid",
+        "Partially Paid",
+        "Reconciled",
+    }
+)
 
-LOCKED_COMMERCIAL_FIELDS = {
-    "container",
-    "buyer_alias",
-    "item",
-    "lot_no",
-    "container_lot",
-    "qty",
-    "proposed_rate",
-    "uom",
-    "company",
-    "approved_rate",
-    "customer",
-}
+LOCKED_COMMERCIAL_FIELDS = frozenset(
+    {
+        "container",
+        "buyer_alias",
+        "item",
+        "lot_no",
+        "container_lot",
+        "qty",
+        "proposed_rate",
+        "uom",
+        "company",
+        "approved_rate",
+        "customer",
+        "count_size",
+    }
+)
 
 CONTAINER_STATUS_TRANSITIONS = {
     "Draft": {"Expected", "Arrived", "Cancelled"},
@@ -90,13 +99,17 @@ CONTAINER_STATUS_TRANSITIONS = {
     "Cancelled": set(),
 }
 
-MATERIAL_EXCEPTION_TYPES = {
-    "BUYER_UNRESOLVED",
-    "DUPLICATE_MESSAGE",
-    "OVERSELL_OVERRIDE",
-    "STOCK_SHORTFALL",
-    "RATE_FLOOR_BREACH",
-    "DATA_INTEGRITY",
-}
+MATERIAL_EXCEPTION_TYPES = frozenset(
+    {
+        "BUYER_UNRESOLVED",
+        "DUPLICATE_MESSAGE",
+        "OVERSELL_OVERRIDE",
+        "STOCK_SHORTFALL",
+        "RATE_FLOOR_BREACH",
+        "DATA_INTEGRITY",
+        "OTHER",
+    }
+)
 
-OVERSELL_OVERRIDE_ROLES = {"System Manager"}  # D10 Owner/Admin only; Approver insufficient alone
+EXCEPTION_OPEN_STATUSES = frozenset({"Open", "In Progress"})
+OVERSELL_OVERRIDE_ROLES = frozenset({"System Manager", "Fresko Approver", "Fresko Owner"})

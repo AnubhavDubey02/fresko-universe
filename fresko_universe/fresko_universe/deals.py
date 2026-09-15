@@ -6,7 +6,7 @@ import frappe
 from frappe import _
 from frappe.utils import flt
 
-from fresko_universe.ats import available_to_sell
+from fresko_universe.fresko_core.ats import available_to_sell
 from fresko_universe.rate_rules import rate_in_band, resolve_rate_band
 
 

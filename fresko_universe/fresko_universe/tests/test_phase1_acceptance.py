@@ -5,7 +5,7 @@ from __future__ import annotations
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from fresko_universe.ats import available_to_sell
+from fresko_universe.fresko_core.ats import available_to_sell
 from fresko_universe.deals import accept_counter, apply_rate_rules, apply_revision, request_revision
 from fresko_universe.approvals import decide
 from fresko_universe.tests.utils import ensure_masters, make_container, make_deal

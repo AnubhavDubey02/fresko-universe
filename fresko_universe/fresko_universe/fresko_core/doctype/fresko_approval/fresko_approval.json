@@ -1,7 +1,7 @@
 {
  "doctype": "DocType",
  "name": "Fresko Approval",
- "module": "Fresko Deals",
+ "module": "Fresko Core",
  "engine": "InnoDB",
  "is_submittable": 0,
  "track_changes": 0,
