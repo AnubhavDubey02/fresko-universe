@@ -474,6 +474,12 @@ class TestFreskoDeal(FrappeTestCase):
             reason="test setup: commercial oversell only",
             oversell_override=1,
         )
+        # Exercise the race from a legal dispatch state. Approval alone cannot
+        # jump straight to Dispatched under the Phase 1 state machine.
+        for pending_deal in (d1, d2):
+            pending_deal.reload()
+            pending_deal.set_status("Outward Pending")
+            pending_deal.save(ignore_permissions=True)
         frappe.db.commit()  # make setup visible to the two independent connections
 
         deal_names = [d1.name, d2.name]
