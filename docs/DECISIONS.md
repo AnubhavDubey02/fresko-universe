@@ -19,5 +19,15 @@
 - **D5:** Rate-floor hierarchy: Lot override → Container + Product + Count/Size → Container default. No buyer-specific floor in V1.
 - **D6:** May approve with unresolved buyer alias; preserve alias permanently; open BUYER_UNRESOLVED; block final invoice/reconciliation until Customer mapped.
 - **D10:** Oversell override Owner/Admin only; reason + Approval + Exception; may allow commercial commitment; must never allow physical dispatch beyond stock or silent negative stock.
-- Frappe/ERPNext v15 is **PROVISIONAL** until environment installed and pinned.
+- Frappe/ERPNext v15 pinned for Gate 2 CI — see `docs/VERSIONS.md` (was provisional until bench install).
 - Container Lot links to ERPNext Batch; must not compete as inventory SoR.
+
+## 2026-09-15 — Merge gates (Anubhav)
+
+- Hold merge of PR #2 until Gate 1 + Gate 2 complete; no Phase 2.
+- **Gate 1:** Missing rate policy is fail-closed — no AUTO_APPROVE when floor/ceiling unresolved; APPROVAL_REQUIRED + RATE_POLICY_MISSING.
+- **Gate 2:** Reproducible CI/Docker bench with pinned Frappe+ERPNext v15; migrate + run-tests must pass.
+- **D4:** accept_counter only originator/salesperson; Approver must not accept on behalf.
+
+- **F-M7 closed:** empty-band auto-approve is no longer residual; Gate 1 enforces `policy_resolved` + `RATE_POLICY_MISSING`.
+- **Versions pinned:** Frappe `v15.120.1` / ERPNext `v15.121.2` — see `docs/VERSIONS.md` (provisional → pinned for Gate 2 CI).

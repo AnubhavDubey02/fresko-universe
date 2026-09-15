@@ -15,4 +15,11 @@ D1, D3, D4, D5, D6, D10 — see DECISIONS.md.
 | — | Credit/exposure limits | Later |
 | — | WhatsApp production number / templates | Phase 2 |
 | — | Evidence retention period | Compliance |
-| — | Pin exact Frappe/ERPNext versions | When bench installed |
+| — | Pin exact Frappe/ERPNext versions | **CLOSED** — see `docs/VERSIONS.md` (Frappe v15.120.1 / ERPNext v15.121.2) |
+
+## Closed this gate cycle
+| ID | Item | Resolution |
+|---|---|---|
+| F-M7 | Empty rate band auto-approve | Gate 1: `policy_resolved` fail-closed → AR + `RATE_POLICY_MISSING` |
+| D4 tighter | SM/Approver accept_counter | Only `deal.owner` or `deal.salesperson_user` |
+| Gate 2 pins | Frappe/ERPNext versions | `docs/VERSIONS.md` |
