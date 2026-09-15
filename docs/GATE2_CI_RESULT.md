@@ -2,11 +2,11 @@
 
 **Date:** 2026-09-15  
 **Branch:** `phase1-doctype-scaffold`  
-**Tip SHA:** `3d9ac65a3aed0b64b9d02608b2fec392b40b8273` (`3d9ac65`)  
-**Tip message:** `fix(D6): accept_counter opens BUYER_UNRESOLVED before Approved save`  
-**App lineage under tip:** `3d9ac65` (D6 accept_counter BUYER_UNRESOLVED) → `703fc5a` (evidence pack docs) → `73273cd` (Gate2 docs) → `d785b63` (FSEC test hygiene)  
-**Run (push):** [34957061073](https://github.com/AnubhavDubey02/fresko-universe/actions/runs/34957061073)  
-**PR twin:** [34957065131](https://github.com/AnubhavDubey02/fresko-universe/actions/runs/34957065131) — same conclusion  
+**Tip SHA:** `6ee6cb9f6b4287fb871cd8cb23c544f77c8fa691` (`6ee6cb9`)  
+**Tip message:** `fix(phase1): ChatGPT blockers — commercial lock, revision-bound Approval, Countered rate RC`  
+**App lineage under tip:** `6ee6cb9` (ChatGPT blockers: commercial lock / revision-bound Approval / Countered rate RC) → `583e48b` (security review docs) → `2f43aa2` (Gate2 docs on 3d9ac65) → `3d9ac65` (D6 accept_counter BUYER_UNRESOLVED)  
+**Run (push):** [34960445631](https://github.com/AnubhavDubey02/fresko-universe/actions/runs/34960445631)  
+**PR twin:** [34960454085](https://github.com/AnubhavDubey02/fresko-universe/actions/runs/34960454085) — same conclusion  
 **Overall conclusion:** **success** (Smoke + Bench green)
 
 ## Pins (confirmed in Bench logs)
@@ -18,14 +18,14 @@
 
 Smoke pin assert also printed: `pins OK v15.120.1 v15.121.2`.
 
-## Job results (tip `3d9ac65`)
+## Job results (tip `6ee6cb9`)
 
 | Job | Conclusion |
 |-----|------------|
-| Smoke unit (Gate 1 / D4 / constants) | **success** — `Ran 58 tests in 0.037s` / OK |
-| Bench install + migrate + run-tests (pinned v15) | **success** — `Ran 61 tests in 4.122s` / OK / `==> CI bench OK` |
+| Smoke unit (Gate 1 / D4 / constants) | **success** — `Ran 75 tests in 0.082s` / OK |
+| Bench install + migrate + run-tests (pinned v15) | **success** — `Ran 75 tests in 4.948s` / OK / `==> CI bench OK` |
 
-**58 smoke passed**, **61 bench passed**, **0 failures**, **0 errors**.
+**75 smoke passed**, **75 bench passed**, **0 failures**, **0 errors**.
 
 ## Bench stage evidence (`==>` markers) — tip run
 
@@ -37,21 +37,21 @@ All infrastructure stages **passed**:
 4. Vendor + pip install + install-app fresko_universe — OK  
 5. migrate — OK  
 6. ERPNext `before_tests` — OK  
-7. `run-tests --app fresko_universe` — OK (`Ran 61 tests in 4.122s`)  
+7. `run-tests --app fresko_universe` — OK (`Ran 75 tests in 4.948s`)  
 8. `==> CI bench OK`
 
-## Count delta vs prior green `d785b63`
+## Count delta vs prior green `3d9ac65`
 
-| Suite | `d785b63` | `3d9ac65` | Delta |
-|-------|-----------|-----------|-------|
-| Smoke | 56 | 58 | +2 (D6 accept_counter BUYER_UNRESOLVED smoke) |
-| Bench | 59 | 61 | +2 (D6 accept_counter bench coverage) |
+| Suite | `3d9ac65` | `6ee6cb9` | Delta |
+|-------|----------|----------|-------|
+| Smoke | 58 | 75 | +17 (ChatGPT blocker coverage: commercial lock, revision-bind Approval, Countered rate RC, FSEC bind/ACL smokes) |
+| Bench | 61 | 75 | +14 (same blocker suite on bench) |
 
 Gate 1 fingerprint / D4 / D10 were **not** weakened.
 
 ## Success criteria mapping
 
-- (a) Phase1 CI green with migrate+tests evidence on **current tip** — **met** (`3d9ac65`, Smoke 58 + Bench 61).  
+- (a) Phase1 CI green with migrate+tests evidence on **current tip** — **met** (`6ee6cb9`, Smoke 75 + Bench 75).  
 - (b) No merge / no Phase 2 — **honored**.
 
 **Do not merge the PR. Do not start Phase 2.**
