@@ -32,9 +32,9 @@ def apply_rate_rules(deal_name: str):
         # Fail-closed: empty band must never auto-approve (F-M7 / Gate 1)
         deal.approval_required = 1
         deal.set_status("Approval Required")
-        # Preserve proposed_rate; keep approved_rate unset (Gate 1).
-        # Currency fields coerce None→0.0 on Document.save — force SQL NULL after.
-        deal.approved_rate = None
+        # Do not assign approved_rate on the Document: Currency None→0.0 plus
+        # has_value_changed trips commercial lock without allow_approval_write.
+        # Preserve proposed_rate; force SQL NULL after save (Gate 1 unset).
         _open_exception(
             deal,
             "RATE_POLICY_MISSING",
@@ -47,8 +47,8 @@ def apply_rate_rules(deal_name: str):
         ats = available_to_sell(deal.container, deal.lot_no, exclude_deal=deal.name, for_update=True)
         if flt(deal.qty) > ats:
             deal.approval_required = 1
-            deal.approved_rate = None
             deal.set_status("Approval Required")
+            # Keep approved_rate untouched on Document; NULL via post-save set_value.
             _open_exception(
                 deal,
                 "STOCK_SHORTFALL",
@@ -64,7 +64,7 @@ def apply_rate_rules(deal_name: str):
     else:
         # Policy resolved but out of band — Approval Required (RATE_FLOOR_BREACH path as today)
         deal.approval_required = 1
-        deal.approved_rate = None
+        # Do not assign approved_rate=None here (commercial lock / Currency coerce).
         deal.set_status("Approval Required")
 
     deal.save(ignore_permissions=True)
