@@ -32,3 +32,25 @@
 - **F-M7 closed:** empty-band auto-approve is no longer residual; Gate 1 enforces `policy_resolved` + `RATE_POLICY_MISSING`.
 - **Versions pinned:** Frappe `v15.120.1` / ERPNext `v15.121.2` — see `docs/VERSIONS.md` (provisional → pinned for Gate 2 CI).
 - **D4 tighter:** `accept_counter` only `deal.owner` or `deal.salesperson_user` — System Manager must not accept on behalf.
+
+## 2026-09-15 — Dependency Sovereignty / Free-Forever (LOCKED)
+
+Anubhav locked dependency policy:
+
+1. Prefer OSI permissive (MIT, Apache-2.0, BSD, ISC).
+2. GPL only with documented obligations.
+3. No critical dependence on source-available / fair-code / open-core commercial functionality without explicit approval.
+4. Record URL, license, exact version/commit, purpose in `docs/THIRD_PARTY.md`.
+5. Pin exact versions/SHAs.
+6. Strategic deps: Fresko-controlled fork or immutable source archive.
+7. Preserve copyright / LICENSE / NOTICE.
+8. No Fresko business logic inside upstream forks unless unavoidable — adapters / custom app.
+9. Provider integrations behind Fresko-owned interfaces.
+10. Upstream updates optional; must run last approved version.
+11. Before major greenfield: search mature OSS + license/security/maintenance review.
+12. Before adopt: compare maintenance cost vs engineering saved.
+
+**Process:** do not add dependencies automatically. Propose with function → candidate → license → maturity → code saved → risks → fork strategy → recommendation.
+
+Canonical docs: `docs/DEPENDENCY_POLICY.md`, `docs/THIRD_PARTY.md`.
+
