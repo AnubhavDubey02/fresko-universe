@@ -1,107 +1,100 @@
 #!/usr/bin/env bash
-# Gate 2: reproducible bench migrate + fresko_universe tests.
-# Pins from docs/VERSIONS.md — Frappe v15.120.1 / ERPNext v15.121.2
+# Gate 2: fresh bench → pinned Frappe/ERPNext → install fresko_universe → migrate → tests.
+# Intended for GitHub Actions (MariaDB service) or a sufficiently large local/CI runner.
+# Pins: .github/frappe-versions.json / docs/VERSIONS.md
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-FRAPPE_TAG="${FRAPPE_TAG:-v15.120.1}"
-FRAPPE_SHA="${FRAPPE_SHA:-9f8ae9cd25b6735be345da6cc12e9f5a96050c68}"
-ERPNEXT_TAG="${ERPNEXT_TAG:-v15.121.2}"
-ERPNEXT_SHA="${ERPNEXT_SHA:-df8b7f9648c2ec4da12db8c4022edc8dd1018c6b}"
-BENCH_DIR="${BENCH_DIR:-$ROOT/.bench/frappe-bench}"
-SITE="${SITE:-test.localhost}"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PIN_FILE="${ROOT}/.github/frappe-versions.json"
+BENCH_DIR="${BENCH_DIR:-${HOME}/frappe-bench}"
+SITE="${FRAPPE_SITE:-test.localhost}"
 DB_HOST="${DB_HOST:-127.0.0.1}"
-DB_PORT="${DB_PORT:-3307}"
-MYSQL_ROOT_PASSWORD="${MYSQL_ROOT_PASSWORD:-root}"
+DB_ROOT_PASSWORD="${DB_ROOT_PASSWORD:-root}"
+ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin}"
 
-echo "==> Gate 2 CI bench"
-echo "    Frappe  $FRAPPE_TAG @ $FRAPPE_SHA"
-echo "    ERPNext $ERPNEXT_TAG @ $ERPNEXT_SHA"
-
-# Always run smoke unit first (no bench required)
-echo "==> Smoke unit tests"
-( cd "$ROOT/fresko_universe" && python3 -m unittest tests.test_smoke_unit -v )
-
-# Start MariaDB + Redis if docker available
-if command -v docker >/dev/null 2>&1; then
-  echo "==> Starting docker-compose.bench.yml services"
-  docker compose -f "$ROOT/docker-compose.bench.yml" up -d
-  echo "==> Waiting for MariaDB"
-  for i in $(seq 1 60); do
-    if docker compose -f "$ROOT/docker-compose.bench.yml" exec -T mariadb \
-        mysqladmin ping -uroot -proot --silent 2>/dev/null; then
-      break
-    fi
-    sleep 2
-  done
-else
-  echo "WARN: docker not found — assuming MariaDB/Redis already on $DB_HOST:$DB_PORT"
+if [[ ! -f "${PIN_FILE}" ]]; then
+  echo "Missing pin file: ${PIN_FILE}" >&2
+  exit 1
 fi
 
-if ! command -v bench >/dev/null 2>&1; then
-  echo "==> Installing frappe-bench CLI"
-  pip install --upgrade pip
-  pip install 'frappe-bench==5.22.9'
+eval "$(python3 - <<PY
+import json
+from pathlib import Path
+pins = json.loads(Path("${PIN_FILE}").read_text())
+print(f"export FRAPPE_SHA={pins['frappe']['sha']}")
+print(f"export ERPNEXT_SHA={pins['erpnext']['sha']}")
+print(f"export FRAPPE_TAG={pins['frappe']['tag']}")
+print(f"export ERPNEXT_TAG={pins['erpnext']['tag']}")
+PY
+)"
+
+echo "==> Pins: Frappe ${FRAPPE_TAG} @ ${FRAPPE_SHA}"
+echo "==> Pins: ERPNext ${ERPNEXT_TAG} @ ${ERPNEXT_SHA}"
+
+if [[ ! -d "${BENCH_DIR}" ]]; then
+  echo "==> bench init ${BENCH_DIR}"
+  bench init "${BENCH_DIR}" \
+    --frappe-path https://github.com/frappe/frappe \
+    --frappe-branch version-15 \
+    --python python3 \
+    --skip-redis-config-generation \
+    --skip-assets
 fi
 
-mkdir -p "$(dirname "$BENCH_DIR")"
-if [[ ! -d "$BENCH_DIR" ]]; then
-  echo "==> bench init"
-  bench init --frappe-branch "$FRAPPE_TAG" --skip-redis-config-generation --skip-assets "$BENCH_DIR"
-fi
+cd "${BENCH_DIR}"
 
-cd "$BENCH_DIR"
-git -C apps/frappe fetch --tags origin || true
-git -C apps/frappe checkout "$FRAPPE_SHA"
-./env/bin/pip install -e apps/frappe
+echo "==> Checkout Frappe SHA"
+git -C apps/frappe fetch --tags origin
+git -C apps/frappe checkout --force "${FRAPPE_SHA}"
 
 if [[ ! -d apps/erpnext ]]; then
-  bench get-app erpnext --branch "$ERPNEXT_TAG"
+  echo "==> get-app erpnext"
+  bench get-app erpnext https://github.com/frappe/erpnext --branch version-15 --skip-assets || \
+    bench get-app https://github.com/frappe/erpnext --branch version-15
 fi
-git -C apps/erpnext fetch --tags origin || true
-git -C apps/erpnext checkout "$ERPNEXT_SHA"
-./env/bin/pip install -e apps/erpnext
+git -C apps/erpnext fetch --tags origin
+git -C apps/erpnext checkout --force "${ERPNEXT_SHA}"
 
-bench set-config -g db_host "$DB_HOST"
-# MariaDB may be on non-default port via compose
-export MYSQL_HOST="$DB_HOST"
-bench set-config -g redis_cache "redis://127.0.0.1:6379"
-bench set-config -g redis_queue "redis://127.0.0.1:6380"
-bench set-config -g redis_socketio "redis://127.0.0.1:6379"
+# Installable app root is monorepo subfolder fresko_universe/
+APP_SRC="${ROOT}/fresko_universe"
+if [[ ! -d apps/fresko_universe ]]; then
+  echo "==> Link fresko_universe from ${APP_SRC}"
+  ln -sfn "${APP_SRC}" apps/fresko_universe
+fi
+# Ensure bench sees the app
+if ! grep -qx 'fresko_universe' sites/apps.txt 2>/dev/null; then
+  echo fresko_universe >> sites/apps.txt
+fi
+bench setup requirements || true
 
-if [[ ! -d "sites/$SITE" ]]; then
-  # Force TCP port when using compose-mapped 3307
-  if [[ "$DB_PORT" != "3306" ]]; then
-    export BENCH_MYSQL_PORT="$DB_PORT"
-  fi
-  bench new-site "$SITE" \
-    --mariadb-root-password "$MYSQL_ROOT_PASSWORD" \
-    --admin-password admin \
+# MariaDB common.conf for CI (remote TCP root)
+mkdir -p sites
+cat > sites/common_site_config.json <<JSON
+{
+  "db_host": "${DB_HOST}",
+  "redis_cache": "redis://127.0.0.1:6379",
+  "redis_queue": "redis://127.0.0.1:6379",
+  "redis_socketio": "redis://127.0.0.1:6379",
+  "developer_mode": 1
+}
+JSON
+
+if [[ ! -d "sites/${SITE}" ]]; then
+  echo "==> new-site ${SITE}"
+  bench new-site "${SITE}" \
+    --mariadb-root-password "${DB_ROOT_PASSWORD}" \
+    --admin-password "${ADMIN_PASSWORD}" \
     --no-mariadb-socket \
-    --db-host "$DB_HOST" \
-    --db-port "$DB_PORT" \
-    --db-root-username root || true
-  # Fallback without --db-port if older bench
-  if [[ ! -d "sites/$SITE" ]]; then
-    bench new-site "$SITE" \
-      --mariadb-root-password "$MYSQL_ROOT_PASSWORD" \
-      --admin-password admin \
-      --no-mariadb-socket \
-      --db-root-username root
-  fi
-  bench --site "$SITE" install-app erpnext
+    --db-host "${DB_HOST}" \
+    --set-default
 fi
 
-# Link fresko_universe from repo checkout
-rm -rf apps/fresko_universe
-ln -sfn "$ROOT/fresko_universe" apps/fresko_universe
-./env/bin/pip install -e apps/fresko_universe
-bench --site "$SITE" install-app fresko_universe || true
-
+echo "==> install-app erpnext"
+bench --site "${SITE}" install-app erpnext || true
+echo "==> install-app fresko_universe"
+bench --site "${SITE}" install-app fresko_universe
 echo "==> migrate"
-bench --site "$SITE" migrate
-
+bench --site "${SITE}" migrate
 echo "==> run-tests --app fresko_universe"
-bench --site "$SITE" run-tests --app fresko_universe
-
-echo "==> Gate 2 PASS"
+bench --site "${SITE}" run-tests --app fresko_universe
+echo "==> CI bench OK"
