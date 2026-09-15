@@ -118,20 +118,17 @@ def _make_evidence(deal):
     ).insert(ignore_permissions=True)
 
 
-def _make_revision_approval(deal, reason="revision approved"):
-    return frappe.get_doc(
-        {
-            "doctype": "Fresko Approval",
-            "deal": deal.name,
-            "decision": "APPROVE",
-            "decision_rate": deal.approved_rate or deal.proposed_rate,
-            "proposed_rate": deal.proposed_rate,
-            "rate_floor": deal.rate_floor,
-            "rate_ceiling": deal.rate_ceiling,
-            "approver": frappe.session.user,
-            "reason": reason,
-        }
-    ).insert(ignore_permissions=True)
+def _make_revision_approval(deal, revision_name, reason="revision approved"):
+    """Prefer approvals.create_revision_approval; fallback insert with revision bind."""
+    from fresko_universe.approvals import create_revision_approval
+
+    result = create_revision_approval(
+        revision_name,
+        "APPROVE",
+        decision_rate=deal.approved_rate or deal.proposed_rate,
+        reason=reason,
+    )
+    return frappe.get_doc("Fresko Approval", result["approval"])
 
 
 class TestFreskoDeal(FrappeTestCase):
@@ -289,12 +286,15 @@ class TestFreskoDeal(FrappeTestCase):
         )
         deal.reload()
         self.assertEqual(deal.status, "Countered")
-        self.assertEqual(flt(deal.approved_rate), 11)
+        # RC: Countered must not set approved_rate; amount uses proposed_rate
+        self.assertFalse(deal.approved_rate)
+        self.assertEqual(flt(deal.amount), flt(deal.qty) * flt(deal.proposed_rate))
         ats = available_to_sell(self.container.name, "LOT-A", exclude_deal=None)
         self.assertEqual(ats, 100)
         deals_api.accept_counter(deal.name)
         deal.reload()
         self.assertEqual(deal.status, "Approved")
+        self.assertEqual(flt(deal.approved_rate), 11)
         self.assertEqual(available_to_sell(self.container.name, "LOT-A"), 90)
 
     def test_accept_counter_empty_customer_opens_buyer_unresolved(self):
@@ -374,7 +374,7 @@ class TestFreskoDeal(FrappeTestCase):
             reason="customer negotiation",
             supporting_evidence=ev.name,
         )
-        apr = _make_revision_approval(deal, reason="approve rate revision")
+        apr = _make_revision_approval(deal, rev["revision"], reason="approve rate revision")
         applied = deals_api.apply_revision(rev["revision"], approval_name=apr.name)
         deal.reload()
         self.assertEqual(flt(deal.approved_rate), 18)
@@ -528,4 +528,239 @@ class TestFreskoDeal(FrappeTestCase):
         # Administrator is System Manager but not owner → must throw
         with self.assertRaises(frappe.ValidationError):
             deals_api.accept_counter(deal.name)
+
+
+    def test_countered_approved_rate_null_until_accept(self):
+        """RC: COUNTER stores decision_rate on Approval; Deal.approved_rate None until accept."""
+        deal = _make_deal(self.container, rate=5, alias="RCCounterNull")
+        deals_api.apply_rate_rules(deal.name)
+        result = approvals_api.decide(
+            deal.name, "COUNTER", decision_rate=11.5, reason="counter null rate"
+        )
+        deal.reload()
+        self.assertEqual(deal.status, "Countered")
+        self.assertIsNone(deal.approved_rate)
+        self.assertEqual(flt(result["decision_rate"]), 11.5)
+        self.assertFalse(result["approved_rate"])
+        self.assertEqual(flt(deal.amount), flt(deal.qty) * 5)
+        apr = frappe.get_doc("Fresko Approval", result["approval"])
+        self.assertEqual(apr.decision, "COUNTER")
+        self.assertEqual(flt(apr.decision_rate), 11.5)
+        deals_api.accept_counter(deal.name)
+        deal.reload()
+        self.assertEqual(deal.status, "Approved")
+        self.assertEqual(flt(deal.approved_rate), 11.5)
+        self.assertEqual(flt(deal.amount), flt(deal.qty) * 11.5)
+
+    def test_cancelled_after_approved_blocks_direct_qty_edit(self):
+        deal = _make_deal(self.container, rate=20, alias="LockCancelQty")
+        deals_api.apply_rate_rules(deal.name)
+        deal.reload()
+        deals_api.cancel_deal(deal.name, cancel_reason="buyer backed out")
+        deal.reload()
+        self.assertEqual(deal.status, "Cancelled")
+        deal.qty = flt(deal.qty) + 1
+        with self.assertRaises(frappe.ValidationError):
+            deal.save(ignore_permissions=True)
+
+    def test_cancelled_blocks_direct_lot_customer_container(self):
+        deal = _make_deal(self.container, rate=20, alias="LockCancelLot")
+        deals_api.apply_rate_rules(deal.name)
+        deals_api.cancel_deal(deal.name, cancel_reason="cancel freeze")
+        deal.reload()
+        for field, value in (
+            ("lot_no", "NOPE"),
+            ("customer", "SOME-CUST"),
+            ("container", "NOPE-CON"),
+        ):
+            deal.reload()
+            setattr(deal, field, value)
+            with self.assertRaises(frappe.ValidationError):
+                deal.save(ignore_permissions=True)
+
+    def test_rejected_blocks_direct_commercial_edit(self):
+        deal = _make_deal(self.container, rate=5, alias="LockReject")
+        deals_api.apply_rate_rules(deal.name)
+        approvals_api.decide(deal.name, "REJECT", reason="no deal")
+        deal.reload()
+        self.assertEqual(deal.status, "Rejected")
+        deal.qty = flt(deal.qty) + 2
+        with self.assertRaises(frappe.ValidationError):
+            deal.save(ignore_permissions=True)
+        deal.reload()
+        deal.proposed_rate = 99
+        with self.assertRaises(frappe.ValidationError):
+            deal.save(ignore_permissions=True)
+
+    def test_disputed_blocks_direct_commercial_edit(self):
+        deal = _make_deal(self.container, rate=20, alias="LockDispute")
+        deals_api.apply_rate_rules(deal.name)
+        deal.reload()
+        deal.flags.allow_status_transition = True
+        deal.status = "Disputed"
+        deal.save(ignore_permissions=True)
+        deal.reload()
+        self.assertEqual(deal.status, "Disputed")
+        deal.qty = flt(deal.qty) + 1
+        with self.assertRaises(frappe.ValidationError):
+            deal.save(ignore_permissions=True)
+
+    def test_apply_revision_still_succeeds_with_revision_bound_approval(self):
+        deal = _make_deal(self.container, rate=20, alias="RevBoundOk")
+        deals_api.apply_rate_rules(deal.name)
+        deal.reload()
+        ev = _make_evidence(deal)
+        rev = deals_api.request_revision(
+            deal.name,
+            "approved_rate",
+            "17",
+            reason="legit revision",
+            supporting_evidence=ev.name,
+        )
+        apr = _make_revision_approval(deal, rev["revision"], reason="approve bound")
+        applied = deals_api.apply_revision(rev["revision"], approval_name=apr.name)
+        deal.reload()
+        self.assertEqual(flt(deal.approved_rate), 17)
+        self.assertEqual(applied["status"], "Applied")
+        apr.reload()
+        self.assertEqual(int(apr.consumed or 0), 1)
+
+    def test_apply_revision_rejects_deal_only_unbound_approval(self):
+        deal = _make_deal(self.container, rate=20, alias="RevUnbound")
+        deals_api.apply_rate_rules(deal.name)
+        deal.reload()
+        ev = _make_evidence(deal)
+        rev = deals_api.request_revision(
+            deal.name,
+            "approved_rate",
+            "16",
+            reason="needs revision bind",
+            supporting_evidence=ev.name,
+        )
+        # Deal-only Approval (no revision link) — must fail
+        apr = frappe.get_doc(
+            {
+                "doctype": "Fresko Approval",
+                "deal": deal.name,
+                "decision": "APPROVE",
+                "decision_rate": 16,
+                "proposed_rate": deal.proposed_rate,
+                "rate_floor": deal.rate_floor,
+                "rate_ceiling": deal.rate_ceiling,
+                "approver": frappe.session.user,
+                "reason": "unbound deal-only",
+            }
+        ).insert(ignore_permissions=True)
+        with self.assertRaises(frappe.PermissionError):
+            deals_api.apply_revision(rev["revision"], approval_name=apr.name)
+
+    def test_apply_revision_rejects_mismatched_revision_bind(self):
+        deal = _make_deal(self.container, rate=20, alias="RevMismatch")
+        deals_api.apply_rate_rules(deal.name)
+        deal.reload()
+        ev = _make_evidence(deal)
+        rev1 = deals_api.request_revision(
+            deal.name, "approved_rate", "15", reason="r1", supporting_evidence=ev.name
+        )
+        rev2 = deals_api.request_revision(
+            deal.name, "qty", "8", reason="r2", supporting_evidence=ev.name
+        )
+        apr = _make_revision_approval(deal, rev1["revision"], reason="bound to rev1")
+        with self.assertRaises(frappe.PermissionError):
+            deals_api.apply_revision(rev2["revision"], approval_name=apr.name)
+
+    def test_apply_revision_replay_consumed_fails(self):
+        deal = _make_deal(self.container, rate=20, alias="RevReplay")
+        deals_api.apply_rate_rules(deal.name)
+        deal.reload()
+        ev = _make_evidence(deal)
+        rev = deals_api.request_revision(
+            deal.name,
+            "approved_rate",
+            "14",
+            reason="first apply",
+            supporting_evidence=ev.name,
+        )
+        apr = _make_revision_approval(deal, rev["revision"], reason="consume me")
+        deals_api.apply_revision(rev["revision"], approval_name=apr.name)
+        # Second Pending revision trying to reuse consumed Approval
+        rev2 = deals_api.request_revision(
+            deal.name,
+            "approved_rate",
+            "13",
+            reason="replay",
+            supporting_evidence=ev.name,
+        )
+        with self.assertRaises(frappe.PermissionError):
+            deals_api.apply_revision(rev2["revision"], approval_name=apr.name)
+
+    def test_apply_revision_stale_old_value_fails(self):
+        deal = _make_deal(self.container, rate=20, alias="RevStale")
+        deals_api.apply_rate_rules(deal.name)
+        deal.reload()
+        ev = _make_evidence(deal)
+        rev = deals_api.request_revision(
+            deal.name,
+            "approved_rate",
+            "19",
+            reason="stale check",
+            supporting_evidence=ev.name,
+        )
+        apr = _make_revision_approval(deal, rev["revision"], reason="stale")
+        # Drift deal field under commercial revision flag before apply
+        deal.flags.allow_commercial_revision = True
+        deal.flags.allow_approval_write = True
+        deal.approved_rate = 18
+        deal.save(ignore_permissions=True)
+        with self.assertRaises(frappe.ValidationError):
+            deals_api.apply_revision(rev["revision"], approval_name=apr.name)
+
+    def test_decide_oversell_rolls_back_when_deal_save_fails(self):
+        """Atomicity: Exception+Approval must not remain if path errors before commit.
+
+        Injects after Approval insert (OVERSELL opens Exception first). Uses a DB
+        savepoint rollback to emulate request-abort before decide()'s frappe.db.commit().
+        Harness limit: does not simulate crash after an explicit commit has succeeded.
+        """
+        d1 = _make_deal(self.container, qty=100, rate=20, alias="AtomFill")
+        deals_api.apply_rate_rules(d1.name)
+        d2 = _make_deal(self.container, qty=10, rate=5, alias="AtomOver")
+        deals_api.apply_rate_rules(d2.name)
+        d2.reload()
+        self.assertEqual(d2.status, "Approval Required")
+
+        from fresko_universe import approvals as approvals_mod
+
+        real_insert = approvals_mod._insert_approval
+
+        def insert_then_fail(*args, **kwargs):
+            ap = real_insert(*args, **kwargs)
+            raise RuntimeError("forced failure after Approval insert")
+
+        before_ex = frappe.db.count("Fresko Exception", {"deal": d2.name})
+        before_ap = frappe.db.count("Fresko Approval", {"deal": d2.name})
+        frappe.db.savepoint("fresko_atomicity_probe")
+        approvals_mod._insert_approval = insert_then_fail
+        try:
+            with self.assertRaises(RuntimeError):
+                approvals_api.decide(
+                    d2.name,
+                    "OVERSELL_OVERRIDE",
+                    reason="atomicity probe",
+                    oversell_override=1,
+                )
+        finally:
+            approvals_mod._insert_approval = real_insert
+            frappe.db.rollback(save_point="fresko_atomicity_probe")
+
+        d2.reload()
+        self.assertEqual(d2.status, "Approval Required")
+        self.assertEqual(
+            frappe.db.count("Fresko Approval", {"deal": d2.name}),
+            before_ap,
+        )
+        self.assertEqual(
+            frappe.db.count("Fresko Exception", {"deal": d2.name}),
+            before_ex,
+        )
 

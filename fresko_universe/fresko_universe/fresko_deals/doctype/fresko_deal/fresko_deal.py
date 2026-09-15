@@ -259,7 +259,12 @@ class FreskoDeal(Document):
             frappe.throw("Cannot set Reconciled while BUYER_UNRESOLVED Exception is open")
 
     def _compute_amount(self):
-        rate = self.approved_rate if self.approved_rate is not None else self.proposed_rate
+        # RC: Countered must not present unaccepted counter as approved commercial amount.
+        # Counter rate lives on Approval.decision_rate; approved_rate stays NULL until accept.
+        if self.status == "Countered" or self.approved_rate is None:
+            rate = self.proposed_rate
+        else:
+            rate = self.approved_rate
         self.amount = flt(self.qty) * flt(rate)
 
     def make_fingerprint(self) -> str:

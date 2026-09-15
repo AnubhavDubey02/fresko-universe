@@ -83,6 +83,10 @@ class TestStateMachine(unittest.TestCase):
         # F-H4
         self.assertIn("Approval Required", COMMERCIAL_LOCK_STATUSES)
 
+    def test_commercial_lock_includes_terminal_statuses(self):
+        for st in ("Cancelled", "Rejected", "Disputed"):
+            self.assertIn(st, COMMERCIAL_LOCK_STATUSES)
+
     def test_d10_oversell_system_manager_only(self):
         self.assertEqual(OVERSELL_OVERRIDE_ROLES, frozenset({"System Manager"}))
         self.assertNotIn("Fresko Approver", OVERSELL_OVERRIDE_ROLES)

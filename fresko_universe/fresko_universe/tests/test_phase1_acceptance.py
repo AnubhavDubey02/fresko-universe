@@ -13,7 +13,7 @@ from fresko_universe.deals import (
     cancel_deal,
     request_revision,
 )
-from fresko_universe.approvals import decide
+from fresko_universe.approvals import create_revision_approval, decide
 from fresko_universe.tests.utils import ensure_commercially_approved, ensure_masters, make_container, make_deal
 
 
@@ -127,29 +127,21 @@ class TestPhase1Acceptance(FrappeTestCase):
             supporting_evidence=ev.name,
         )
         self.assertIn("revision", rev)
-        apr = frappe.get_doc(
-            {
-                "doctype": "Fresko Approval",
-                "deal": d.name,
-                "decision": "APPROVE",
-                "decision_rate": 55,
-                "proposed_rate": d.proposed_rate,
-                "rate_floor": d.rate_floor,
-                "rate_ceiling": d.rate_ceiling,
-                "approver": frappe.session.user,
-                "reason": "approve commercial revision",
-            }
-        ).insert(ignore_permissions=True)
-        applied = apply_revision(rev["revision"], approval_name=apr.name)
+        apr_res = create_revision_approval(
+            rev["revision"], "APPROVE", decision_rate=55, reason="approve commercial revision"
+        )
+        applied = apply_revision(rev["revision"], approval_name=apr_res["approval"])
         self.assertEqual(applied["status"], "Applied")
-        self.assertEqual(applied["approval_reference"], apr.name)
+        self.assertEqual(applied["approval_reference"], apr_res["approval"])
         self.assertEqual(applied["supporting_evidence"], ev.name)
         d.reload()
         self.assertEqual(d.approved_rate, 55)
         trail = frappe.get_doc("Fresko Revision", rev["revision"])
-        self.assertEqual(trail.approval_reference, apr.name)
+        self.assertEqual(trail.approval_reference, apr_res["approval"])
         self.assertEqual(trail.supporting_evidence, ev.name)
         self.assertEqual(trail.old_value, "50.0" if trail.old_value == "50.0" else trail.old_value)
+        apr = frappe.get_doc("Fresko Approval", apr_res["approval"])
+        self.assertEqual(int(apr.consumed or 0), 1)
         # freeze: cannot alter historical fields after Applied
         trail.old_value = "hacked"
         with self.assertRaises(frappe.ValidationError):
@@ -257,8 +249,9 @@ class TestPhase1Acceptance(FrappeTestCase):
         decide(d.name, "COUNTER", decision_rate=80, reason="counter offer")
         d.reload()
         self.assertEqual(d.status, "Countered")
-        self.assertEqual(d.approved_rate, 80)
+        self.assertFalse(d.approved_rate)  # RC: NULL until accept_counter
         self.assertEqual(d.proposed_rate, 50)
+        self.assertEqual(flt_status(d.amount), flt_status(d.qty) * flt_status(d.proposed_rate))
         # F-C1: decide(APPROVE) from Countered must fail
         with self.assertRaises(frappe.ValidationError):
             decide(d.name, "APPROVE", decision_rate=80, reason="bypass")
@@ -271,6 +264,9 @@ class TestPhase1Acceptance(FrappeTestCase):
         d.reload()
         result = accept_counter(d.name)
         self.assertEqual(result["status"], "Approved")
+        self.assertEqual(result["approved_rate"], 80)
+        d.reload()
+        self.assertEqual(d.approved_rate, 80)
 
     def test_decide_rejects_from_proposed(self):
         c = make_container(self.masters, container_no=f"H2-{frappe.generate_hash(length=6)}", rate_floor=100)

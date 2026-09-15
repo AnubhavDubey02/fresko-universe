@@ -10,6 +10,7 @@ from fresko_universe.ats import available_to_sell
 from fresko_universe.constants import COMMERCIAL_LOCK_STATUSES, MATERIAL_REVISION_FIELDS
 from fresko_universe.permissions import (
     assert_approval_bound_for_revision,
+    assert_approval_not_consumed,
     assert_approval_not_stale,
     assert_can_apply_rate_rules,
     assert_can_apply_revision,
@@ -117,6 +118,9 @@ def accept_counter(deal_name: str):
     D4: salesperson/originator explicitly accepts COUNTER → Approved.
     Only path from Countered → Approved (F-C1).
     ACL: deal.owner or deal.salesperson_user only — never System Manager / Approver on behalf.
+
+    RC: load COUNTER Approval.decision_rate → copy to Deal.approved_rate (Countered leaves
+    approved_rate NULL so amount stays on proposed_rate until accept).
     """
     deal = frappe.get_doc("Fresko Deal", deal_name)
     if deal.status != "Countered":
@@ -132,20 +136,46 @@ def accept_counter(deal_name: str):
             _("Only the deal owner or assigned salesperson_user may accept a counter (D4)")
         )
 
-    if deal.approved_rate is None:
-        frappe.throw(_("Countered deal has no approved_rate (decision_rate) to accept"))
+    counter_rate = _load_counter_decision_rate(deal)
+    if counter_rate is None:
+        frappe.throw(_("Countered deal has no COUNTER Approval.decision_rate to accept"))
 
     # ATS re-check under lock before becoming Approved
     ats = available_to_sell(deal.container, deal.lot_no, exclude_deal=deal.name, for_update=True)
     if flt(deal.qty) > ats:
         frappe.throw(_("Cannot accept counter: qty {0} > ATS {1}").format(deal.qty, ats))
 
+    deal.flags.allow_approval_write = True
+    deal.approved_rate = counter_rate
     deal.set_status("Approved")
     _maybe_open_buyer_unresolved(deal)
     # FSEC-001 audit: ignore_permissions AFTER D4 ownership ACL above.
     deal.save(ignore_permissions=True)
     frappe.db.commit()
     return {"name": deal.name, "status": deal.status, "approved_rate": deal.approved_rate}
+
+
+def _load_counter_decision_rate(deal):
+    """Latest/open COUNTER Approval for this deal; prefer deal.approval if it is COUNTER."""
+    if deal.approval and frappe.db.exists("Fresko Approval", deal.approval):
+        row = frappe.db.get_value(
+            "Fresko Approval",
+            deal.approval,
+            ["decision", "decision_rate"],
+            as_dict=True,
+        )
+        if row and (row.decision or "").upper() == "COUNTER" and row.decision_rate is not None:
+            return flt(row.decision_rate)
+    rows = frappe.get_all(
+        "Fresko Approval",
+        filters={"deal": deal.name, "decision": "COUNTER"},
+        fields=["name", "decision_rate"],
+        order_by="creation desc",
+        limit=1,
+    )
+    if not rows or rows[0].decision_rate is None:
+        return None
+    return flt(rows[0].decision_rate)
 
 
 @frappe.whitelist()
@@ -296,7 +326,7 @@ def request_revision(
         "revision": rev.name,
         "status": rev.status,
         "message": (
-            "Revision pending — link Fresko Approval then call apply_revision"
+            "Revision pending — call approvals.create_revision_approval then apply_revision"
             if fieldname in MATERIAL_REVISION_FIELDS
             else "Revision pending approval — call apply_revision after Approval"
         ),
@@ -307,8 +337,10 @@ def request_revision(
 def apply_revision(revision_name: str, approval_name: str | None = None):
     """Apply a Pending Fresko Revision onto its parent Deal.
 
-    Material fields require a Fresko Approval bound to this deal with APPROVE /
-    OVERSELL_OVERRIDE. Caller must be Fresko Approver or System Manager (FSEC-002).
+    Material fields require a Fresko Approval bound to this deal AND this revision
+    (approvals.create_revision_approval) with APPROVE / OVERSELL_OVERRIDE.
+    Deal-only Approvals are rejected. Approval is marked consumed (replay fails).
+    Caller must be Fresko Approver or System Manager (FSEC-002).
     """
     assert_can_apply_revision()
     rev = frappe.get_doc("Fresko Revision", revision_name)
@@ -324,6 +356,7 @@ def apply_revision(revision_name: str, approval_name: str | None = None):
     if fieldname in ("approved_rate", "qty"):
         new_value = flt(new_value)
 
+    approval = None
     if fieldname in MATERIAL_REVISION_FIELDS:
         approval_ref = approval_name or rev.approval_reference
         if not approval_ref:
@@ -336,8 +369,10 @@ def apply_revision(revision_name: str, approval_name: str | None = None):
         if not frappe.db.exists("Fresko Approval", approval_ref):
             frappe.throw(_("Fresko Approval {0} not found").format(approval_ref))
         approval = frappe.get_doc("Fresko Approval", approval_ref)
-        assert_approval_bound_for_revision(approval, deal)
+        assert_approval_bound_for_revision(approval, deal, revision=rev)
+        assert_approval_not_consumed(approval)
         assert_approval_not_stale(approval, rev.name)
+        _assert_revision_old_value_matches_deal(deal, rev)
         if not rev.supporting_evidence:
             if deal.status in COMMERCIAL_LOCK_STATUSES:
                 frappe.throw(
@@ -360,7 +395,7 @@ def apply_revision(revision_name: str, approval_name: str | None = None):
     if fieldname == "approved_rate":
         deal.flags.allow_approval_write = True
     deal.set(fieldname, new_value)
-    # FSEC-001/002 audit: ignore_permissions AFTER role + Approval↔Deal bind checks.
+    # FSEC-001/002 audit: ignore_permissions AFTER role + Approval↔Deal↔Revision bind checks.
     deal.save(ignore_permissions=True)
 
     if approval_name:
@@ -368,6 +403,9 @@ def apply_revision(revision_name: str, approval_name: str | None = None):
     rev.status = "Applied"
     rev.flags.allow_revision_apply = True
     rev.save(ignore_permissions=True)
+
+    if approval is not None:
+        _mark_approval_consumed(approval)
 
     if fieldname == "customer" and new_value:
         _resolve_buyer_exceptions(deal.name)
@@ -381,6 +419,39 @@ def apply_revision(revision_name: str, approval_name: str | None = None):
         "approval_reference": rev.approval_reference,
         "supporting_evidence": rev.supporting_evidence,
     }
+
+
+def _assert_revision_old_value_matches_deal(deal, rev) -> None:
+    """Stale guard: Deal field must still equal revision.old_value at apply time."""
+    current = deal.get(rev.fieldname)
+    if rev.fieldname in ("approved_rate", "qty"):
+        if flt(current) != flt(rev.old_value or 0):
+            frappe.throw(
+                _(
+                    "Revision {0} is stale: deal.{1} is {2}, revision.old_value is {3}"
+                ).format(rev.name, rev.fieldname, current, rev.old_value)
+            )
+        return
+    cur_s = "" if current is None else str(current)
+    old_s = "" if rev.old_value is None else str(rev.old_value)
+    if cur_s != old_s:
+        frappe.throw(
+            _(
+                "Revision {0} is stale: deal.{1} is {2!r}, revision.old_value is {3!r}"
+            ).format(rev.name, rev.fieldname, cur_s, old_s)
+        )
+
+
+def _mark_approval_consumed(approval) -> None:
+    # Append-only DocType: flag via SQL after apply succeeds (Document.validate blocks edits).
+    frappe.db.set_value(
+        "Fresko Approval",
+        approval.name,
+        "consumed",
+        1,
+        update_modified=False,
+    )
+    approval.consumed = 1
 
 
 @frappe.whitelist()

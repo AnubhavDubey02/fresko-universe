@@ -92,7 +92,7 @@ Source ledger: `docs/security/SECURITY_FINDINGS.md`. Enforcement = runtime gate,
 | Token | Meaning in code | Silent certainty risk |
 |---|---|---|
 | **PROPOSED** | Initial Deal.status; does **not** reduce ATS | Low |
-| **COUNTERED** | After `decide(COUNTER)`; `approved_rate` holds **counter decision_rate** awaiting accept; **does not** reduce ATS | **FLAG:** field named `approved_rate` stores **unaccepted** counter — readers may treat as commercially approved. `amount` uses `approved_rate if not None else proposed_rate` → Countered amount reflects counter before accept |
+| **COUNTERED** | After `decide(COUNTER)`; counter lives on Approval.`decision_rate`; Deal.`approved_rate` stays **NULL** until `accept_counter`; **does not** reduce ATS | **FIXED (RC):** amount uses `proposed_rate` while Countered / approved_rate unset; accept copies decision_rate → approved_rate |
 | **ACCEPTED / APPROVED** | Status string is **`Approved`** (and **`Auto Approved`**). No status named ACCEPTED; accept = `accept_counter` → Approved | Do not invent ACCEPTED status |
 | **BUYER_UNRESOLVED** | Exception type (not a Deal.status). Opened on auto-approve / decide APPROVE / `accept_counter` when `customer` empty | Low — all commercial approve paths covered |
 | **PENDING** | `Fresko Revision.status = Pending` (and payment statuses Payment Pending — different domain) | Avoid conflating Revision Pending with Deal Payment Pending |
@@ -105,8 +105,8 @@ Source ledger: `docs/security/SECURITY_FINDINGS.md`. Enforcement = runtime gate,
 
 | Field / signal | Multiple meanings / double-count risk |
 |---|---|
-| **`approved_rate`** | (a) Final commercial rate on Approved/Auto Approved; (b) **pending counter rate** while Countered; (c) forced NULL on Approval Required | High confusion / silent certainty — see §5 |
-| **`amount`** | `qty × (approved_rate if set else proposed_rate)` — on Countered equals counter×qty before accept | Derived commercial display may overstate certainty |
+| **`approved_rate`** | (a) Final commercial rate on Approved/Auto Approved; (b) **NULL while Countered** (counter on Approval.decision_rate); (c) forced NULL on Approval Required | RC corrected — see §5 |
+| **`amount`** | `qty × proposed_rate` while Countered / approved_rate unset; else `qty × approved_rate` | RC corrected |
 | **ATS `commercial_qty_for_ats`** | Partially Dispatched reserves `qty - dispatched` only (dispatched “freed” commercially while Phase 1 has no SLE) | Soft ATS vs physical stock can diverge — D2 OPEN |
 | **Cancelled + dispatched** | Cancelled still reserves `dispatched_qty` in ATS | Intentional (QA cancel-after-partial); easy to double-count if dashboards also sum dispatched separately |
 | **Container snapshot `approved_sold`** | Computed as `inward - ats` per lot | Must not be summed with Deal.qty from another query without status filters |

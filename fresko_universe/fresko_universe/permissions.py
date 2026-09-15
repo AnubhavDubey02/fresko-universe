@@ -112,8 +112,18 @@ def assert_can_apply_revision() -> None:
     )
 
 
-def assert_approval_bound_for_revision(approval, deal) -> None:
-    """FSEC-002: Approval must belong to this deal and affirm APPROVE/OVERSELL_OVERRIDE."""
+def assert_can_create_revision_approval() -> None:
+    """Only Fresko Approver or System Manager may mint revision-bound Approvals."""
+    if is_approver():
+        return
+    _throw_denied(
+        "create_revision_approval",
+        _("requires Fresko Approver or System Manager"),
+    )
+
+
+def assert_approval_bound_for_revision(approval, deal, revision=None) -> None:
+    """FSEC-002 + blocker 2: Approval must bind deal + revision + allowlisted decision."""
     approval_deal = getattr(approval, "deal", None)
     if str(approval_deal or "") != str(deal.name or ""):
         frappe.throw(
@@ -131,10 +141,41 @@ def assert_approval_bound_for_revision(approval, deal) -> None:
             ).format(approval.name, decision or "(empty)"),
             frappe.PermissionError,
         )
+    if revision is not None:
+        approval_revision = getattr(approval, "revision", None)
+        if not approval_revision:
+            frappe.throw(
+                _(
+                    "Fresko Approval {0} is Deal-only (no revision bind); "
+                    "material apply_revision requires approvals.create_revision_approval"
+                ).format(approval.name),
+                frappe.PermissionError,
+            )
+        if str(approval_revision) != str(revision.name):
+            frappe.throw(
+                _("Fresko Approval {0} is bound to revision {1}, not {2}").format(
+                    approval.name, approval_revision, revision.name
+                ),
+                frappe.PermissionError,
+            )
+
+
+def assert_approval_not_consumed(approval) -> None:
+    """Reject Approvals already consumed by a successful apply_revision."""
+    if int(getattr(approval, "consumed", 0) or 0):
+        frappe.throw(
+            _("Fresko Approval {0} already consumed (replay blocked)").format(approval.name),
+            frappe.PermissionError,
+        )
 
 
 def assert_approval_not_stale(approval, revision_name: str) -> None:
     """Reject Approvals already consumed by a different Applied revision."""
+    if int(getattr(approval, "consumed", 0) or 0):
+        frappe.throw(
+            _("Fresko Approval {0} already consumed (stale)").format(approval.name),
+            frappe.PermissionError,
+        )
     used = frappe.get_all(
         "Fresko Revision",
         filters={
@@ -186,9 +227,11 @@ def deal_permission_query(user: str | None = None) -> str:
 def deal_has_permission(doc, ptype: str | None = None, user: str | None = None) -> bool:
     """
     Align Desk access with D4 / COMMERCIAL_LOCK / DOCTYPE v1:
-    - Accounts: read only
+    - Accounts: read only (never write, including Cancelled/Rejected/Disputed)
     - Salesperson: create; read/write only on own (owner|salesperson_user); write only while Proposed
-    - Approver / SM: standard role perms (commercial field locks enforced in Document.validate)
+    - Approver: Desk write only while Proposed (post-Proposed via whitelist + flags)
+    - System Manager: unrestricted
+    Locked statuses (COMMERCIAL_LOCK including Cancelled/Rejected/Disputed): non-SM Desk write denied.
     """
     user = user or frappe.session.user
     ptype = ptype or "read"
@@ -205,7 +248,14 @@ def deal_has_permission(doc, ptype: str | None = None, user: str | None = None) 
     if ROLE_APPROVER in roles:
         if ptype == "delete":
             return False
-        return ptype in {"read", "write", "create", "print", "email", "report", "export", "share"}
+        if ptype == "write":
+            # Blocker 1: no free Desk write of commercial fields once past Proposed;
+            # whitelist + allow_commercial_revision / allow_approval_write is the SoR.
+            status = _deal_status(doc)
+            if status and status != "Proposed":
+                return False
+            return True
+        return ptype in {"read", "create", "print", "email", "report", "export", "share"}
 
     if ROLE_SALESPERSON in roles:
         if ptype == "create":
@@ -220,7 +270,7 @@ def deal_has_permission(doc, ptype: str | None = None, user: str | None = None) 
             if not _deal_is_assigned(doc, user):
                 return False
             status = _deal_status(doc)
-            # Desk coarse-write only while Proposed; post-Proposed mutations via whitelist + flags
+            # Desk coarse-write only while Proposed; Cancelled/Rejected/Disputed/Approved/… denied
             if status and status != "Proposed":
                 return False
             return True

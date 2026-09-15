@@ -9,6 +9,10 @@ from frappe.utils import flt
 from fresko_universe.ats import available_to_sell
 from fresko_universe.constants import OVERSELL_OVERRIDE_ROLES
 from fresko_universe.deals import _maybe_open_buyer_unresolved, _open_exception
+from fresko_universe.permissions import (
+    APPROVAL_APPLY_DECISIONS,
+    assert_can_create_revision_approval,
+)
 
 
 @frappe.whitelist()
@@ -23,6 +27,7 @@ def decide(
     Approver decision path.
     APPROVE with decision_rate → Approved (immediate different rate; not COUNTER).
     COUNTER → Countered (D4: requires accept_counter before Approved).
+      decision_rate lives on Approval only; Deal.approved_rate stays NULL until accept.
     REJECT → Rejected.
     OVERSELL_OVERRIDE → System Manager only (D10); commercial commitment + Exception.
 
@@ -117,13 +122,21 @@ def decide(
     if decision == "COUNTER":
         if rate is None:
             frappe.throw(_("COUNTER requires decision_rate"))
-        # D4: do NOT auto-approve; set Countered with approved_rate = decision_rate awaiting accept
+        # RC: store counter on Approval.decision_rate only; Deal.approved_rate stays NULL
+        # until accept_counter copies it (avoids silent commercial certainty while Countered).
         approval = _insert_approval(deal, "COUNTER", rate, reason, 0, None)
         deal.flags.allow_approval_write = True
-        deal.approved_rate = rate  # proposed counter rate held for accept
         deal.approval = approval.name
         deal.set_status("Countered")
         deal.save(ignore_permissions=True)
+        # Currency coerce may turn unset into 0.0 — force SQL NULL (same Gate 1 pattern).
+        frappe.db.set_value(
+            "Fresko Deal",
+            deal.name,
+            {"approved_rate": None},
+            update_modified=False,
+        )
+        deal.approved_rate = None
         frappe.db.commit()
         return _result(deal, approval)
 
@@ -136,11 +149,72 @@ def decide(
         return _result(deal, approval)
 
 
-def _insert_approval(deal, decision, rate, reason, oversell_override, exception_doc):
+@frappe.whitelist()
+def create_revision_approval(
+    revision_name: str,
+    decision: str,
+    decision_rate=None,
+    reason: str | None = None,
+):
+    """Create a Fresko Approval bound to a Pending Fresko Revision (deal + revision).
+
+    Material apply_revision requires this bind; Deal-only Approvals are not accepted.
+    """
+    assert_can_create_revision_approval()
+    decision = (decision or "").upper().strip()
+    if decision not in APPROVAL_APPLY_DECISIONS:
+        frappe.throw(
+            _("create_revision_approval decision must be APPROVE or OVERSELL_OVERRIDE "
+              "(got {0})").format(decision or "(empty)")
+        )
+    if not reason:
+        frappe.throw(_("Reason is required for revision approvals"))
+
+    rev = frappe.get_doc("Fresko Revision", revision_name)
+    if rev.status != "Pending":
+        frappe.throw(_("Revision {0} is not Pending").format(revision_name))
+    if rev.parent_doctype != "Fresko Deal":
+        frappe.throw(_("Only Fresko Deal revisions supported in Phase 1"))
+
+    deal = frappe.get_doc("Fresko Deal", rev.parent_name)
+    rate = flt(decision_rate) if decision_rate is not None else None
+    if rate is None:
+        rate = flt(deal.approved_rate if deal.approved_rate is not None else deal.proposed_rate)
+
+    approval = _insert_approval(
+        deal,
+        decision,
+        rate,
+        reason,
+        1 if decision == "OVERSELL_OVERRIDE" else 0,
+        None,
+        revision=rev.name,
+    )
+    # Link without Document.save (Pending trail stays append-friendly)
+    frappe.db.set_value(
+        "Fresko Revision",
+        rev.name,
+        "approval_reference",
+        approval.name,
+        update_modified=False,
+    )
+    rev.approval_reference = approval.name
+    frappe.db.commit()
+    return {
+        "approval": approval.name,
+        "revision": rev.name,
+        "deal": deal.name,
+        "decision": approval.decision,
+        "decision_rate": approval.decision_rate,
+    }
+
+
+def _insert_approval(deal, decision, rate, reason, oversell_override, exception_doc, revision=None):
     ap = frappe.get_doc(
         {
             "doctype": "Fresko Approval",
             "deal": deal.name,
+            "revision": revision,
             "decision": decision,
             "decision_rate": rate,
             "proposed_rate": deal.proposed_rate,
@@ -150,6 +224,7 @@ def _insert_approval(deal, decision, rate, reason, oversell_override, exception_
             "reason": reason,
             "oversell_override": oversell_override,
             "exception": exception_doc.name if exception_doc else None,
+            "consumed": 0,
         }
     )
     # Append-only Approval row; insert after decide() role gate (FSEC-001).
@@ -165,6 +240,7 @@ def _result(deal, approval):
         "proposed_rate": deal.proposed_rate,
         "approval": approval.name,
         "decision": approval.decision,
+        "decision_rate": approval.decision_rate,
     }
 
 

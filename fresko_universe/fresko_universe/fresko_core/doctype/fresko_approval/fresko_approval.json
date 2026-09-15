@@ -8,7 +8,7 @@
  "allow_rename": 0,
  "autoname": "hash",
  "title_field": "deal",
- "search_fields": "deal,decision,approver",
+ "search_fields": "deal,revision,decision,approver",
  "fields": [
   {
    "fieldname": "deal",
@@ -16,6 +16,13 @@
    "label": "Deal",
    "options": "Fresko Deal",
    "reqd": 1
+  },
+  {
+   "fieldname": "revision",
+   "fieldtype": "Link",
+   "label": "Revision",
+   "options": "Fresko Revision",
+   "description": "Required when Approval authorizes a material Fresko Revision apply"
   },
   {
    "fieldname": "decision",
@@ -81,6 +88,14 @@
    "label": "Linked Exception",
    "options": "Fresko Exception",
    "read_only": 1
+  },
+  {
+   "fieldname": "consumed",
+   "fieldtype": "Check",
+   "label": "Consumed",
+   "default": "0",
+   "read_only": 1,
+   "description": "Set when apply_revision successfully uses this Approval (replay blocked)"
   }
  ],
  "permissions": [

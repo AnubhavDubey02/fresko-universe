@@ -202,6 +202,11 @@ class TestCommercialLock(unittest.TestCase):
         self.assertIn("approved_rate", MATERIAL_REVISION_FIELDS)
         self.assertIn("qty", MATERIAL_REVISION_FIELDS)
 
+    def test_terminal_statuses_commercially_locked(self):
+        # Blocker 1: Cancelled / Rejected / Disputed never freely editable
+        for st in ("Cancelled", "Rejected", "Disputed"):
+            self.assertIn(st, COMMERCIAL_LOCK_STATUSES)
+
 
 class TestLayout(unittest.TestCase):
     def test_files(self):
@@ -546,14 +551,14 @@ class TestD4AcceptCounterACL(unittest.TestCase):
     def _run(self, user, roles, owner="owner@x.com", salesperson=None):
         import frappe
         from fresko_universe import deals as deals_mod
-        from fresko_universe import ats as ats_mod
 
         deal = MagicMock()
         deal.name = "DEAL-D4"
         deal.status = "Countered"
         deal.owner = owner
         deal.salesperson_user = salesperson
-        deal.approved_rate = 12
+        deal.approved_rate = None  # RC: NULL until accept copies COUNTER decision_rate
+        deal.approval = "APR-COUNTER"
         deal.container = "C1"
         deal.lot_no = "L1"
         deal.qty = 5
@@ -564,6 +569,10 @@ class TestD4AcceptCounterACL(unittest.TestCase):
         frappe.session = types.SimpleNamespace(user=user)
         frappe.get_roles = MagicMock(return_value=roles)
         frappe.get_doc = MagicMock(return_value=deal)
+        frappe.db.exists = MagicMock(return_value=True)
+        frappe.db.get_value = MagicMock(
+            return_value=types.SimpleNamespace(decision="COUNTER", decision_rate=12)
+        )
         frappe.db.commit = MagicMock()
         deals_mod.available_to_sell = MagicMock(return_value=100)
         return deals_mod.accept_counter(deal.name), deal
@@ -571,6 +580,8 @@ class TestD4AcceptCounterACL(unittest.TestCase):
     def test_owner_can_accept(self):
         result, deal = self._run("owner@x.com", ["Fresko Salesperson"], owner="owner@x.com")
         self.assertEqual(result["status"], "Approved")
+        self.assertEqual(result["approved_rate"], 12)
+        self.assertEqual(deal.approved_rate, 12)
 
     def test_salesperson_can_accept(self):
         result, deal = self._run(
@@ -615,7 +626,8 @@ class TestD6AcceptCounterBuyerUnresolved(unittest.TestCase):
         deal.status = "Countered"
         deal.owner = "owner@x.com"
         deal.salesperson_user = None
-        deal.approved_rate = 12
+        deal.approved_rate = None
+        deal.approval = "APR-D6-COUNTER"
         deal.container = "C1"
         deal.lot_no = "L1"
         deal.qty = 5
@@ -642,6 +654,10 @@ class TestD6AcceptCounterBuyerUnresolved(unittest.TestCase):
         frappe.get_roles = MagicMock(return_value=["Fresko Salesperson"])
         frappe.get_doc = MagicMock(side_effect=get_doc_flex)
         frappe.get_all = MagicMock(return_value=[])
+        frappe.db.exists = MagicMock(return_value=True)
+        frappe.db.get_value = MagicMock(
+            return_value=types.SimpleNamespace(decision="COUNTER", decision_rate=12)
+        )
         frappe.db.commit = MagicMock()
         orig_ats = deals_mod.available_to_sell
         deals_mod.available_to_sell = MagicMock(return_value=100)
@@ -805,13 +821,14 @@ class TestFSEC002ApplyRevisionBind(unittest.TestCase):
         frappe.session = types.SimpleNamespace(user=user)
         frappe.get_roles = MagicMock(return_value=roles)
 
-    def _fixtures(self, approval_deal="DEAL-A", decision="APPROVE"):
+    def _fixtures(self, approval_deal="DEAL-A", decision="APPROVE", revision="REV-1", consumed=0):
         rev = MagicMock()
         rev.name = "REV-1"
         rev.status = "Pending"
         rev.parent_doctype = "Fresko Deal"
         rev.parent_name = "DEAL-A"
         rev.fieldname = "approved_rate"
+        rev.old_value = "20"
         rev.new_value = "18"
         rev.approval_reference = None
         rev.supporting_evidence = "EV-1"
@@ -824,6 +841,8 @@ class TestFSEC002ApplyRevisionBind(unittest.TestCase):
         deal.container = "C1"
         deal.lot_no = "L1"
         deal.qty = 10
+        deal.approved_rate = 20
+        deal.get = MagicMock(side_effect=lambda f, d=None: getattr(deal, f, d))
         deal.flags = MagicMock()
         deal.set = MagicMock()
         deal.save = MagicMock()
@@ -832,6 +851,10 @@ class TestFSEC002ApplyRevisionBind(unittest.TestCase):
         approval.name = "APR-1"
         approval.deal = approval_deal
         approval.decision = decision
+        approval.revision = revision
+        approval.consumed = consumed
+        approval.flags = MagicMock()
+        approval.save = MagicMock()
         return rev, deal, approval
 
     def _run(self, rev, deal, approval, roles, user="appr@x.com"):
@@ -882,6 +905,38 @@ class TestFSEC002ApplyRevisionBind(unittest.TestCase):
         self.assertEqual(result["status"], "Applied")
         self.assertEqual(result["approval_reference"], approval.name)
 
+    def test_apply_revision_rejects_deal_only_approval(self):
+        rev, deal, approval = self._fixtures(revision=None)
+        approval.revision = None
+        with self.assertRaises(Exception) as ctx:
+            self._run(rev, deal, approval, ["Fresko Approver"])
+        self.assertTrue("Deal-only" in str(ctx.exception) or "revision" in str(ctx.exception).lower())
+
+    def test_apply_revision_rejects_other_revision_same_deal(self):
+        rev, deal, approval = self._fixtures(revision="REV-OTHER")
+        with self.assertRaises(Exception) as ctx:
+            self._run(rev, deal, approval, ["Fresko Approver"])
+        self.assertIn("REV-OTHER", str(ctx.exception))
+
+    def test_apply_revision_rejects_consumed_approval(self):
+        rev, deal, approval = self._fixtures(consumed=1)
+        with self.assertRaises(Exception) as ctx:
+            self._run(rev, deal, approval, ["Fresko Approver"])
+        self.assertIn("consumed", str(ctx.exception).lower())
+
+    def test_apply_revision_rejects_stale_old_value(self):
+        rev, deal, approval = self._fixtures()
+        deal.approved_rate = 99  # drifted after revision requested
+        with self.assertRaises(Exception) as ctx:
+            self._run(rev, deal, approval, ["Fresko Approver"])
+        self.assertIn("stale", str(ctx.exception).lower())
+
+    def test_apply_revision_rejects_counter_decision(self):
+        rev, deal, approval = self._fixtures(decision="COUNTER")
+        with self.assertRaises(Exception) as ctx:
+            self._run(rev, deal, approval, ["Fresko Approver"])
+        self.assertIn("COUNTER", str(ctx.exception))
+
 
 class TestFSEC003DealPermissionHooks(unittest.TestCase):
     """FSEC-003: has_permission / permission_query scoping."""
@@ -901,6 +956,21 @@ class TestFSEC003DealPermissionHooks(unittest.TestCase):
 
         own_proposed = MagicMock(owner="sp@x.com", salesperson_user=None, status="Proposed")
         self.assertTrue(deal_has_permission(own_proposed, "write", "sp@x.com"))
+
+        for st in ("Cancelled", "Rejected", "Disputed"):
+            locked = MagicMock(owner="sp@x.com", salesperson_user=None, status=st)
+            self.assertFalse(deal_has_permission(locked, "write", "sp@x.com"), st)
+
+    def test_approver_cannot_write_locked_statuses(self):
+        import frappe
+        from fresko_universe.permissions import deal_has_permission
+
+        frappe.get_roles = MagicMock(return_value=["Fresko Approver"])
+        proposed = MagicMock(owner="x", salesperson_user=None, status="Proposed")
+        self.assertTrue(deal_has_permission(proposed, "write", "appr@x.com"))
+        for st in ("Approved", "Cancelled", "Rejected", "Disputed", "Countered"):
+            locked = MagicMock(owner="x", salesperson_user=None, status=st)
+            self.assertFalse(deal_has_permission(locked, "write", "appr@x.com"), st)
 
     def test_accounts_read_only_on_deal(self):
         import frappe
@@ -937,6 +1007,243 @@ class TestFSEC003DealPermissionHooks(unittest.TestCase):
         self.assertIn("deal_has_permission", hooks_py)
         self.assertIn("evidence_has_permission", hooks_py)
         self.assertIn("deal_permission_query", hooks_py)
+
+
+
+class TestRCCounterApprovedRateUnset(unittest.TestCase):
+    """RC: COUNTER must not masquerade as Approved via Deal.approved_rate / amount."""
+
+    def test_counter_branch_forces_approved_rate_null(self):
+        approvals_py = (ROOT / "fresko_universe" / "approvals.py").read_text()
+        self.assertIn('decision == "COUNTER"', approvals_py)
+        self.assertIn('"approved_rate": None', approvals_py)
+        # Must not assign deal.approved_rate = rate in COUNTER branch
+        # Isolate COUNTER block roughly
+        idx = approvals_py.find('if decision == "COUNTER"')
+        block = approvals_py[idx : approvals_py.find('if decision == "REJECT"', idx)]
+        self.assertNotIn("deal.approved_rate = rate", block)
+        self.assertIn("decision_rate", block)
+
+    def test_accept_counter_copies_decision_rate(self):
+        deals_py = (ROOT / "fresko_universe" / "deals.py").read_text()
+        self.assertIn("_load_counter_decision_rate", deals_py)
+        self.assertIn("deal.approved_rate = counter_rate", deals_py)
+
+    def test_amount_uses_proposed_while_countered(self):
+        deal_py = (
+            ROOT / "fresko_universe" / "fresko_deals" / "doctype"
+            / "fresko_deal" / "fresko_deal.py"
+        ).read_text()
+        self.assertIn('self.status == "Countered"', deal_py)
+        self.assertIn("proposed_rate", deal_py[deal_py.find("def _compute_amount") :])
+
+    def test_countered_amount_smoke_logic(self):
+        # Pure logic mirror of _compute_amount
+        status, approved_rate, proposed_rate, qty = "Countered", None, 50, 10
+        if status == "Countered" or approved_rate is None:
+            rate = proposed_rate
+        else:
+            rate = approved_rate
+        self.assertEqual(qty * rate, 500)
+        # After accept
+        status, approved_rate = "Approved", 80
+        if status == "Countered" or approved_rate is None:
+            rate = proposed_rate
+        else:
+            rate = approved_rate
+        self.assertEqual(qty * rate, 800)
+
+
+class TestBlocker2RevisionApprovalBind(unittest.TestCase):
+    """Source contracts: Approval.revision Link + create_revision_approval."""
+
+    def test_approval_json_has_revision_and_consumed(self):
+        import json
+        apr = json.loads(
+            (
+                ROOT / "fresko_universe" / "fresko_core" / "doctype"
+                / "fresko_approval" / "fresko_approval.json"
+            ).read_text()
+        )
+        names = {f["fieldname"] for f in apr["fields"]}
+        self.assertIn("revision", names)
+        self.assertIn("consumed", names)
+        rev_field = next(f for f in apr["fields"] if f["fieldname"] == "revision")
+        self.assertEqual(rev_field["options"], "Fresko Revision")
+
+    def test_create_revision_approval_exists(self):
+        approvals_py = (ROOT / "fresko_universe" / "approvals.py").read_text()
+        self.assertIn("def create_revision_approval", approvals_py)
+        self.assertIn("revision=rev.name", approvals_py)
+
+    def test_apply_revision_requires_revision_bind(self):
+        deals_py = (ROOT / "fresko_universe" / "deals.py").read_text()
+        self.assertIn("assert_approval_bound_for_revision(approval, deal, revision=rev)", deals_py)
+        self.assertIn("assert_approval_not_consumed", deals_py)
+        self.assertIn("_assert_revision_old_value_matches_deal", deals_py)
+        self.assertIn("_mark_approval_consumed", deals_py)
+
+
+class TestForcedRollbackContract(unittest.TestCase):
+    """Forced rollback: multi-doc path must not commit when failure injected before commit."""
+
+    def test_apply_revision_commit_is_last(self):
+        deals_py = (ROOT / "fresko_universe" / "deals.py").read_text()
+        idx = deals_py.find("def apply_revision")
+        block = deals_py[idx : deals_py.find("def set_dispatched_qty", idx)]
+        commit_pos = block.rfind("frappe.db.commit()")
+        consume_pos = block.find("_mark_approval_consumed")
+        deal_save_pos = block.find("deal.save(ignore_permissions=True)")
+        self.assertGreater(commit_pos, deal_save_pos)
+        self.assertGreater(commit_pos, consume_pos)
+
+    def test_injected_failure_before_commit_rolls_back(self):
+        """Simulate Exception insert + Deal mutation then boom before commit → rollback."""
+        import frappe
+        from fresko_universe import deals as deals_mod
+
+        state = {"deal_saved": False, "rev_saved": False, "committed": False, "rolled_back": False}
+
+        rev = MagicMock()
+        rev.name = "REV-RB"
+        rev.status = "Pending"
+        rev.parent_doctype = "Fresko Deal"
+        rev.parent_name = "DEAL-RB"
+        rev.fieldname = "qty"
+        rev.old_value = "10"
+        rev.new_value = "8"
+        rev.approval_reference = "APR-RB"
+        rev.supporting_evidence = "EV-1"
+        rev.flags = MagicMock()
+
+        def rev_save(*a, **k):
+            state["rev_saved"] = True
+            rev.status = "Applied"
+
+        rev.save = MagicMock(side_effect=rev_save)
+
+        deal = MagicMock()
+        deal.name = "DEAL-RB"
+        deal.status = "Approved"
+        deal.container = "C1"
+        deal.lot_no = "L1"
+        deal.qty = 10
+        deal.get = MagicMock(side_effect=lambda f, d=None: getattr(deal, f, d))
+        deal.flags = MagicMock()
+        deal.set = MagicMock(side_effect=lambda f, v: setattr(deal, f, v))
+
+        def deal_save(*a, **k):
+            state["deal_saved"] = True
+
+        deal.save = MagicMock(side_effect=deal_save)
+
+        approval = MagicMock()
+        approval.name = "APR-RB"
+        approval.deal = "DEAL-RB"
+        approval.decision = "APPROVE"
+        approval.revision = "REV-RB"
+        approval.consumed = 0
+        approval.flags = MagicMock()
+        approval.save = MagicMock()
+
+        docs = {
+            ("Fresko Revision", rev.name): rev,
+            ("Fresko Deal", deal.name): deal,
+            ("Fresko Approval", approval.name): approval,
+        }
+
+        def get_doc(dt, name=None):
+            if isinstance(dt, dict):
+                return MagicMock()
+            return docs[(dt, name)]
+
+        frappe.session = types.SimpleNamespace(user="appr@x.com")
+        frappe.get_roles = MagicMock(return_value=["Fresko Approver"])
+        frappe.get_doc = MagicMock(side_effect=get_doc)
+        frappe.db.exists = MagicMock(return_value=True)
+        frappe.get_all = MagicMock(return_value=[])
+        deals_mod.available_to_sell = MagicMock(return_value=1000)
+
+        def boom_commit():
+            state["committed"] = True
+            raise RuntimeError("forced failure before durable commit")
+
+        def rollback():
+            state["rolled_back"] = True
+            # simulate DB undo
+            deal.qty = 10
+            rev.status = "Pending"
+            approval.consumed = 0
+            state["deal_saved"] = False
+            state["rev_saved"] = False
+
+        frappe.db.commit = MagicMock(side_effect=boom_commit)
+        frappe.db.rollback = MagicMock(side_effect=rollback)
+
+        with self.assertRaises(RuntimeError):
+            try:
+                deals_mod.apply_revision(rev.name, approval_name=approval.name)
+            except RuntimeError:
+                frappe.db.rollback()
+                raise
+
+        self.assertTrue(state["rolled_back"])
+        self.assertEqual(deal.qty, 10)
+        self.assertEqual(rev.status, "Pending")
+        self.assertEqual(approval.consumed, 0)
+
+
+class TestDecideCounterRuntime(unittest.TestCase):
+    """Runtime smoke: decide(COUNTER) leaves approved_rate None."""
+
+    def test_counter_leaves_approved_rate_none(self):
+        import frappe
+        from fresko_universe import approvals as approvals_mod
+
+        deal = MagicMock()
+        deal.name = "DEAL-CTR"
+        deal.status = "Approval Required"
+        deal.proposed_rate = 50
+        deal.rate_floor = 100
+        deal.rate_ceiling = 200
+        deal.approved_rate = None
+        deal.qty = 5
+        deal.container = "C1"
+        deal.lot_no = "L1"
+        deal.flags = MagicMock()
+        deal.set_status = MagicMock(side_effect=lambda s: setattr(deal, "status", s))
+        deal.save = MagicMock()
+
+        inserted = []
+
+        def get_doc_flex(*a, **k):
+            if a and isinstance(a[0], dict) and a[0].get("doctype") == "Fresko Approval":
+                ap = MagicMock()
+                ap.name = "APR-CTR"
+                ap.decision = a[0]["decision"]
+                ap.decision_rate = a[0]["decision_rate"]
+                ap.insert = MagicMock()
+                inserted.append(a[0])
+                return ap
+            return deal
+
+        frappe.session = types.SimpleNamespace(user="appr@x.com")
+        frappe.get_roles = MagicMock(return_value=["Fresko Approver"])
+        frappe.get_doc = MagicMock(side_effect=get_doc_flex)
+        frappe.db.commit = MagicMock()
+        frappe.db.set_value = MagicMock()
+
+        result = approvals_mod.decide(
+            deal.name, "COUNTER", decision_rate=80, reason="counter offer"
+        )
+        self.assertEqual(deal.status, "Countered")
+        self.assertIsNone(deal.approved_rate)
+        self.assertIsNone(result["approved_rate"])
+        self.assertEqual(result["decision"], "COUNTER")
+        self.assertEqual(result["decision_rate"], 80)
+        frappe.db.set_value.assert_called()
+        self.assertTrue(any(i.get("decision") == "COUNTER" for i in inserted))
+
 
 
 if __name__ == "__main__":

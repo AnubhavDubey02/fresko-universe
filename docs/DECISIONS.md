@@ -66,3 +66,18 @@ Permanent independent role: **Fresko Security** (Security & Red Team Engineer).
 - No autonomous production destructive actions (delete data, rotate prod secrets, disable services, attack third parties, mutate financials) without explicit authorization.
 - Initial assignment: baseline assessment of CURRENT repo with MUST FIX NOW / BEFORE PRODUCTION / LATER HARDENING backlog and concrete evidence.
 
+## 2026-09-15 — ChatGPT independent review blockers (Phase 1 hold)
+
+Implemented on `phase1-doctype-scaffold` without merge / without Phase 2:
+
+1. **Commercial immutability:** `COMMERCIAL_LOCK_STATUSES` includes Cancelled, Rejected, Disputed (plus existing post-Proposed locks). Desk write remains Salesperson=Proposed-only; Accounts read-only.
+2. **Approval↔Revision bind:** Fresko Approval.`revision` + `consumed`; `approvals.create_revision_approval`; material `apply_revision` rejects Deal-only Approvals; stale old_value + consume replay guards.
+3. **RC Countered rate:** `decide(COUNTER)` stores rate on Approval.`decision_rate` only; Deal.`approved_rate` stays NULL; `accept_counter` copies decision_rate → approved_rate then Approved + D6.
+
+**Security backlog (not fixed here — do not pad):**
+
+- **FSEC-004 / FSEC-005** = Phase 2 entry gates (Evidence byte-hash; Evidence.`message_id` uniqueness before WhatsApp ingest).
+- **FSEC-006** = before production (CI SAST / secret scan / dependency advisory).
+
+Gate1 / D4 / D10 unchanged.
+

@@ -63,6 +63,7 @@ COMMERCIAL_LOCK_STATUSES = frozenset(
         "Auto Approved",
         "Approved",
         "Countered",
+        "Rejected",  # ChatGPT blocker 1: freeze after leave Proposed
         "Outward Pending",
         "Dispatched",
         "Partially Dispatched",
@@ -70,6 +71,8 @@ COMMERCIAL_LOCK_STATUSES = frozenset(
         "Paid",
         "Partially Paid",
         "Reconciled",
+        "Cancelled",
+        "Disputed",
     }
 )
 

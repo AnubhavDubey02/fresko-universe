@@ -8,7 +8,7 @@ from __future__ import annotations
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from fresko_universe.approvals import decide
+from fresko_universe.approvals import create_revision_approval, decide
 from fresko_universe.deals import (
     apply_rate_rules,
     apply_revision,
@@ -171,22 +171,12 @@ class TestFSECPermissions(FrappeTestCase):
             supporting_evidence=ev.name,
         )
         frappe.set_user("Administrator")
-        apr = frappe.get_doc(
-            {
-                "doctype": "Fresko Approval",
-                "deal": deal.name,
-                "decision": "APPROVE",
-                "decision_rate": 55,
-                "proposed_rate": deal.proposed_rate,
-                "rate_floor": deal.rate_floor,
-                "rate_ceiling": deal.rate_ceiling,
-                "approver": "Administrator",
-                "reason": "ok approval",
-            }
-        ).insert(ignore_permissions=True)
+        apr_res = create_revision_approval(
+            rev["revision"], "APPROVE", decision_rate=55, reason="ok approval"
+        )
         frappe.set_user("fsec_sales_a@example.com")
         with self.assertRaises(frappe.PermissionError):
-            apply_revision(rev["revision"], approval_name=apr.name)
+            apply_revision(rev["revision"], approval_name=apr_res["approval"])
 
     def test_apply_revision_rejects_reject_decision(self):
         deal = make_deal(self.container, proposed_rate=50, qty=5)
@@ -251,3 +241,72 @@ class TestFSECPermissions(FrappeTestCase):
         self.assertFalse(deal_has_permission(d_b, "read", user="fsec_sales_a@example.com"))
         self.assertTrue(deal_has_permission(d_b, "read", user="fsec_sales_b@example.com"))
         self.assertFalse(deal_has_permission(d_a, "write", user="fsec_sales_b@example.com"))
+
+    def test_apply_revision_rejects_unbound_deal_only_approval(self):
+        deal = make_deal(self.container, proposed_rate=50, qty=5)
+        apply_rate_rules(deal.name)
+        deal.reload()
+        ev = frappe.get_doc(
+            {
+                "doctype": "Fresko Evidence",
+                "evidence_type": "Note",
+                "deal": deal.name,
+                "container": self.container.name,
+                "notes": "fsec unbound",
+            }
+        ).insert(ignore_permissions=True)
+        rev = request_revision(
+            deal.name,
+            "approved_rate",
+            55,
+            reason="needs revision bind",
+            supporting_evidence=ev.name,
+        )
+        apr = frappe.get_doc(
+            {
+                "doctype": "Fresko Approval",
+                "deal": deal.name,
+                "decision": "APPROVE",
+                "decision_rate": 55,
+                "proposed_rate": deal.proposed_rate,
+                "rate_floor": deal.rate_floor,
+                "rate_ceiling": deal.rate_ceiling,
+                "approver": frappe.session.user,
+                "reason": "deal-only unbound",
+            }
+        ).insert(ignore_permissions=True)
+        frappe.set_user("fsec_approver@example.com")
+        with self.assertRaises(frappe.PermissionError):
+            apply_revision(rev["revision"], approval_name=apr.name)
+
+    def test_apply_revision_bound_ok_and_consume(self):
+        deal = make_deal(self.container, proposed_rate=50, qty=5)
+        apply_rate_rules(deal.name)
+        deal.reload()
+        ev = frappe.get_doc(
+            {
+                "doctype": "Fresko Evidence",
+                "evidence_type": "Note",
+                "deal": deal.name,
+                "container": self.container.name,
+                "notes": "fsec bound ok",
+            }
+        ).insert(ignore_permissions=True)
+        rev = request_revision(
+            deal.name,
+            "approved_rate",
+            55,
+            reason="bound apply",
+            supporting_evidence=ev.name,
+        )
+        frappe.set_user("fsec_approver@example.com")
+        apr_res = create_revision_approval(
+            rev["revision"], "APPROVE", decision_rate=55, reason="bound approve"
+        )
+        applied = apply_revision(rev["revision"], approval_name=apr_res["approval"])
+        self.assertEqual(applied["status"], "Applied")
+        apr = frappe.get_doc("Fresko Approval", apr_res["approval"])
+        self.assertEqual(int(apr.consumed or 0), 1)
+        deal.reload()
+        self.assertEqual(float(deal.approved_rate), 55.0)
+
