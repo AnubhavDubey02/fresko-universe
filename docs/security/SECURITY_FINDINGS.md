@@ -1,8 +1,9 @@
 # SECURITY_FINDINGS — living log
 
 **Baseline date:** 2026-09-15  
-**Tip:** see git tip on `phase1-doctype-scaffold` after FSEC-001/002/003 ACL commit.  
-**Statuses:** FSEC-001/002/003 FIXED; others OPEN unless noted.
+**Re-verify tip:** `fdbd9bd59435ac5f5d7e27d8c486c2046457f4dd` on `phase1-doctype-scaffold`  
+**Statuses:** FSEC-001/002/003 **MITIGATED** (independent re-verify 2026-09-15); FSEC-004+ remain OPEN unless noted.  
+Fresko is **not** declared secure.
 
 Severity gate: CRITICAL/HIGH require fix or documented human override before production.
 
@@ -13,14 +14,36 @@ Severity gate: CRITICAL/HIGH require fix or documented human override before pro
 | Field | Value |
 |---|---|
 | **SEVERITY** | HIGH |
-| **STATUS** | FIXED (phase1 ACL — `permissions.py` + whitelist gates) |
+| **STATUS** | **MITIGATED** |
 | **Prerequisites** | Any authenticated Desk/API user who can call `@frappe.whitelist` methods |
-| **Component** | `fresko_universe/deals.py`, `container.py` |
-| **Impact** | User with minimal DocType rights (or Accounts read-only on Deal) may still cancel deals, record dispatch, apply rate rules, open/apply revisions, or read ATS snapshots because methods save with `ignore_permissions=True` and do not call `get_roles` / ownership checks (except `accept_counter`). |
-| **Evidence** | `deals.py:14-97` (`apply_rate_rules`), `:135-155` (`cancel_deal`), `:158-218` (`record_dispatch`), `:221-280` (`request_revision`), `:283-354` (`apply_revision`); `container.py:12-14`; contrast `approvals.py:38-40` which does check roles |
-| **Repro (high-level)** | Authenticate as a low-privilege Fresko role; invoke the whitelist method names above with a victim `deal_name`; observe mutation without role denial. |
-| **Fix** | Add explicit role/ownership gates per `PERMISSION_MATRIX.md`; avoid `ignore_permissions` except after checks; prefer `frappe.has_permission` + `check_permission`. |
-| **Regression test** | For each method, `frappe.set_user` as Salesperson/Accounts/Approver/SM and assert allow/deny matrix. |
+| **Component** | `fresko_universe/permissions.py`, `deals.py`, `container.py`, `fresko_container.py` |
+| **Original impact** | Low-privilege callers could mutate deals / read ATS via whitelist + `ignore_permissions=True` without role/ownership gates (except `accept_counter` / `decide`). |
+| **Evidence (pre-fix)** | Ungated `ignore_permissions` on commercial mutators at prior tip `055186d`. |
+| **Fix (observed at tip)** | Central ACL in `permissions.py`; every listed mutator calls assert_* **before** `ignore_permissions`. |
+| **Regression test** | Offline: `TestFSEC001WhitelistACL` in `fresko_universe/tests/test_smoke_unit.py`. Bench (site): `fresko_universe.tests.test_fsec_permissions` (`test_accounts_denied_cancel_and_apply_rate`, `test_salesperson_cancel_own_allowed_other_denied`, `test_salesperson_denied_record_dispatch`). |
+
+### VERIFICATION (independent re-verify — tip `fdbd9bd`)
+
+| Method | Gate (file:line) | Before `ignore_permissions`? |
+|---|---|---|
+| `apply_rate_rules` | `permissions.py:55` `assert_can_apply_rate_rules` via `deals.py:31` | Yes (`deals.py:84`) |
+| `cancel_deal` | `permissions.py:68` via `deals.py:156` | Yes (`deals.py:166`) |
+| `record_dispatch` | `permissions.py:81` via `deals.py:182` | Yes (`deals.py:236`) |
+| `set_dispatched_qty` | shim → `record_dispatch` (`deals.py:386-388`) | Same gate |
+| `request_revision` | `permissions.py:92` via `deals.py:257` | Yes (`deals.py:292`) |
+| `apply_revision` | `permissions.py:105` via `deals.py:312` (+ FSEC-002 bind) | Yes (`deals.py:363`) |
+| `container.snapshot` | `permissions.py:157` via `container.py:16` | N/A (read) |
+| `container_snapshot` (doctype) | same assert at `fresko_container.py` whitelist | N/A (read) |
+| `accept_counter` | ownership ACL `deals.py:125-133` (pre-existing D4) | Yes (`deals.py:145`) |
+| `approvals.decide` | role gate `approvals.py:38-40` (pre-existing) | Yes |
+
+Offline smoke for Accounts deny / stranger cancel / Salesperson dispatch deny / snapshot Guest deny: **18/18 FSEC smoke classes green** (FSEC-001 subset ok). Bench module not executed this pass (no full site).
+
+### RESIDUAL (accepted under MITIGATED — not reopened)
+
+- `ignore_permissions` remains on authorized paths by design (status/commercial flags).
+- Approver may cancel/dispatch **any** Deal (matrix-aligned; not ownership-scoped).
+- Helper `_open_exception` / `_resolve_buyer_exceptions` still `ignore_permissions` but only reachable after gated callers.
 
 ---
 
@@ -29,14 +52,30 @@ Severity gate: CRITICAL/HIGH require fix or documented human override before pro
 | Field | Value |
 |---|---|
 | **SEVERITY** | HIGH |
-| **STATUS** | FIXED (Approval↔Deal bind + decision + Approver/SM) |
+| **STATUS** | **MITIGATED** |
 | **Prerequisites** | Ability to call `apply_revision`; existence of any `Fresko Approval` document in the site |
-| **Component** | `deals.py:apply_revision` |
-| **Impact** | Material commercial fields (rate/qty/lot/customer) can be applied if *any* Approval name is supplied. Code checks `frappe.db.exists("Fresko Approval", approval_ref)` only — does not verify Approval.deal == revision.parent_name, decision ∈ {APPROVE,…}, or that the caller is Approver. Controls docs claim role validation on this path (**DOC_ONLY**, contradicted). |
-| **Evidence** | `deals.py:302-318`; `docs/controls.md` (~lines 106–107 claim whitelist validates state + role) |
-| **Repro (high-level)** | Create Pending revision on Deal A; pass Approval document belonging to Deal B (or REJECT decision) into `apply_revision`; observe whether apply succeeds. |
-| **Fix** | Load Approval; assert `approval.deal == deal.name`, decision allowed, optionally reason/evidence; require Fresko Approver/SM; reject stale Approvals. |
-| **Regression test** | `test_apply_revision_rejects_mismatched_approval_deal`; `test_apply_revision_rejects_non_approver`. |
+| **Component** | `deals.py:apply_revision`, `permissions.py` |
+| **Original impact** | Material fields could apply with any existing Approval name (`exists()` only); no Deal bind, decision allowlist, or Approver role. |
+| **Evidence (pre-fix)** | Prior `apply_revision` at `055186d` used `frappe.db.exists` only. |
+| **Fix (observed at tip)** | Role + bind + decision + stale checks before save. |
+| **Regression test** | Offline: `TestFSEC002ApplyRevisionBind`. Bench: `test_apply_revision_rejects_mismatched_approval_deal`, `test_apply_revision_rejects_non_approver`, `test_apply_revision_rejects_reject_decision`. |
+
+### VERIFICATION (independent re-verify — tip `fdbd9bd`)
+
+| Check | Location | Result |
+|---|---|---|
+| Caller Approver/SM | `assert_can_apply_revision` `permissions.py:105-112`; called `deals.py:312` | Present |
+| Approval.deal == revision parent Deal | `assert_approval_bound_for_revision` `permissions.py:115-124`; `deals.py:337-338` | Present |
+| Decision ∈ {APPROVE, OVERSELL_OVERRIDE} | `permissions.py:125-133` + `APPROVAL_APPLY_DECISIONS` | Present |
+| Stale Approval reuse | `assert_approval_not_stale` `permissions.py:136-154` | Present |
+| `exists()`-only | Removed as sole gate; still used as presence check then full load | OK |
+
+`exists()`-only is **not** sufficient anymore. Offline mismatch / REJECT / non-approver tests: **ok**.
+
+### RESIDUAL (accepted under MITIGATED)
+
+- Any Fresko Approver may apply a bound APPROVE Approval (Approval.`approver` identity not required to match session user).
+- Non-material revision fields still apply with Approver/SM role alone (no Approval doc) — by design.
 
 ---
 
@@ -45,14 +84,31 @@ Severity gate: CRITICAL/HIGH require fix or documented human override before pro
 | Field | Value |
 |---|---|
 | **SEVERITY** | HIGH |
-| **STATUS** | FIXED (`hooks.py` + `deal_has_permission` / query; Evidence scoped) |
+| **STATUS** | **MITIGATED** |
 | **Prerequisites** | Authenticated user with Fresko role perms from DocType JSON |
-| **Component** | hooks / DocType JSON / missing Python hooks |
-| **Impact** | Salesperson has write on all Fresko Deals (not owner-scoped). Approver has write on Containers and Deals. No row-level query filter. Server validate blocks some field/status abuses, but list/report exposure and unexpected writes remain broad. |
-| **Evidence** | `fresko_deal.json` permissions; repo search: zero `has_permission` / `permission_query` implementations under `fresko_universe` |
-| **Repro (high-level)** | Log in as Salesperson A; open Deal owned by Salesperson B; confirm read/write via Desk. |
-| **Fix** | Add `permission_query` conditions and `has_permission` for Deal/Evidence; tighten JSON perms (Accounts should not gain write via whitelist). |
-| **Regression test** | Permission query tests with two sales users. |
+| **Component** | `hooks.py`, `permissions.py` (Deal + Evidence) |
+| **Original impact** | Salesperson write-all Deals; no row-level query; no `has_permission` hooks. |
+| **Evidence (pre-fix)** | Zero permission hooks under app; `fresko_deal.json` Salesperson write=1. |
+| **Fix (observed at tip)** | Hooks wired; Salesperson owner/`salesperson_user` scoped; Desk write only while Proposed; Accounts read-only in `deal_has_permission`. |
+| **Regression test** | Offline: `TestFSEC003DealPermissionHooks`. Bench: `test_permission_query_two_sales_users`. |
+
+### VERIFICATION (independent re-verify — tip `fdbd9bd`)
+
+| Control | Location | Result |
+|---|---|---|
+| `permission_query_conditions` Deal+Evidence | `hooks.py:34-37` | Wired |
+| `has_permission` Deal+Evidence | `hooks.py:39-42` | Wired |
+| Salesperson list filter owner\|salesperson_user | `deal_permission_query` `permissions.py:168-183` | Present |
+| Salesperson write only own + Proposed | `deal_has_permission` `permissions.py:210-226` | Present |
+| Accounts read-only via hook | `permissions.py:202-203` | Present |
+| Salesperson write-all via hook | Denied (foreign write False in smoke) | Mitigated |
+
+### RESIDUAL (keep noted — status remains MITIGATED, not reopened)
+
+- **DocType JSON still coarse:** `fresko_deal.json` still grants Fresko Salesperson `write=1` globally; row/doc ACL depends on Python hooks loading correctly (defense-in-depth gap if hooks mis-registered).
+- **Other DocTypes:** Container / Revision / Approval / Exception have **no** `permission_query` / `has_permission` hooks (Approver still RWC on Container via JSON alone).
+- **Evidence without `deal`:** `evidence_has_permission` allows Salesperson create/read/write when deal is unset (`permissions.py:293-295`).
+- Bench site run of `test_fsec_permissions` not executed this re-verify (offline smoke only).
 
 ---
 

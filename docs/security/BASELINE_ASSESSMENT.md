@@ -7,6 +7,8 @@
 
 Fresko is **not** declared secure.
 
+**Re-verify 2026-09-15 (tip `fdbd9bd`):** FSEC-001/002/003 independently marked **MITIGATED** (code gates + hooks + offline smoke). See `SECURITY_FINDINGS.md` VERIFICATION sections. Other findings remain OPEN. Do not treat Phase 1 as production-ready.
+
 ## Scope coverage checklist
 
 | # | Area | Outcome |
@@ -25,21 +27,21 @@ Fresko is **not** declared secure.
 
 ## RECORDED FACTS (summary)
 
-1. Ten `@frappe.whitelist` entrypoints; only `decide` and `accept_counter` implement meaningful ACL.
+1. Ten `@frappe.whitelist` entrypoints; commercial mutators gated via `permissions.py` at tip `fdbd9bd` (re-verify MITIGATED for FSEC-001/002).
 2. Widespread `ignore_permissions=True` after business checks.
-3. DocType permissions grant Salesperson write-all-Deals; Approver write Containers+Deals.
+3. DocType JSON still grants Salesperson write=1 on Deal; **Python** `deal_has_permission` / query now owner-scope Salesperson (FSEC-003 MITIGATED with JSON residual).
 4. Deal idempotency fields unique; Evidence.message_id not unique.
 5. Evidence hash = SHA-256(path string).
 6. `.github/workflows/ci.yml` has no SAST/secret/dep/permission jobs.
 7. Compose exposes MariaDB/Redis with `root`/`root`.
 8. AI/WhatsApp/OCR absent from code; policy requires proposals before adoption.
-9. Controls doc claims revision whitelist validates role — **code does not**.
+9. Controls doc revision role claim — **code now validates** Approver/SM + Approval↔Deal bind (FSEC-002 MITIGATED).
 
 ## TEST RESULTS
 
 - Smoke unit designed green offline (CI smoke job).
 - Bench acceptance exists but Gate2 last written result was red; tip re-verification UNKNOWN.
-- No permission-negative tests for cancel/dispatch/apply_revision.
+- Permission-negative offline smoke present (`TestFSEC001*` / `002*` / `003*`); bench `test_fsec_permissions` exists, not run this pass.
 
 ## ASSUMPTIONS
 
@@ -59,18 +61,18 @@ Fresko is **not** declared secure.
 
 ### MUST FIX NOW (before treating Phase 1 as internally trustworthy)
 
-| Item | Evidence | Finding |
-|---|---|---|
-| Add role/ownership gates to `cancel_deal`, `record_dispatch`, `set_dispatched_qty`, `apply_rate_rules`, `request_revision`, `apply_revision`, snapshots | `deals.py`, `container.py` | FSEC-001 |
-| Bind Approval→Deal (+ decision) inside `apply_revision`; require Approver/SM | `deals.py:302-318` | FSEC-002 |
-| Prove Accounts cannot mutate Deals via whitelist despite read-only DocType perm | matrix + ignore_permissions | FSEC-001/003 |
-| Re-run Gate 2 bench on tip; do not claim green from older SHA | `GATE2_CI_RESULT.md` vs `18c5042` | CI hygiene |
+| Item | Evidence | Finding | Re-verify `fdbd9bd` |
+|---|---|---|---|
+| Add role/ownership gates to `cancel_deal`, `record_dispatch`, `set_dispatched_qty`, `apply_rate_rules`, `request_revision`, `apply_revision`, snapshots | `permissions.py` + whitelist call sites | FSEC-001 | **MITIGATED** — gates present; offline smoke OK |
+| Bind Approval→Deal (+ decision) inside `apply_revision`; require Approver/SM | `assert_approval_bound_for_revision` + `assert_can_apply_revision` | FSEC-002 | **MITIGATED** — not exists()-only |
+| Prove Accounts cannot mutate Deals via whitelist despite read-only DocType perm | `TestFSEC001*` + `deal_has_permission` Accounts read-only | FSEC-001/003 | **MITIGATED** (offline); bench site run still pending |
+| Re-run Gate 2 bench on tip; do not claim green from older SHA | `GATE2_CI_RESULT.md` vs tip | CI hygiene | Still required — not closed by ACL commit |
 
 ### BEFORE PRODUCTION
 
 | Item | Evidence | Finding |
 |---|---|---|
-| Implement `has_permission` / `permission_query` for Deal (and ideally Evidence) | absence in repo | FSEC-003 |
+| ~~Implement `has_permission` / `permission_query` for Deal (and ideally Evidence)~~ **MITIGATED** at `fdbd9bd`; residual: tighten Deal JSON / add Container hooks | `hooks.py` + `permissions.py` | FSEC-003 |
 | Unique Evidence.message_id before WhatsApp | `fresko_evidence.json` | FSEC-005 |
 | Hash Evidence file bytes | `fresko_evidence.py` | FSEC-004 |
 | CI: secret scan + SAST + advisory job (report-only first; no auto-upgrade) | `ci.yml` | FSEC-006 |
