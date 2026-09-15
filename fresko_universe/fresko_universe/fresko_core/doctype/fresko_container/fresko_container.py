@@ -146,6 +146,7 @@ class FreskoContainer(Document):
                         "DATA_INTEGRITY",
                         "DUPLICATE_MESSAGE",
                         "RATE_FLOOR_BREACH",
+                        "RATE_POLICY_MISSING",
                     ],
                 ),
             },

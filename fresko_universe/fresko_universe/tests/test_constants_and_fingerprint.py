@@ -20,6 +20,8 @@ from fresko_universe.constants import (  # noqa: E402
     COMMERCIAL_LOCK_STATUSES,
     DEAL_TRANSITIONS,
     OVERSELL_OVERRIDE_ROLES,
+    EXCEPTION_TYPES,
+    MATERIAL_EXCEPTION_TYPES,
 )
 
 
@@ -82,7 +84,9 @@ class TestStateMachine(unittest.TestCase):
         self.assertIn("Approval Required", COMMERCIAL_LOCK_STATUSES)
 
     def test_d10_oversell_system_manager_only(self):
-        self.assertEqual(OVERSELL_OVERRIDE_ROLES, frozenset({"System Manager"}))
+        self.assertEqual(OVERSELL_OVERRIDE_ROLES,
+    EXCEPTION_TYPES,
+    MATERIAL_EXCEPTION_TYPES, frozenset({"System Manager"}))
         self.assertNotIn("Fresko Approver", OVERSELL_OVERRIDE_ROLES)
 
 
@@ -111,6 +115,14 @@ class TestRateBandHierarchy(unittest.TestCase):
     def test_default_fallback(self):
         v = self.resolve(None, [], 30, "ITEM", "16/20", "ITEM")
         self.assertEqual(v, 30)
+
+
+class TestExceptionTypes(unittest.TestCase):
+    def test_rate_policy_missing_in_exception_types(self):
+        from fresko_universe.constants import EXCEPTION_TYPES, MATERIAL_EXCEPTION_TYPES
+        self.assertIn("RATE_POLICY_MISSING", EXCEPTION_TYPES)
+        self.assertIn("RATE_POLICY_MISSING", MATERIAL_EXCEPTION_TYPES)
+        self.assertIn("RATE_FLOOR_BREACH", EXCEPTION_TYPES)
 
 
 if __name__ == "__main__":

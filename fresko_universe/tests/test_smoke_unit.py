@@ -55,10 +55,15 @@ from fresko_universe.constants import (  # noqa: E402
     ATS_ACTIVE_STATUSES,
     COMMERCIAL_LOCK_STATUSES,
     DEAL_TRANSITIONS,
+    EXCEPTION_TYPES,
     MATERIAL_REVISION_FIELDS,
     OVERSELL_OVERRIDE_ROLES,
 )
-from fresko_universe.rate_rules import rate_in_band, resolve_rate_band  # noqa: E402
+from fresko_universe.rate_rules import (  # noqa: E402
+    policy_resolved,
+    rate_in_band,
+    resolve_rate_band,
+)
 from fresko_universe.ats import commercial_qty_for_ats  # noqa: E402
 
 
@@ -104,6 +109,17 @@ class TestRateFloorD5(unittest.TestCase):
     def test_in_band(self):
         self.assertTrue(rate_in_band(100, 100, 200))
         self.assertFalse(rate_in_band(99, 100, 200))
+
+    def test_policy_resolved(self):
+        self.assertFalse(policy_resolved(None, None))
+        self.assertTrue(policy_resolved(100, None))
+        self.assertTrue(policy_resolved(None, 200))
+        self.assertTrue(policy_resolved(100, 200))
+
+    def test_empty_band_must_not_imply_resolved(self):
+        # F-M7 closed: empty band is not resolved and not in-band
+        self.assertFalse(policy_resolved(None, None))
+        self.assertFalse(rate_in_band(50, None, None))
 
 
 class TestATS(unittest.TestCase):
@@ -308,16 +324,233 @@ class TestFlagContracts(unittest.TestCase):
             self.assertIn('"' + field + '"', rev_py)
         self.assertIn("Cannot alter historical revision field", rev_py)
 
-    def test_accept_counter_acl_owner_salesperson_sm_only(self):
+    def test_accept_counter_acl_owner_salesperson_only(self):
         deals_py = (ROOT / "fresko_universe" / "deals.py").read_text()
         self.assertNotIn(
             'is_privileged = "System Manager" in roles or "Fresko Approver"',
             deals_py,
         )
+        self.assertNotIn("System Manager) may accept a counter", deals_py)
+        self.assertNotIn('"System Manager" not in roles', deals_py)
         self.assertIn(
-            "or System Manager) may accept a counter (D4)",
+            "Only the deal owner or assigned salesperson_user may accept a counter (D4)",
             deals_py,
         )
+
+
+
+
+class TestGate1RatePolicyMissing(unittest.TestCase):
+    """Gate 1: empty rate policy fail-closed → AR + RATE_POLICY_MISSING."""
+
+    def _deal(self, **kw):
+        d = MagicMock()
+        d.name = kw.get("name", "DEAL-RP")
+        d.status = "Proposed"
+        d.container = "C1"
+        d.lot_no = kw.get("lot_no", "L1")
+        d.count_size = kw.get("count_size", "16/20")
+        d.proposed_rate = kw.get("proposed_rate", 100)
+        d.qty = kw.get("qty", 10)
+        d.approved_rate = None
+        d.approval_required = 0
+        d.rate_floor = None
+        d.rate_ceiling = None
+        d.customer = kw.get("customer", "Cust")
+        d.buyer_alias = None
+        d.flags = MagicMock()
+        d.set_status = MagicMock(side_effect=lambda s: setattr(d, "status", s))
+        d.save = MagicMock()
+        d.get = lambda k, default=None: getattr(d, k, default)
+        return d
+
+    def _container(self, **kw):
+        c = MagicMock()
+        defaults = {
+            "lots": kw.get("lots", []),
+            "rate_rules": kw.get("rate_rules", []),
+            "default_rate_floor": kw.get("default_rate_floor", None),
+            "default_rate_ceiling": kw.get("default_rate_ceiling", None),
+        }
+        c.get = lambda k, d=None: defaults.get(k, d) if k in defaults else getattr(c, k, d)
+        for k, v in defaults.items():
+            setattr(c, k, v)
+        return c
+
+    def _lot(self, lot_no="L1", floor=None, ceiling=None, count_size="16/20"):
+        lot = MagicMock(
+            lot_no=lot_no,
+            rate_floor_override=floor,
+            rate_ceiling_override=ceiling,
+            count_size=count_size,
+        )
+        lot.get = lambda k, d=None: getattr(lot, k, d)
+        return lot
+
+    def _run_apply(self, deal, container, ats=1000):
+        import frappe
+        from fresko_universe import deals as deals_mod
+        from fresko_universe import ats as ats_mod
+
+        inserted = []
+
+        def fake_get_doc(dt, name=None):
+            if dt == "Fresko Deal":
+                return deal
+            if dt == "Fresko Container":
+                return container
+            if dt == "Fresko Exception":
+                ex = MagicMock()
+                ex.insert = MagicMock()
+                inserted.append(ex)
+                return ex
+            return MagicMock()
+
+        frappe.get_doc = MagicMock(side_effect=fake_get_doc)
+        # _open_exception uses frappe.get_doc({dict}) — handle dict form
+        _real_side = frappe.get_doc.side_effect
+
+        def get_doc_flex(*a, **k):
+            if a and isinstance(a[0], dict):
+                ex = MagicMock()
+                ex.insert = MagicMock()
+                ex.name = "EX-1"
+                inserted.append(a[0])
+                return ex
+            return _real_side(*a, **k)
+
+        frappe.get_doc = MagicMock(side_effect=get_doc_flex)
+        frappe.get_all = MagicMock(return_value=[])
+        frappe.db.commit = MagicMock()
+
+        # Patch ATS on deals module (imported name binding)
+        orig_ats = deals_mod.available_to_sell
+        deals_mod.available_to_sell = MagicMock(return_value=ats)
+        try:
+            result = deals_mod.apply_rate_rules(deal.name)
+        finally:
+            deals_mod.available_to_sell = orig_ats
+        return result, inserted
+
+    def test_1_no_rules_no_defaults_rate_policy_missing(self):
+        deal = self._deal()
+        container = self._container(lots=[self._lot()], rate_rules=[], default_rate_floor=None)
+        result, inserted = self._run_apply(deal, container)
+        self.assertEqual(deal.status, "Approval Required")
+        self.assertEqual(deal.approval_required, 1)
+        self.assertIsNone(deal.approved_rate)
+        self.assertEqual(deal.proposed_rate, 100)
+        self.assertIsNone(deal.rate_floor)
+        self.assertIsNone(deal.rate_ceiling)
+        self.assertTrue(any(i.get("exception_type") == "RATE_POLICY_MISSING" for i in inserted))
+        self.assertIn("RATE_POLICY_MISSING", EXCEPTION_TYPES)
+
+    def test_2_rules_exist_no_matching_count_size_no_defaults(self):
+        rule = MagicMock(count_size="21/25", rate_floor=90, rate_ceiling=140)
+        rule.get = lambda k, d=None: getattr(rule, k, d)
+        deal = self._deal(count_size="16/20")
+        container = self._container(
+            lots=[self._lot(count_size="16/20")],
+            rate_rules=[rule],
+            default_rate_floor=None,
+            default_rate_ceiling=None,
+        )
+        result, inserted = self._run_apply(deal, container)
+        self.assertEqual(deal.status, "Approval Required")
+        self.assertTrue(any(i.get("exception_type") == "RATE_POLICY_MISSING" for i in inserted))
+        self.assertIsNone(deal.approved_rate)
+
+    def test_3_lot_without_override_no_other_rule(self):
+        deal = self._deal(count_size=None)
+        # lot exists, no override, no count_size → falls through to empty defaults
+        container = self._container(
+            lots=[self._lot(floor=None, ceiling=None, count_size=None)],
+            rate_rules=[],
+            default_rate_floor=None,
+        )
+        result, inserted = self._run_apply(deal, container)
+        self.assertEqual(deal.status, "Approval Required")
+        self.assertTrue(any(i.get("exception_type") == "RATE_POLICY_MISSING" for i in inserted))
+
+    def test_4_inherited_floor_in_band_auto_approved(self):
+        deal = self._deal(proposed_rate=110, count_size="16/20")
+        rule = MagicMock(count_size="16/20", rate_floor=100, rate_ceiling=200)
+        rule.get = lambda k, d=None: getattr(rule, k, d)
+        container = self._container(
+            lots=[self._lot(floor=None, ceiling=None, count_size="16/20")],
+            rate_rules=[rule],
+            default_rate_floor=None,
+        )
+        result, inserted = self._run_apply(deal, container, ats=1000)
+        self.assertEqual(deal.status, "Auto Approved")
+        self.assertEqual(deal.approved_rate, 110)
+        self.assertEqual(deal.approval_required, 0)
+        self.assertFalse(any(i.get("exception_type") == "RATE_POLICY_MISSING" for i in inserted))
+
+    def test_5_lot_override_in_band_auto_approved(self):
+        deal = self._deal(proposed_rate=85, count_size="16/20")
+        container = self._container(
+            lots=[self._lot(floor=80, ceiling=150, count_size="16/20")],
+            rate_rules=[],
+            default_rate_floor=100,
+        )
+        result, inserted = self._run_apply(deal, container, ats=1000)
+        self.assertEqual(deal.status, "Auto Approved")
+        self.assertEqual(deal.approved_rate, 85)
+        self.assertEqual(deal.rate_floor, 80)
+
+
+class TestD4AcceptCounterACL(unittest.TestCase):
+    """D4 tighter: only owner or salesperson_user; SM/Approver cannot accept."""
+
+    def _run(self, user, roles, owner="owner@x.com", salesperson=None):
+        import frappe
+        from fresko_universe import deals as deals_mod
+        from fresko_universe import ats as ats_mod
+
+        deal = MagicMock()
+        deal.name = "DEAL-D4"
+        deal.status = "Countered"
+        deal.owner = owner
+        deal.salesperson_user = salesperson
+        deal.approved_rate = 12
+        deal.container = "C1"
+        deal.lot_no = "L1"
+        deal.qty = 5
+        deal.flags = MagicMock()
+        deal.set_status = MagicMock(side_effect=lambda s: setattr(deal, "status", s))
+        deal.save = MagicMock()
+
+        frappe.session = types.SimpleNamespace(user=user)
+        frappe.get_roles = MagicMock(return_value=roles)
+        frappe.get_doc = MagicMock(return_value=deal)
+        frappe.db.commit = MagicMock()
+        deals_mod.available_to_sell = MagicMock(return_value=100)
+        return deals_mod.accept_counter(deal.name), deal
+
+    def test_owner_can_accept(self):
+        result, deal = self._run("owner@x.com", ["Fresko Salesperson"], owner="owner@x.com")
+        self.assertEqual(result["status"], "Approved")
+
+    def test_salesperson_can_accept(self):
+        result, deal = self._run(
+            "sp@x.com", ["Fresko Salesperson"], owner="owner@x.com", salesperson="sp@x.com"
+        )
+        self.assertEqual(result["status"], "Approved")
+
+    def test_system_manager_cannot_accept(self):
+        with self.assertRaises(Exception) as ctx:
+            self._run("admin@x.com", ["System Manager"], owner="owner@x.com", salesperson=None)
+        self.assertIn("owner or assigned salesperson_user", str(ctx.exception))
+
+    def test_approver_cannot_accept(self):
+        with self.assertRaises(Exception) as ctx:
+            self._run("appr@x.com", ["Fresko Approver"], owner="owner@x.com", salesperson="sp@x.com")
+        self.assertIn("owner or assigned salesperson_user", str(ctx.exception))
+
+    def test_empty_salesperson_only_owner(self):
+        with self.assertRaises(Exception):
+            self._run("other@x.com", ["Fresko Salesperson"], owner="owner@x.com", salesperson=None)
 
 
 

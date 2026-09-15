@@ -101,6 +101,19 @@ CONTAINER_STATUS_TRANSITIONS = {
     "Cancelled": set(),
 }
 
+EXCEPTION_TYPES = frozenset(
+    {
+        "BUYER_UNRESOLVED",
+        "DUPLICATE_MESSAGE",
+        "OVERSELL_OVERRIDE",
+        "STOCK_SHORTFALL",
+        "RATE_FLOOR_BREACH",
+        "RATE_POLICY_MISSING",
+        "DATA_INTEGRITY",
+        "OTHER",
+    }
+)
+
 MATERIAL_EXCEPTION_TYPES = frozenset(
     {
         "BUYER_UNRESOLVED",
@@ -108,6 +121,7 @@ MATERIAL_EXCEPTION_TYPES = frozenset(
         "OVERSELL_OVERRIDE",
         "STOCK_SHORTFALL",
         "RATE_FLOOR_BREACH",
+        "RATE_POLICY_MISSING",
         "DATA_INTEGRITY",
         "OTHER",
     }

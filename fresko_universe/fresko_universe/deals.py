@@ -8,14 +8,15 @@ from frappe.utils import flt
 
 from fresko_universe.ats import available_to_sell
 from fresko_universe.constants import COMMERCIAL_LOCK_STATUSES, MATERIAL_REVISION_FIELDS
-from fresko_universe.rate_rules import rate_in_band, resolve_rate_band
+from fresko_universe.rate_rules import policy_resolved, rate_in_band, resolve_rate_band
 
 
 @frappe.whitelist()
 def apply_rate_rules(deal_name: str):
     """
-    Snapshot floor/ceiling; in-band → Auto Approved; else Approval Required.
-    Re-reads ATS under lock before Auto Approve (D3).
+    Snapshot floor/ceiling; fail-closed if policy missing (Gate 1).
+    Resolved + in-band → Auto Approved (ATS re-read under lock, D3).
+    Resolved + out-of-band → Approval Required (RATE_FLOOR_BREACH path).
     """
     deal = frappe.get_doc("Fresko Deal", deal_name)
     if deal.status != "Proposed":
@@ -23,12 +24,23 @@ def apply_rate_rules(deal_name: str):
 
     container = frappe.get_doc("Fresko Container", deal.container)
     floor, ceiling = resolve_rate_band(container, deal.lot_no, deal.count_size)
+    # Snapshot even when null (Gate 1: empty policy must be visible on Deal)
     deal.rate_floor = floor
     deal.rate_ceiling = ceiling
 
-    in_band = rate_in_band(deal.proposed_rate, floor, ceiling)
-
-    if in_band:
+    if not policy_resolved(floor, ceiling):
+        # Fail-closed: empty band must never auto-approve (F-M7 / Gate 1)
+        deal.approval_required = 1
+        deal.set_status("Approval Required")
+        # Do not set approved_rate; preserve proposed_rate
+        _open_exception(
+            deal,
+            "RATE_POLICY_MISSING",
+            f"No applicable rate policy (floor/ceiling unresolved) for lot={deal.lot_no!r} "
+            f"count_size={deal.count_size!r}; proposed_rate={deal.proposed_rate} preserved",
+            severity="Material",
+        )
+    elif rate_in_band(deal.proposed_rate, floor, ceiling):
         # ATS check under lock before auto-approve
         ats = available_to_sell(deal.container, deal.lot_no, exclude_deal=deal.name, for_update=True)
         if flt(deal.qty) > ats:
@@ -47,6 +59,7 @@ def apply_rate_rules(deal_name: str):
             deal.set_status("Auto Approved")
             _maybe_open_buyer_unresolved(deal)
     else:
+        # Policy resolved but out of band — Approval Required (RATE_FLOOR_BREACH path as today)
         deal.approval_required = 1
         deal.set_status("Approval Required")
 
@@ -67,21 +80,20 @@ def accept_counter(deal_name: str):
     """
     D4: salesperson/originator explicitly accepts COUNTER → Approved.
     Only path from Countered → Approved (F-C1).
+    ACL: deal.owner or deal.salesperson_user only — never System Manager / Approver on behalf.
     """
     deal = frappe.get_doc("Fresko Deal", deal_name)
     if deal.status != "Countered":
         frappe.throw(_("accept_counter only valid from Countered (current: {0})").format(deal.status))
 
     user = frappe.session.user
-    roles = set(frappe.get_roles())
-    # F-M6 / D4: owner, assigned salesperson_user, or System Manager only.
-    # When salesperson_user empty, non-originator Salesperson (and Approver) cannot accept.
+    # D4 tighter: ONLY owner or assigned salesperson_user. If salesperson empty → owner only.
     allowed = {deal.owner}
     if deal.salesperson_user:
         allowed.add(deal.salesperson_user)
-    if user not in allowed and "System Manager" not in roles:
+    if user not in allowed:
         frappe.throw(
-            _("Only the deal originator/salesperson (or System Manager) may accept a counter (D4)")
+            _("Only the deal owner or assigned salesperson_user may accept a counter (D4)")
         )
 
     if deal.approved_rate is None:
