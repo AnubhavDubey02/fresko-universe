@@ -17,6 +17,7 @@ sys.path.insert(0, str(ROOT))
 def _install_frappe_stub():
     frappe = types.ModuleType("frappe")
     frappe.throw = lambda *a, **k: (_ for _ in ()).throw(Exception(a[0] if a else "throw"))
+    frappe._ = lambda msg, *a, **k: msg
     frappe.whitelist = lambda *a, **k: (lambda fn: fn)
     frappe.log_error = lambda *a, **k: None
     frappe.session = types.SimpleNamespace(user="Administrator")
@@ -24,6 +25,7 @@ def _install_frappe_stub():
     frappe.get_doc = MagicMock()
     frappe.get_all = MagicMock(return_value=[])
     frappe.get_roles = MagicMock(return_value=["System Manager"])
+    frappe.db.commit = MagicMock()
     utils = types.ModuleType("frappe.utils")
     utils.flt = lambda v, p=None: float(v or 0)
     utils.nowdate = lambda: "2026-09-15"
@@ -204,6 +206,51 @@ class TestLayout(unittest.TestCase):
         self.assertFalse((deals / "fresko_revision").exists())
 
 
+
+class TestD10Runtime(unittest.TestCase):
+    """Runtime gate: Approver cannot commercial-oversell (D10) without bench."""
+
+    def test_approver_cannot_oversell_override(self):
+        import frappe
+        from fresko_universe.approvals import decide
+
+        frappe.get_roles = MagicMock(return_value=["Fresko Approver"])
+        deal = MagicMock()
+        deal.name = "DEAL-OV"
+        deal.status = "Approval Required"
+        deal.container = "C1"
+        deal.lot_no = "L1"
+        deal.qty = 100
+        deal.proposed_rate = 10
+        deal.rate_floor = 5
+        deal.rate_ceiling = 20
+        frappe.get_doc = MagicMock(return_value=deal)
+
+        with self.assertRaises(Exception) as ctx:
+            decide("DEAL-OV", "OVERSELL_OVERRIDE", reason="try oversell")
+        self.assertIn("System Manager", str(ctx.exception))
+
+    def test_approver_cannot_approve_with_oversell_flag(self):
+        import frappe
+        from fresko_universe.approvals import decide
+
+        frappe.get_roles = MagicMock(return_value=["Fresko Approver"])
+        deal = MagicMock()
+        deal.name = "DEAL-OV2"
+        deal.status = "Approval Required"
+        deal.container = "C1"
+        deal.lot_no = "L1"
+        deal.qty = 100
+        deal.proposed_rate = 10
+        deal.rate_floor = 5
+        deal.rate_ceiling = 20
+        frappe.get_doc = MagicMock(return_value=deal)
+
+        with self.assertRaises(Exception) as ctx:
+            decide("DEAL-OV2", "APPROVE", reason="try flag", oversell_override=1)
+        self.assertIn("System Manager", str(ctx.exception))
+
+
 class TestFlagContracts(unittest.TestCase):
     """Source-level contracts for F-H5 / F-H6 (no bench required)."""
 
@@ -236,6 +283,41 @@ class TestFlagContracts(unittest.TestCase):
         self.assertIn("def set_dispatched_qty", deals_py)
         self.assertIn("return record_dispatch(", deals_py)
 
+    def test_lot_delete_cannot_bypass_approved_sold(self):
+        container_py = (
+            ROOT / "fresko_universe" / "fresko_core" / "doctype"
+            / "fresko_container" / "fresko_container.py"
+        ).read_text()
+        self.assertIn("Cannot remove lot", container_py)
+        self.assertIn("not in current_lots", container_py)
+
+    def test_applied_revision_trail_frozen(self):
+        rev_py = (
+            ROOT / "fresko_universe" / "fresko_core" / "doctype"
+            / "fresko_revision" / "fresko_revision.py"
+        ).read_text()
+        for field in (
+            "old_value",
+            "new_value",
+            "reason",
+            "supporting_evidence",
+            "approval_reference",
+            "changed_by",
+            "changed_at",
+        ):
+            self.assertIn('"' + field + '"', rev_py)
+        self.assertIn("Cannot alter historical revision field", rev_py)
+
+    def test_accept_counter_acl_owner_salesperson_sm_only(self):
+        deals_py = (ROOT / "fresko_universe" / "deals.py").read_text()
+        self.assertNotIn(
+            'is_privileged = "System Manager" in roles or "Fresko Approver"',
+            deals_py,
+        )
+        self.assertIn(
+            "or System Manager) may accept a counter (D4)",
+            deals_py,
+        )
 
 
 

@@ -74,14 +74,14 @@ def accept_counter(deal_name: str):
 
     user = frappe.session.user
     roles = set(frappe.get_roles())
-    is_privileged = "System Manager" in roles or "Fresko Approver" in roles
-    # F-M6: if salesperson_user empty, only owner (or Approver/SM) — not any Salesperson
+    # F-M6 / D4: owner, assigned salesperson_user, or System Manager only.
+    # When salesperson_user empty, non-originator Salesperson (and Approver) cannot accept.
     allowed = {deal.owner}
     if deal.salesperson_user:
         allowed.add(deal.salesperson_user)
-    if user not in allowed and not is_privileged:
+    if user not in allowed and "System Manager" not in roles:
         frappe.throw(
-            _("Only the deal originator/salesperson (or Approver/SM) may accept a counter (D4)")
+            _("Only the deal originator/salesperson (or System Manager) may accept a counter (D4)")
         )
 
     if deal.approved_rate is None:
