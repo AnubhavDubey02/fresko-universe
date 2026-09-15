@@ -553,6 +553,15 @@ class TestD4AcceptCounterACL(unittest.TestCase):
             self._run("other@x.com", ["Fresko Salesperson"], owner="owner@x.com", salesperson=None)
 
 
+class TestD4SalespersonFieldLock(unittest.TestCase):
+    """G-M1: salesperson_user must be commercially locked (blocks Desk reassignment on Countered)."""
+
+    def test_salesperson_in_locked_commercial_fields(self):
+        from fresko_universe.constants import LOCKED_COMMERCIAL_FIELDS, COMMERCIAL_LOCK_STATUSES
+
+        self.assertIn("salesperson_user", LOCKED_COMMERCIAL_FIELDS)
+        self.assertIn("Countered", COMMERCIAL_LOCK_STATUSES)
+
 
 if __name__ == "__main__":
     unittest.main()

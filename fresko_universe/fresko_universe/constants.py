@@ -87,6 +87,8 @@ LOCKED_COMMERCIAL_FIELDS = frozenset(
         "approved_rate",
         "customer",
         "count_size",
+        # G-M1 / D4: cannot Desk-reassign salesperson on Countered to steal accept_counter
+        "salesperson_user",
     }
 )
 
