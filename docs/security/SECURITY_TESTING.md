@@ -1,6 +1,6 @@
 # SECURITY_TESTING — current coverage vs needed regressions
 
-**Tip:** `18c5042`.
+**Tip:** Gate 2 app tip `d785b632803948d9b1b6c6a54423db143f50c0ca` (`d785b63`) on `phase1-doctype-scaffold` (ledger update after Gate 2 green).
 
 ## RECORDED FACTS — What exists today
 
@@ -27,7 +27,7 @@ Runs in CI job `smoke-unit` without bench. Covers:
 
 | Signal | Present? |
 |---|---|
-| Unit/acceptance business-logic tests | Partial (smoke green; bench last recorded **failed**) |
+| Unit/acceptance business-logic tests | Partial (Gate 2 tip `d785b63`: smoke **56** + bench **59** green; still no dedicated security scanner jobs) |
 | SAST (CodeQL/semgrep/bandit) | **Missing** |
 | Secret scan (gitleaks/trufflehog) | **Missing** |
 | Dependency advisory (pip-audit/OSV) | **Missing** |
@@ -40,8 +40,9 @@ Static analysis + test reading only. **No** live attacks against deployed system
 
 ## TEST RESULTS
 
-- Local execution of full bench suite: **not re-run** in this Security baseline (environment is ledger-writing box, not a green Gate 2 runner).
-- Documented Gate 2 (`docs/GATE2_CI_RESULT.md` @ `6a4db0e`): 52 tests, 11 failed, 8 errors — later commits claim product fixes; tip `18c5042` outcome **UNKNOWN**.
+- **Gate 2 CI green** on tip `d785b632803948d9b1b6c6a54423db143f50c0ca` (`d785b63`): Smoke **56** + Bench **59** (includes FSEC permission tests). CI run [34954607466](https://github.com/AnubhavDubey02/fresko-universe/actions/runs/34954607466) success. See `docs/GATE2_CI_RESULT.md`.
+- Intermediate red on `f7db7c3` was FSEC `make_deal` fingerprint collisions; fixed by `d785b63` test hygiene — Gate1/D4/D10 not weakened.
+- Tip status for this Gate 2 tip is **no longer UNKNOWN**. Hold merge / no Phase 2. CI green ≠ secure.
 
 ## ASSUMPTIONS
 
@@ -52,6 +53,7 @@ Static analysis + test reading only. **No** live attacks against deployed system
 
 - Flaky concurrency test reliability under MariaDB isolation levels.
 - Whether `ignore_permissions` paths are ever exercised by non-SM in CI (likely always Administrator).
+- (Cleared for tip `d785b63`: Gate 2 smoke+bench outcome is green — see TEST RESULTS.)
 
 ## Needed security regression tests (backlog)
 

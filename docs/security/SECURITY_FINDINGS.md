@@ -2,8 +2,9 @@
 
 **Baseline date:** 2026-09-15  
 **Re-verify tip:** `fdbd9bd59435ac5f5d7e27d8c486c2046457f4dd` on `phase1-doctype-scaffold`  
+**Gate 2 CI tip (evidence):** `d785b632803948d9b1b6c6a54423db143f50c0ca` — Smoke 56 + Bench 59 green (run 34954607466); docs tip may be later.  
 **Statuses:** FSEC-001/002/003 **MITIGATED** (independent re-verify 2026-09-15); FSEC-004+ remain OPEN unless noted.  
-Fresko is **not** declared secure.
+Fresko is **not** declared secure. Hold merge / no Phase 2.
 
 Severity gate: CRITICAL/HIGH require fix or documented human override before production.
 
@@ -37,7 +38,9 @@ Severity gate: CRITICAL/HIGH require fix or documented human override before pro
 | `accept_counter` | ownership ACL `deals.py:125-133` (pre-existing D4) | Yes (`deals.py:145`) |
 | `approvals.decide` | role gate `approvals.py:38-40` (pre-existing) | Yes |
 
-Offline smoke for Accounts deny / stranger cancel / Salesperson dispatch deny / snapshot Guest deny: **18/18 FSEC smoke classes green** (FSEC-001 subset ok). Bench module not executed this pass (no full site).
+Offline smoke for Accounts deny / stranger cancel / Salesperson dispatch deny / snapshot Guest deny: **18/18 FSEC smoke classes green** (FSEC-001 subset ok).
+
+**TEST RESULTS (Gate 2 CI — tip `d785b63`):** GREEN — CI run [34954607466](https://github.com/AnubhavDubey02/fresko-universe/actions/runs/34954607466): Smoke **56** + Bench **59** including FSEC permission tests (`test_fsec_permissions`). Intermediate red on `f7db7c3` was FSEC `make_deal` fingerprint collisions; fixed by `d785b63` test hygiene only — Gate1/D4/D10 not weakened. Hold merge / no Phase 2. Status remains **MITIGATED** (not reopened; not declared secure).
 
 ### RESIDUAL (accepted under MITIGATED — not reopened)
 
@@ -108,7 +111,7 @@ Offline smoke for Accounts deny / stranger cancel / Salesperson dispatch deny / 
 - **DocType JSON still coarse:** `fresko_deal.json` still grants Fresko Salesperson `write=1` globally; row/doc ACL depends on Python hooks loading correctly (defense-in-depth gap if hooks mis-registered).
 - **Other DocTypes:** Container / Revision / Approval / Exception have **no** `permission_query` / `has_permission` hooks (Approver still RWC on Container via JSON alone).
 - **Evidence without `deal`:** `evidence_has_permission` allows Salesperson create/read/write when deal is unset (`permissions.py:293-295`).
-- Bench site run of `test_fsec_permissions` not executed this re-verify (offline smoke only).
+- **Prior residual (bench not run) UPDATED:** Gate 2 bench green on tip `d785b632803948d9b1b6c6a54423db143f50c0ca` (`d785b63`) includes FSEC permission tests (bench **59**). CI run 34954607466 success (Smoke 56 + Bench 59). See `docs/GATE2_CI_RESULT.md`. Intermediate red on `f7db7c3` was FSEC `make_deal` fingerprint collisions fixed by `d785b63` test hygiene — Gate1/D4/D10 not weakened. Hold merge / no Phase 2. FSEC-003 remains **MITIGATED** (not declared secure).
 
 ---
 
@@ -152,7 +155,7 @@ Offline smoke for Accounts deny / stranger cancel / Salesperson dispatch deny / 
 | **STATUS** | OPEN |
 | **Prerequisites** | PR merge via `.github/workflows/ci.yml` |
 | **Component** | `.github/workflows/ci.yml` |
-| **Impact** | Secrets, vulnerable Actions/deps, and authz regressions can merge on green smoke/bench alone. Last recorded bench run failed (`docs/GATE2_CI_RESULT.md`) — security signal is incomplete. |
+| **Impact** | Secrets, vulnerable Actions/deps, and authz regressions can merge on green smoke/bench alone. Gate 2 tip `d785b63` is green (Smoke 56 + Bench 59, run 34954607466) but CI still lacks SAST/secret/dep/permission jobs — security signal remains incomplete. |
 | **Evidence** | `ci.yml` jobs: `smoke-unit`, `frappe-bench` only — no CodeQL/semgrep/gitleaks/trivy/pip-audit/permission job |
 | **Repro (high-level)** | Read workflow; confirm absence of scan steps. |
 | **Fix** | Add gitleaks (or equivalent), pinned-action review, pip-audit/gh advisory job on lockfile/pins, and role-matrix unittest job. Do **not** auto-upgrade Frappe without Dependency Sovereignty proposal. |

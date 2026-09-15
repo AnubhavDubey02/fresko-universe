@@ -2,12 +2,12 @@
 
 **Date:** 2026-09-15  
 **Assessor role:** Fresko Security & Red Team  
-**Tip:** `18c5042` on `phase1-doctype-scaffold`  
+**Tip:** Gate 2 app tip `d785b632803948d9b1b6c6a54423db143f50c0ca` (`d785b63`) on `phase1-doctype-scaffold` (ACL re-verify was `fdbd9bd`; Gate 2 green after `d785b63` test hygiene)  
 **Method:** Static review of app code, DocType JSON, hooks, fixtures, Docker/CI, dependency docs, QA/Controls docs. No live exploit against deployed systems. No clone/push/PR.
 
 Fresko is **not** declared secure.
 
-**Re-verify 2026-09-15 (tip `fdbd9bd`):** FSEC-001/002/003 independently marked **MITIGATED** (code gates + hooks + offline smoke). See `SECURITY_FINDINGS.md` VERIFICATION sections. Other findings remain OPEN. Do not treat Phase 1 as production-ready.
+**Re-verify 2026-09-15 (tip `fdbd9bd`):** FSEC-001/002/003 independently marked **MITIGATED** (code gates + hooks + offline smoke). See `SECURITY_FINDINGS.md` VERIFICATION sections. **Gate 2 CI (tip `d785b63`):** Smoke 56 + Bench 59 green including FSEC permission tests (run 34954607466). Other findings (FSEC-004+) remain OPEN. Hold merge / no Phase 2. Do not treat Phase 1 as production-ready / do not declare secure.
 
 ## Scope coverage checklist
 
@@ -22,7 +22,7 @@ Fresko is **not** declared secure.
 | 7 | AI/LLM | Not in code — future surface recorded |
 | 8 | Data integrity | Append-only Approval; revision freeze; weak evidence hashing; track_changes uneven |
 | 9 | Races / partial failure | FOR UPDATE on ATS paths; commit after whitelist; webhook N/A |
-| 10 | CI | Functional tests only; security scanners missing; last recorded bench failed |
+| 10 | CI | Functional tests only; security scanners missing; Gate 2 tip `d785b63` smoke+bench green (run 34954607466) |
 | 11 | Coverage vs mission/QA | Many QA design gaps closed in code; authz & ingest uniqueness residuals remain |
 
 ## RECORDED FACTS (summary)
@@ -39,9 +39,9 @@ Fresko is **not** declared secure.
 
 ## TEST RESULTS
 
-- Smoke unit designed green offline (CI smoke job).
-- Bench acceptance exists but Gate2 last written result was red; tip re-verification UNKNOWN.
-- Permission-negative offline smoke present (`TestFSEC001*` / `002*` / `003*`); bench `test_fsec_permissions` exists, not run this pass.
+- **Gate 2 CI green** on tip `d785b632803948d9b1b6c6a54423db143f50c0ca` (`d785b63`): Smoke **56** + Bench **59** including FSEC permission tests. CI run [34954607466](https://github.com/AnubhavDubey02/fresko-universe/actions/runs/34954607466) success. See `docs/GATE2_CI_RESULT.md`.
+- Intermediate red on `f7db7c3` was FSEC `make_deal` fingerprint collisions; fixed by `d785b63` test hygiene — Gate1/D4/D10 not weakened.
+- Permission-negative offline smoke present (`TestFSEC001*` / `002*` / `003*`); bench `test_fsec_permissions` **executed and green** as part of the 59 bench tests. Tip status no longer UNKNOWN for this tip. Hold merge / no Phase 2.
 
 ## ASSUMPTIONS
 
@@ -51,7 +51,7 @@ Fresko is **not** declared secure.
 ## UNKNOWN
 
 - CVE list for Frappe `9f8ae9cd…` / ERPNext `df8b7f96…` transitive tree.
-- Bench test status on tip `18c5042`.
+- (Cleared: Gate 2 bench+smoke status on tip `d785b63` is green — see TEST RESULTS.)
 - Site-level File upload hardening.
 - Multi-role effective permissions.
 
@@ -65,8 +65,8 @@ Fresko is **not** declared secure.
 |---|---|---|---|
 | Add role/ownership gates to `cancel_deal`, `record_dispatch`, `set_dispatched_qty`, `apply_rate_rules`, `request_revision`, `apply_revision`, snapshots | `permissions.py` + whitelist call sites | FSEC-001 | **MITIGATED** — gates present; offline smoke OK |
 | Bind Approval→Deal (+ decision) inside `apply_revision`; require Approver/SM | `assert_approval_bound_for_revision` + `assert_can_apply_revision` | FSEC-002 | **MITIGATED** — not exists()-only |
-| Prove Accounts cannot mutate Deals via whitelist despite read-only DocType perm | `TestFSEC001*` + `deal_has_permission` Accounts read-only | FSEC-001/003 | **MITIGATED** (offline); bench site run still pending |
-| Re-run Gate 2 bench on tip; do not claim green from older SHA | `GATE2_CI_RESULT.md` vs tip | CI hygiene | Still required — not closed by ACL commit |
+| Prove Accounts cannot mutate Deals via whitelist despite read-only DocType perm | `TestFSEC001*` + `deal_has_permission` Accounts read-only | FSEC-001/003 | **MITIGATED**; Gate 2 bench green on `d785b63` includes FSEC permission tests (59) |
+| Re-run Gate 2 bench on tip; do not claim green from older SHA | `GATE2_CI_RESULT.md` vs tip | CI hygiene | **Done for tip `d785b63`** — run 34954607466 Smoke 56 + Bench 59 green; hold merge / no Phase 2 |
 
 ### BEFORE PRODUCTION
 
@@ -102,11 +102,11 @@ Do **not** auto-upgrade Frappe/ERPNext or add SDKs because a scanner flagged a C
 | QA / Controls expectation | Code status |
 |---|---|
 | Duplicate message/fingerprint | Largely implemented on Deal |
-| Concurrent ATS | Implemented with FOR UPDATE + tests (bench health UNKNOWN) |
+| Concurrent ATS | Implemented with FOR UPDATE + tests (Gate 2 tip `d785b63` bench green) |
 | Lot membership | Implemented |
 | approved_rate Desk lock | Implemented |
 | Unresolved buyer blocks Reconciled | Implemented |
 | Container close w/ open exceptions | Implemented for listed types |
-| Revision path validates **role** | **Not in code** — finding |
+| Revision path validates **role** | **MITIGATED** at `fdbd9bd` (Approver/SM + Approval bind) — FSEC-002 |
 | WhatsApp ingest / payment verified | Not implemented |
 | Settlement certificate immutability | Not in Phase 1 scope code |
