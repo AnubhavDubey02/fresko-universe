@@ -40,17 +40,39 @@ fi
 
 cd "${BENCH_DIR}"
 
+# bench init / get-app often name the remote "upstream", not "origin", and use a shallow clone.
+pin_checkout() {
+  local app_dir="$1"
+  local sha="$2"
+  local tag="$3"
+  local remote
+  remote="$(git -C "${app_dir}" remote | head -n1)"
+  if [[ -z "${remote}" ]]; then
+    echo "No git remote in ${app_dir}" >&2
+    exit 1
+  fi
+  echo "==> Checkout ${app_dir} @ ${tag} (${sha}) via remote ${remote}"
+  # Shallow clone of version-15 tip will not contain the pin SHA — fetch it explicitly.
+  git -C "${app_dir}" fetch --depth 1 "${remote}" "${sha}"
+  git -C "${app_dir}" fetch --depth 1 "${remote}" "refs/tags/${tag}:refs/tags/${tag}" || true
+  git -C "${app_dir}" checkout --force "${sha}"
+  local got
+  got="$(git -C "${app_dir}" rev-parse HEAD)"
+  if [[ "${got}" != "${sha}" ]]; then
+    echo "Pin mismatch in ${app_dir}: got ${got}, want ${sha}" >&2
+    exit 1
+  fi
+}
+
 echo "==> Checkout Frappe SHA"
-git -C apps/frappe fetch --tags origin
-git -C apps/frappe checkout --force "${FRAPPE_SHA}"
+pin_checkout apps/frappe "${FRAPPE_SHA}" "${FRAPPE_TAG}"
 
 if [[ ! -d apps/erpnext ]]; then
   echo "==> get-app erpnext"
   bench get-app https://github.com/frappe/erpnext --branch version-15 || \
     bench get-app erpnext https://github.com/frappe/erpnext --branch version-15
 fi
-git -C apps/erpnext fetch --tags origin
-git -C apps/erpnext checkout --force "${ERPNEXT_SHA}"
+pin_checkout apps/erpnext "${ERPNEXT_SHA}" "${ERPNEXT_TAG}"
 
 APP_SRC="${ROOT}/fresko_universe"
 if [[ ! -d apps/fresko_universe ]]; then
