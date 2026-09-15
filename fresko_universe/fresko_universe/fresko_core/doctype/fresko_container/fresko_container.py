@@ -161,8 +161,10 @@ class FreskoContainer(Document):
 @frappe.whitelist()
 def container_snapshot(container: str, lot_no: str | None = None):
     from fresko_universe.fresko_core.ats import available_to_sell
+    from fresko_universe.permissions import assert_can_read_ats_snapshot
     from frappe.utils import flt
 
+    assert_can_read_ats_snapshot()
     doc = frappe.get_doc("Fresko Container", container)
     lots_out = []
     for row in doc.get("lots") or []:

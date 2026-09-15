@@ -109,6 +109,7 @@ def decide(
         deal.approval_required = 0
         deal.set_status("Approved")
         _maybe_open_buyer_unresolved(deal)
+        # FSEC-001 audit: ignore_permissions AFTER Approver/SM role gate + D10 checks above.
         deal.save(ignore_permissions=True)
         frappe.db.commit()
         return _result(deal, approval)
@@ -151,6 +152,7 @@ def _insert_approval(deal, decision, rate, reason, oversell_override, exception_
             "exception": exception_doc.name if exception_doc else None,
         }
     )
+    # Append-only Approval row; insert after decide() role gate (FSEC-001).
     ap.insert(ignore_permissions=True)
     return ap
 

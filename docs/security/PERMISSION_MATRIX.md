@@ -1,6 +1,6 @@
 # PERMISSION_MATRIX — Roles × DocTypes / sensitive actions
 
-**Tip:** `18c5042`.  
+**Tip:** post FSEC-001/002/003 ACL on `phase1-doctype-scaffold`.  
 **Legend:** `VERIFIED_IN_CODE` = observed in DocType JSON and/or Python. `DOC_ONLY` = claimed in controls/QA docs but not enforced in app code. `UNKNOWN` = not proven this baseline.
 
 Fresko roles from fixtures: `Fresko Salesperson`, `Fresko Approver`, `Fresko Accounts` (+ platform `System Manager`).
@@ -24,20 +24,20 @@ Fresko roles from fixtures: `Fresko Salesperson`, `Fresko Approver`, `Fresko Acc
 | Action | Salesperson | Approver | Accounts | System Manager | Enforcement | Tag |
 |---|---|---|---|---|---|---|
 | Create Deal (Proposed) | Yes (RWC) | Yes | No write | Yes | DocType perm + `before_insert` forces Proposed | VERIFIED_IN_CODE |
-| `apply_rate_rules` | Callable if logged in | Callable | Callable | Callable | **No role check**; `ignore_permissions` on save | VERIFIED_IN_CODE — gap |
+| `apply_rate_rules` | Own deal | Yes | **Denied** | Yes | `assert_can_apply_rate_rules` then `ignore_permissions` | VERIFIED_IN_CODE |
 | `approvals.decide` | Denied | Allowed | Denied (unless SM) | Allowed | `get_roles` check | VERIFIED_IN_CODE |
 | Oversell override (D10) | Denied | Denied | Denied | Allowed | `OVERSELL_OVERRIDE_ROLES` | VERIFIED_IN_CODE |
 | `accept_counter` | Only if owner or `salesperson_user` | Denied (even Approver) | Denied | Denied unless owner/salesperson | Explicit user ACL | VERIFIED_IN_CODE |
-| `cancel_deal` | Callable (no ownership check) | Callable | Callable | Callable | Reason required; **no role** | VERIFIED_IN_CODE — gap |
-| `record_dispatch` | Callable | Callable | Callable | Callable | Physical ceiling; **no role** | VERIFIED_IN_CODE — gap |
-| `request_revision` | Callable | Callable | Callable | Callable | Reason; material needs evidence when locked | VERIFIED_IN_CODE — gap |
-| `apply_revision` | Callable | Callable | Callable | Callable | Approval doc must **exist** for material; **no role**; no Approval↔Deal bind | VERIFIED_IN_CODE — gap |
+| `cancel_deal` | Own deal | Yes | **Denied** | Yes | `assert_can_cancel_deal` | VERIFIED_IN_CODE |
+| `record_dispatch` | **Denied** | Yes | **Denied** | Yes | Approver/SM only | VERIFIED_IN_CODE |
+| `request_revision` | Own deal | Yes | **Denied** | Yes | `assert_can_request_revision` | VERIFIED_IN_CODE |
+| `apply_revision` | **Denied** | Yes | **Denied** | Yes | Approver/SM + Approval bound to deal + APPROVE/OVERSELL | VERIFIED_IN_CODE |
 | Desk edit `approved_rate` | Blocked | Blocked | Blocked | Blocked without flag | validate + read_only | VERIFIED_IN_CODE |
 | Desk edit `dispatched_qty` | Blocked | Blocked | Blocked | Blocked without flag | validate | VERIFIED_IN_CODE |
 | Delete Approval | No | No | No | Yes (on_trash gate) | `fresko_approval.py` | VERIFIED_IN_CODE |
 | Edit Approval after insert | No | No | No | No | append-only validate | VERIFIED_IN_CODE |
-| `permission_query` row filters | — | — | — | — | **Not implemented** | VERIFIED_IN_CODE (absence) |
-| Whitelist validates role (controls claim) | — | — | — | — | controls.md § revision path claims role validation | DOC_ONLY — **contradicted by code** |
+| `permission_query` row filters | Own/assigned | All | All | All | `deal_permission_query` / Evidence query | VERIFIED_IN_CODE |
+| Whitelist validates role (controls claim) | — | — | — | — | `apply_revision` + other mutators gated in `permissions.py` | VERIFIED_IN_CODE |
 
 ## TEST RESULTS
 

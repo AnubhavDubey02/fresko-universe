@@ -1,8 +1,8 @@
 # SECURITY_FINDINGS — living log
 
 **Baseline date:** 2026-09-15  
-**Tip:** `18c5042` `phase1-doctype-scaffold`  
-**All statuses below:** OPEN unless noted.
+**Tip:** see git tip on `phase1-doctype-scaffold` after FSEC-001/002/003 ACL commit.  
+**Statuses:** FSEC-001/002/003 FIXED; others OPEN unless noted.
 
 Severity gate: CRITICAL/HIGH require fix or documented human override before production.
 
@@ -13,7 +13,7 @@ Severity gate: CRITICAL/HIGH require fix or documented human override before pro
 | Field | Value |
 |---|---|
 | **SEVERITY** | HIGH |
-| **STATUS** | OPEN |
+| **STATUS** | FIXED (phase1 ACL — `permissions.py` + whitelist gates) |
 | **Prerequisites** | Any authenticated Desk/API user who can call `@frappe.whitelist` methods |
 | **Component** | `fresko_universe/deals.py`, `container.py` |
 | **Impact** | User with minimal DocType rights (or Accounts read-only on Deal) may still cancel deals, record dispatch, apply rate rules, open/apply revisions, or read ATS snapshots because methods save with `ignore_permissions=True` and do not call `get_roles` / ownership checks (except `accept_counter`). |
@@ -29,7 +29,7 @@ Severity gate: CRITICAL/HIGH require fix or documented human override before pro
 | Field | Value |
 |---|---|
 | **SEVERITY** | HIGH |
-| **STATUS** | OPEN |
+| **STATUS** | FIXED (Approval↔Deal bind + decision + Approver/SM) |
 | **Prerequisites** | Ability to call `apply_revision`; existence of any `Fresko Approval` document in the site |
 | **Component** | `deals.py:apply_revision` |
 | **Impact** | Material commercial fields (rate/qty/lot/customer) can be applied if *any* Approval name is supplied. Code checks `frappe.db.exists("Fresko Approval", approval_ref)` only — does not verify Approval.deal == revision.parent_name, decision ∈ {APPROVE,…}, or that the caller is Approver. Controls docs claim role validation on this path (**DOC_ONLY**, contradicted). |
@@ -45,7 +45,7 @@ Severity gate: CRITICAL/HIGH require fix or documented human override before pro
 | Field | Value |
 |---|---|
 | **SEVERITY** | HIGH |
-| **STATUS** | OPEN |
+| **STATUS** | FIXED (`hooks.py` + `deal_has_permission` / query; Evidence scoped) |
 | **Prerequisites** | Authenticated user with Fresko role perms from DocType JSON |
 | **Component** | hooks / DocType JSON / missing Python hooks |
 | **Impact** | Salesperson has write on all Fresko Deals (not owner-scoped). Approver has write on Containers and Deals. No row-level query filter. Server validate blocks some field/status abuses, but list/report exposure and unexpected writes remain broad. |

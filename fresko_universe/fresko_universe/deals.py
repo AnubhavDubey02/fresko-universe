@@ -8,6 +8,15 @@ from frappe.utils import flt
 
 from fresko_universe.ats import available_to_sell
 from fresko_universe.constants import COMMERCIAL_LOCK_STATUSES, MATERIAL_REVISION_FIELDS
+from fresko_universe.permissions import (
+    assert_approval_bound_for_revision,
+    assert_approval_not_stale,
+    assert_can_apply_rate_rules,
+    assert_can_apply_revision,
+    assert_can_cancel_deal,
+    assert_can_record_dispatch,
+    assert_can_request_revision,
+)
 from fresko_universe.rate_rules import policy_resolved, rate_in_band, resolve_rate_band
 
 
@@ -19,6 +28,7 @@ def apply_rate_rules(deal_name: str):
     Resolved + out-of-band → Approval Required (RATE_FLOOR_BREACH path).
     """
     deal = frappe.get_doc("Fresko Deal", deal_name)
+    assert_can_apply_rate_rules(deal)
     if deal.status != "Proposed":
         frappe.throw(_("apply_rate_rules only valid from Proposed (current: {0})").format(deal.status))
 
@@ -68,6 +78,9 @@ def apply_rate_rules(deal_name: str):
         # Do not assign approved_rate=None here (commercial lock / Currency coerce).
         deal.set_status("Approval Required")
 
+    # FSEC-001 audit: ignore_permissions AFTER assert_can_apply_rate_rules.
+    # Rationale: status / approved_rate writes use Document flags that Role Permission
+    # Manager cannot express; ACL above is the authorization SoR.
     deal.save(ignore_permissions=True)
     # Currency fields coerce None→0.0 on Document.save. Force SQL NULL where
     # commercial semantics require "unset" (Gate 1 approved_rate; empty snapshots).
@@ -128,6 +141,7 @@ def accept_counter(deal_name: str):
         frappe.throw(_("Cannot accept counter: qty {0} > ATS {1}").format(deal.qty, ats))
 
     deal.set_status("Approved")
+    # FSEC-001 audit: ignore_permissions AFTER D4 ownership ACL above.
     deal.save(ignore_permissions=True)
     frappe.db.commit()
     return {"name": deal.name, "status": deal.status, "approved_rate": deal.approved_rate}
@@ -139,6 +153,7 @@ def cancel_deal(deal_name: str, cancel_reason: str):
     if not cancel_reason:
         frappe.throw(_("cancel_reason is required"))
     deal = frappe.get_doc("Fresko Deal", deal_name)
+    assert_can_cancel_deal(deal)
     if deal.status == "Cancelled":
         return {
             "name": deal.name,
@@ -147,6 +162,7 @@ def cancel_deal(deal_name: str, cancel_reason: str):
         }
     deal.cancel_reason = cancel_reason
     deal.set_status("Cancelled")
+    # FSEC-001 audit: ignore_permissions AFTER assert_can_cancel_deal.
     deal.save(ignore_permissions=True)
     frappe.db.commit()
     return {
@@ -163,6 +179,7 @@ def record_dispatch(deal_name: str, dispatched_qty):
     Physical ceiling: dispatched_qty may never exceed deal qty or lot inward residual.
     """
     deal = frappe.get_doc("Fresko Deal", deal_name)
+    assert_can_record_dispatch(deal)
     qty = flt(dispatched_qty)
     if qty < 0:
         frappe.throw(_("dispatched_qty cannot be negative"))
@@ -214,6 +231,8 @@ def record_dispatch(deal_name: str, dispatched_qty):
         "Partially Dispatched",
     ):
         deal.set_status("Dispatched")
+    # FSEC-001 audit: ignore_permissions AFTER assert_can_record_dispatch.
+    # Rationale: dispatched_qty is server-only (Desk locked); whitelist is the sole writer.
     deal.save(ignore_permissions=True)
     frappe.db.commit()
     return {"name": deal.name, "dispatched_qty": deal.dispatched_qty, "status": deal.status}
@@ -235,6 +254,7 @@ def request_revision(
         frappe.throw(_("Revision reason is mandatory"))
 
     deal = frappe.get_doc("Fresko Deal", deal_name)
+    assert_can_request_revision(deal)
     allowed_fields = {
         "approved_rate",
         "qty",
@@ -268,6 +288,7 @@ def request_revision(
             "status": "Pending",
         }
     )
+    # FSEC-001 audit: ignore_permissions AFTER assert_can_request_revision.
     rev.insert(ignore_permissions=True)
 
     return {
@@ -285,8 +306,10 @@ def request_revision(
 def apply_revision(revision_name: str, approval_name: str | None = None):
     """Apply a Pending Fresko Revision onto its parent Deal.
 
-    Material fields require a Fresko Approval reference — role alone is insufficient.
+    Material fields require a Fresko Approval bound to this deal with APPROVE /
+    OVERSELL_OVERRIDE. Caller must be Fresko Approver or System Manager (FSEC-002).
     """
+    assert_can_apply_revision()
     rev = frappe.get_doc("Fresko Revision", revision_name)
     if rev.status != "Pending":
         frappe.throw(_("Revision {0} is not Pending").format(revision_name))
@@ -311,6 +334,9 @@ def apply_revision(revision_name: str, approval_name: str | None = None):
             )
         if not frappe.db.exists("Fresko Approval", approval_ref):
             frappe.throw(_("Fresko Approval {0} not found").format(approval_ref))
+        approval = frappe.get_doc("Fresko Approval", approval_ref)
+        assert_approval_bound_for_revision(approval, deal)
+        assert_approval_not_stale(approval, rev.name)
         if not rev.supporting_evidence:
             if deal.status in COMMERCIAL_LOCK_STATUSES:
                 frappe.throw(
@@ -333,6 +359,7 @@ def apply_revision(revision_name: str, approval_name: str | None = None):
     if fieldname == "approved_rate":
         deal.flags.allow_approval_write = True
     deal.set(fieldname, new_value)
+    # FSEC-001/002 audit: ignore_permissions AFTER role + Approval↔Deal bind checks.
     deal.save(ignore_permissions=True)
 
     if approval_name:
@@ -396,6 +423,7 @@ def _open_exception(deal, exception_type: str, description: str, severity: str =
             "description": description,
         }
     )
+    # System side-effect of an already-authorized commercial path (FSEC-001).
     ex.insert(ignore_permissions=True)
     return ex
 

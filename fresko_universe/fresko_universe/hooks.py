@@ -29,3 +29,15 @@ fixtures = [
         ],
     },
 ]
+
+# FSEC-003 — row-level + document ACL (Salesperson owner/salesperson scoped)
+permission_query_conditions = {
+    "Fresko Deal": "fresko_universe.permissions.deal_permission_query",
+    "Fresko Evidence": "fresko_universe.permissions.evidence_permission_query",
+}
+
+has_permission = {
+    "Fresko Deal": "fresko_universe.permissions.deal_has_permission",
+    "Fresko Evidence": "fresko_universe.permissions.evidence_has_permission",
+}
+

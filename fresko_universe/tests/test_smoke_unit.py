@@ -21,11 +21,15 @@ def _install_frappe_stub():
     frappe.whitelist = lambda *a, **k: (lambda fn: fn)
     frappe.log_error = lambda *a, **k: None
     frappe.session = types.SimpleNamespace(user="Administrator")
+    frappe.PermissionError = type("PermissionError", (Exception,), {})
     frappe.db = MagicMock()
+    frappe.db.escape = lambda v: "'%s'" % str(v).replace("'", "''")
     frappe.get_doc = MagicMock()
     frappe.get_all = MagicMock(return_value=[])
     frappe.get_roles = MagicMock(return_value=["System Manager"])
     frappe.db.commit = MagicMock()
+    frappe.db.escape = lambda v, percent=True: "'%s'" % str(v).replace("'", "''")
+    frappe.PermissionError = type("PermissionError", (Exception,), {})
     utils = types.ModuleType("frappe.utils")
     utils.flt = lambda v, p=None: float(v or 0)
     utils.nowdate = lambda: "2026-09-15"
@@ -455,6 +459,9 @@ class TestGate1RatePolicyMissing(unittest.TestCase):
         frappe.get_doc = MagicMock(side_effect=get_doc_flex)
         frappe.get_all = MagicMock(return_value=[])
         frappe.db.commit = MagicMock()
+        # Gate 1 paths run as privileged site user (bench Administrator / SM)
+        frappe.session = types.SimpleNamespace(user="Administrator")
+        frappe.get_roles = MagicMock(return_value=["System Manager"])
 
         # Patch ATS on deals module (imported name binding)
         orig_ats = deals_mod.available_to_sell
@@ -594,6 +601,278 @@ class TestD4SalespersonFieldLock(unittest.TestCase):
 
         self.assertIn("salesperson_user", LOCKED_COMMERCIAL_FIELDS)
         self.assertIn("Countered", COMMERCIAL_LOCK_STATUSES)
+
+
+
+class TestFSEC001WhitelistACL(unittest.TestCase):
+    """FSEC-001: Accounts / stranger cannot cancel, dispatch, or apply_rate_rules."""
+
+    def _deal(self, owner="owner@x.com", salesperson=None, status="Approved"):
+        deal = MagicMock()
+        deal.name = "DEAL-ACL"
+        deal.status = status
+        deal.owner = owner
+        deal.salesperson_user = salesperson
+        deal.container = "C1"
+        deal.lot_no = "L1"
+        deal.qty = 10
+        deal.dispatched_qty = 0
+        deal.cancel_reason = None
+        deal.proposed_rate = 100
+        deal.count_size = "16/20"
+        deal.flags = MagicMock()
+        deal.set_status = MagicMock(side_effect=lambda s: setattr(deal, "status", s))
+        deal.save = MagicMock()
+        deal.get = lambda k, default=None: getattr(deal, k, default)
+        return deal
+
+    def _as(self, user, roles):
+        import frappe
+
+        frappe.session = types.SimpleNamespace(user=user)
+        frappe.get_roles = MagicMock(return_value=roles)
+
+    def test_accounts_cannot_cancel_deal(self):
+        import frappe
+        from fresko_universe import deals as deals_mod
+
+        deal = self._deal()
+        self._as("acc@x.com", ["Fresko Accounts"])
+        frappe.get_doc = MagicMock(return_value=deal)
+        with self.assertRaises(Exception) as ctx:
+            deals_mod.cancel_deal(deal.name, "nope")
+        self.assertIn("Not permitted", str(ctx.exception))
+
+    def test_stranger_salesperson_cannot_cancel_others_deal(self):
+        import frappe
+        from fresko_universe import deals as deals_mod
+
+        deal = self._deal(owner="owner@x.com", salesperson="sp@x.com")
+        self._as("other@x.com", ["Fresko Salesperson"])
+        frappe.get_doc = MagicMock(return_value=deal)
+        with self.assertRaises(Exception) as ctx:
+            deals_mod.cancel_deal(deal.name, "nope")
+        self.assertIn("Not permitted", str(ctx.exception))
+
+    def test_owner_salesperson_can_cancel(self):
+        import frappe
+        from fresko_universe import deals as deals_mod
+
+        deal = self._deal(owner="sp@x.com", status="Proposed")
+        self._as("sp@x.com", ["Fresko Salesperson"])
+        frappe.get_doc = MagicMock(return_value=deal)
+        frappe.db.commit = MagicMock()
+        result = deals_mod.cancel_deal(deal.name, "buyer backed out")
+        self.assertEqual(result["status"], "Cancelled")
+
+    def test_salesperson_cannot_record_dispatch(self):
+        import frappe
+        from fresko_universe import deals as deals_mod
+
+        deal = self._deal(owner="sp@x.com")
+        self._as("sp@x.com", ["Fresko Salesperson"])
+        frappe.get_doc = MagicMock(return_value=deal)
+        with self.assertRaises(Exception) as ctx:
+            deals_mod.record_dispatch(deal.name, 1)
+        self.assertIn("Not permitted", str(ctx.exception))
+
+    def test_accounts_cannot_record_dispatch(self):
+        import frappe
+        from fresko_universe import deals as deals_mod
+
+        deal = self._deal()
+        self._as("acc@x.com", ["Fresko Accounts"])
+        frappe.get_doc = MagicMock(return_value=deal)
+        with self.assertRaises(Exception) as ctx:
+            deals_mod.record_dispatch(deal.name, 1)
+        self.assertIn("Not permitted", str(ctx.exception))
+
+    def test_approver_can_record_dispatch(self):
+        import frappe
+        from fresko_universe import deals as deals_mod
+
+        deal = self._deal(status="Approved")
+        self._as("appr@x.com", ["Fresko Approver"])
+        frappe.get_doc = MagicMock(return_value=deal)
+        frappe.db.sql = MagicMock(return_value=[])
+        frappe.db.commit = MagicMock()
+        result = deals_mod.record_dispatch(deal.name, 5)
+        self.assertEqual(result["dispatched_qty"], 5)
+
+    def test_accounts_cannot_apply_rate_rules(self):
+        import frappe
+        from fresko_universe import deals as deals_mod
+
+        deal = self._deal(status="Proposed")
+        self._as("acc@x.com", ["Fresko Accounts"])
+        frappe.get_doc = MagicMock(return_value=deal)
+        with self.assertRaises(Exception) as ctx:
+            deals_mod.apply_rate_rules(deal.name)
+        self.assertIn("Not permitted", str(ctx.exception))
+
+    def test_accounts_cannot_request_revision(self):
+        import frappe
+        from fresko_universe import deals as deals_mod
+
+        deal = self._deal(status="Approved")
+        self._as("acc@x.com", ["Fresko Accounts"])
+        frappe.get_doc = MagicMock(return_value=deal)
+        with self.assertRaises(Exception) as ctx:
+            deals_mod.request_revision(deal.name, "qty", "8", reason="cut")
+        self.assertIn("Not permitted", str(ctx.exception))
+
+    def test_snapshot_requires_fresko_role(self):
+        from fresko_universe.permissions import assert_can_read_ats_snapshot
+
+        self._as("acc@x.com", ["Fresko Accounts"])
+        assert_can_read_ats_snapshot()
+        self._as("stranger@x.com", ["Guest"])
+        with self.assertRaises(Exception) as ctx:
+            assert_can_read_ats_snapshot()
+        self.assertIn("Not permitted", str(ctx.exception))
+
+
+class TestFSEC002ApplyRevisionBind(unittest.TestCase):
+    """FSEC-002: Approval must bind to deal + APPROVE/OVERSELL; Approver/SM only."""
+
+    def _as(self, user, roles):
+        import frappe
+
+        frappe.session = types.SimpleNamespace(user=user)
+        frappe.get_roles = MagicMock(return_value=roles)
+
+    def _fixtures(self, approval_deal="DEAL-A", decision="APPROVE"):
+        rev = MagicMock()
+        rev.name = "REV-1"
+        rev.status = "Pending"
+        rev.parent_doctype = "Fresko Deal"
+        rev.parent_name = "DEAL-A"
+        rev.fieldname = "approved_rate"
+        rev.new_value = "18"
+        rev.approval_reference = None
+        rev.supporting_evidence = "EV-1"
+        rev.flags = MagicMock()
+        rev.save = MagicMock()
+
+        deal = MagicMock()
+        deal.name = "DEAL-A"
+        deal.status = "Approved"
+        deal.container = "C1"
+        deal.lot_no = "L1"
+        deal.qty = 10
+        deal.flags = MagicMock()
+        deal.set = MagicMock()
+        deal.save = MagicMock()
+
+        approval = MagicMock()
+        approval.name = "APR-1"
+        approval.deal = approval_deal
+        approval.decision = decision
+        return rev, deal, approval
+
+    def _run(self, rev, deal, approval, roles, user="appr@x.com"):
+        import frappe
+        from fresko_universe import deals as deals_mod
+
+        self._as(user, roles)
+        docs = {
+            ("Fresko Revision", rev.name): rev,
+            ("Fresko Deal", deal.name): deal,
+            ("Fresko Approval", approval.name): approval,
+        }
+
+        def get_doc(dt, name=None):
+            if isinstance(dt, dict):
+                return MagicMock()
+            return docs[(dt, name)]
+
+        frappe.get_doc = MagicMock(side_effect=get_doc)
+        frappe.db.exists = MagicMock(return_value=True)
+        frappe.db.commit = MagicMock()
+        frappe.get_all = MagicMock(return_value=[])
+        deals_mod.available_to_sell = MagicMock(return_value=1000)
+        return deals_mod.apply_revision(rev.name, approval_name=approval.name)
+
+    def test_apply_revision_rejects_non_approver(self):
+        rev, deal, approval = self._fixtures()
+        with self.assertRaises(Exception) as ctx:
+            self._run(rev, deal, approval, ["Fresko Salesperson"], user="sp@x.com")
+        self.assertIn("Not permitted", str(ctx.exception))
+
+    def test_apply_revision_rejects_mismatched_approval_deal(self):
+        rev, deal, approval = self._fixtures(approval_deal="DEAL-OTHER")
+        with self.assertRaises(Exception) as ctx:
+            self._run(rev, deal, approval, ["Fresko Approver"])
+        msg = str(ctx.exception)
+        self.assertTrue("DEAL-OTHER" in msg or "not DEAL-A" in msg or "bound" in msg)
+
+    def test_apply_revision_rejects_reject_decision(self):
+        rev, deal, approval = self._fixtures(decision="REJECT")
+        with self.assertRaises(Exception) as ctx:
+            self._run(rev, deal, approval, ["Fresko Approver"])
+        self.assertIn("REJECT", str(ctx.exception))
+
+    def test_apply_revision_approver_bound_ok(self):
+        rev, deal, approval = self._fixtures()
+        result = self._run(rev, deal, approval, ["Fresko Approver"])
+        self.assertEqual(result["status"], "Applied")
+        self.assertEqual(result["approval_reference"], approval.name)
+
+
+class TestFSEC003DealPermissionHooks(unittest.TestCase):
+    """FSEC-003: has_permission / permission_query scoping."""
+
+    def test_salesperson_cannot_write_foreign_or_locked_deal(self):
+        import frappe
+        from fresko_universe.permissions import deal_has_permission
+
+        frappe.session = types.SimpleNamespace(user="sp@x.com")
+        frappe.get_roles = MagicMock(return_value=["Fresko Salesperson"])
+
+        foreign = MagicMock(owner="other@x.com", salesperson_user=None, status="Proposed")
+        self.assertFalse(deal_has_permission(foreign, "write", "sp@x.com"))
+
+        own_locked = MagicMock(owner="sp@x.com", salesperson_user=None, status="Approved")
+        self.assertFalse(deal_has_permission(own_locked, "write", "sp@x.com"))
+
+        own_proposed = MagicMock(owner="sp@x.com", salesperson_user=None, status="Proposed")
+        self.assertTrue(deal_has_permission(own_proposed, "write", "sp@x.com"))
+
+    def test_accounts_read_only_on_deal(self):
+        import frappe
+        from fresko_universe.permissions import deal_has_permission
+
+        frappe.get_roles = MagicMock(return_value=["Fresko Accounts"])
+        deal = MagicMock(owner="x", salesperson_user=None, status="Proposed")
+        self.assertTrue(deal_has_permission(deal, "read", "acc@x.com"))
+        self.assertFalse(deal_has_permission(deal, "write", "acc@x.com"))
+
+    def test_permission_query_scopes_two_sales_users(self):
+        import frappe
+        from fresko_universe.permissions import deal_permission_query
+
+        frappe.get_roles = MagicMock(return_value=["Fresko Salesperson"])
+        frappe.db.escape = lambda v, percent=True: "'%s'" % v
+        q_a = deal_permission_query("sales_a@x.com")
+        q_b = deal_permission_query("sales_b@x.com")
+        self.assertIn("sales_a@x.com", q_a)
+        self.assertIn("sales_b@x.com", q_b)
+        self.assertNotEqual(q_a, q_b)
+        self.assertIn("salesperson_user", q_a)
+
+    def test_approver_query_unrestricted(self):
+        import frappe
+        from fresko_universe.permissions import deal_permission_query
+
+        frappe.get_roles = MagicMock(return_value=["Fresko Approver"])
+        self.assertEqual(deal_permission_query("appr@x.com"), "")
+
+    def test_hooks_register_permission_maps(self):
+        hooks_py = (ROOT / "fresko_universe" / "hooks.py").read_text()
+        self.assertIn("permission_query_conditions", hooks_py)
+        self.assertIn("deal_has_permission", hooks_py)
+        self.assertIn("evidence_has_permission", hooks_py)
+        self.assertIn("deal_permission_query", hooks_py)
 
 
 if __name__ == "__main__":
