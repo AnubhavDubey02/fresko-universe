@@ -84,9 +84,7 @@ class TestStateMachine(unittest.TestCase):
         self.assertIn("Approval Required", COMMERCIAL_LOCK_STATUSES)
 
     def test_d10_oversell_system_manager_only(self):
-        self.assertEqual(OVERSELL_OVERRIDE_ROLES,
-    EXCEPTION_TYPES,
-    MATERIAL_EXCEPTION_TYPES, frozenset({"System Manager"}))
+        self.assertEqual(OVERSELL_OVERRIDE_ROLES, frozenset({"System Manager"}))
         self.assertNotIn("Fresko Approver", OVERSELL_OVERRIDE_ROLES)
 
 
