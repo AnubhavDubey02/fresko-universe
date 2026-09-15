@@ -5,4 +5,5 @@ from fresko_universe.fresko_core.ats import (  # noqa: F401
     assert_ats_allows,
     available_to_sell,
     commercial_qty_for_ats,
+    lock_container_for_update,
 )

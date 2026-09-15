@@ -6,6 +6,9 @@ Uses live APIs: fresko_universe.deals / fresko_universe.approvals (no fresko_uni
 
 from __future__ import annotations
 
+import threading
+from queue import Queue
+
 import frappe
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import flt, today
@@ -459,6 +462,154 @@ class TestFreskoDeal(FrappeTestCase):
         with self.assertRaises(frappe.ValidationError):
             deal.save(ignore_permissions=True)
 
+    def test_concurrent_dispatches_cannot_exceed_lot_inward(self):
+        """D10: independent transactions serialize before the physical ceiling read."""
+        d1 = _make_deal(self.container, qty=60, rate=20, alias="DispatchRaceA")
+        deals_api.apply_rate_rules(d1.name)
+        d2 = _make_deal(self.container, qty=60, rate=5, alias="DispatchRaceB")
+        deals_api.apply_rate_rules(d2.name)
+        approvals_api.decide(
+            d2.name,
+            "OVERSELL_OVERRIDE",
+            reason="test setup: commercial oversell only",
+            oversell_override=1,
+        )
+        frappe.db.commit()  # make setup visible to the two independent connections
+
+        deal_names = [d1.name, d2.name]
+
+        def cleanup_committed_rows():
+            frappe.set_user("Administrator")
+            frappe.db.rollback()
+            for doctype in (
+                "Fresko Approval",
+                "Fresko Evidence",
+                "Fresko Exception",
+            ):
+                frappe.db.delete(doctype, {"deal": ("in", deal_names)})
+            frappe.db.delete(
+                "Fresko Revision", {"parent_name": ("in", deal_names)}
+            )
+            frappe.db.delete("Fresko Deal", {"name": ("in", deal_names)})
+            frappe.db.delete("Fresko Container Lot", {"parent": self.container.name})
+            frappe.db.delete("Fresko Container", {"name": self.container.name})
+            frappe.db.commit()
+
+        self.addCleanup(cleanup_committed_rows)
+
+        site = frappe.local.site
+        barrier = threading.Barrier(2)
+        outcomes = Queue()
+
+        def dispatch_worker(deal_name):
+            frappe.init(site=site)
+            frappe.connect()
+            frappe.set_user("Administrator")
+            try:
+                barrier.wait(timeout=20)
+                deals_api.record_dispatch(deal_name, 60)
+                outcomes.put((deal_name, "OK", ""))
+            except Exception as exc:
+                frappe.db.rollback()
+                outcomes.put((deal_name, "DENIED", str(exc)))
+            finally:
+                frappe.destroy()
+
+        workers = [
+            threading.Thread(target=dispatch_worker, args=(d1.name,)),
+            threading.Thread(target=dispatch_worker, args=(d2.name,)),
+        ]
+        for worker in workers:
+            worker.start()
+        for worker in workers:
+            worker.join(timeout=30)
+        self.assertFalse(any(worker.is_alive() for worker in workers), "dispatch worker hung")
+
+        results = [outcomes.get_nowait(), outcomes.get_nowait()]
+        self.assertEqual([r[1] for r in results].count("OK"), 1, results)
+        self.assertEqual([r[1] for r in results].count("DENIED"), 1, results)
+        denied = next(r for r in results if r[1] == "DENIED")
+        self.assertIn("Physical dispatch ceiling", denied[2])
+
+        # End the main connection's old snapshot before reading worker commits.
+        frappe.db.rollback()
+        dispatched = frappe.get_all(
+            "Fresko Deal",
+            filters={"name": ("in", [d1.name, d2.name])},
+            pluck="dispatched_qty",
+        )
+        self.assertEqual(sum(flt(value) for value in dispatched), 60)
+
+    def test_concurrent_apply_revision_consumes_approval_once(self):
+        """Independent transactions: exactly one worker may apply a Pending Revision."""
+        deal = _make_deal(self.container, rate=20, alias="RevisionRace")
+        deals_api.apply_rate_rules(deal.name)
+        deal.reload()
+        ev = _make_evidence(deal)
+        rev = deals_api.request_revision(
+            deal.name,
+            "approved_rate",
+            "19",
+            reason="concurrent consume",
+            supporting_evidence=ev.name,
+        )
+        apr = _make_revision_approval(deal, rev["revision"], reason="single-use approval")
+        frappe.db.commit()
+
+        def cleanup_committed_rows():
+            frappe.set_user("Administrator")
+            frappe.db.rollback()
+            frappe.db.delete("Fresko Approval", {"deal": deal.name})
+            frappe.db.delete("Fresko Revision", {"parent_name": deal.name})
+            frappe.db.delete("Fresko Evidence", {"deal": deal.name})
+            frappe.db.delete("Fresko Exception", {"deal": deal.name})
+            frappe.db.delete("Fresko Deal", {"name": deal.name})
+            frappe.db.delete("Fresko Container Lot", {"parent": self.container.name})
+            frappe.db.delete("Fresko Container", {"name": self.container.name})
+            frappe.db.commit()
+
+        self.addCleanup(cleanup_committed_rows)
+
+        site = frappe.local.site
+        barrier = threading.Barrier(2)
+        outcomes = Queue()
+
+        def apply_worker():
+            frappe.init(site=site)
+            frappe.connect()
+            frappe.set_user("Administrator")
+            try:
+                barrier.wait(timeout=20)
+                deals_api.apply_revision(rev["revision"], approval_name=apr.name)
+                outcomes.put(("OK", ""))
+            except Exception as exc:
+                frappe.db.rollback()
+                outcomes.put(("DENIED", str(exc)))
+            finally:
+                frappe.destroy()
+
+        workers = [threading.Thread(target=apply_worker) for _ in range(2)]
+        for worker in workers:
+            worker.start()
+        for worker in workers:
+            worker.join(timeout=30)
+        self.assertFalse(any(worker.is_alive() for worker in workers), "revision worker hung")
+
+        results = [outcomes.get_nowait(), outcomes.get_nowait()]
+        self.assertEqual([r[0] for r in results].count("OK"), 1, results)
+        self.assertEqual([r[0] for r in results].count("DENIED"), 1, results)
+        self.assertIn("not Pending", next(r[1] for r in results if r[0] == "DENIED"))
+
+        frappe.db.rollback()
+        self.assertEqual(
+            frappe.db.get_value("Fresko Revision", rev["revision"], "status"),
+            "Applied",
+        )
+        self.assertEqual(
+            int(frappe.db.get_value("Fresko Approval", apr.name, "consumed") or 0),
+            1,
+        )
+
 
     def test_gate1_no_rate_rule_rate_policy_missing(self):
         """Gate 1: no applicable floor/rule → Approval Required + RATE_POLICY_MISSING."""
@@ -650,7 +801,9 @@ class TestFreskoDeal(FrappeTestCase):
                 "approver": frappe.session.user,
                 "reason": "unbound deal-only",
             }
-        ).insert(ignore_permissions=True)
+        )
+        apr.flags.allow_controlled_insert = True  # simulate legacy unbound Approval
+        apr.insert(ignore_permissions=True)
         with self.assertRaises(frappe.PermissionError):
             deals_api.apply_revision(rev["revision"], approval_name=apr.name)
 
@@ -763,4 +916,3 @@ class TestFreskoDeal(FrappeTestCase):
             frappe.db.count("Fresko Exception", {"deal": d2.name}),
             before_ex,
         )
-

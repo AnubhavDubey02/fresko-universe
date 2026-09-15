@@ -142,7 +142,9 @@ class TestFSECPermissions(FrappeTestCase):
                 "approver": frappe.session.user,
                 "reason": "wrong deal approval",
             }
-        ).insert(ignore_permissions=True)
+        )
+        apr.flags.allow_controlled_insert = True  # simulate a pre-existing/corrupt bound row
+        apr.insert(ignore_permissions=True)
 
         frappe.set_user("fsec_approver@example.com")
         with self.assertRaises(frappe.PermissionError):
@@ -210,7 +212,9 @@ class TestFSECPermissions(FrappeTestCase):
                 "approver": frappe.session.user,
                 "reason": "reject cannot authorize",
             }
-        ).insert(ignore_permissions=True)
+        )
+        apr.flags.allow_controlled_insert = True  # simulate legacy evidence for downstream guard
+        apr.insert(ignore_permissions=True)
         frappe.set_user("fsec_approver@example.com")
         with self.assertRaises(frappe.PermissionError):
             apply_revision(rev["revision"], approval_name=apr.name)
@@ -274,7 +278,9 @@ class TestFSECPermissions(FrappeTestCase):
                 "approver": frappe.session.user,
                 "reason": "deal-only unbound",
             }
-        ).insert(ignore_permissions=True)
+        )
+        apr.flags.allow_controlled_insert = True  # simulate legacy unbound Approval
+        apr.insert(ignore_permissions=True)
         frappe.set_user("fsec_approver@example.com")
         with self.assertRaises(frappe.PermissionError):
             apply_revision(rev["revision"], approval_name=apr.name)
@@ -310,3 +316,132 @@ class TestFSECPermissions(FrappeTestCase):
         deal.reload()
         self.assertEqual(float(deal.approved_rate), 55.0)
 
+    def test_direct_approval_and_revision_creation_denied(self):
+        deal = make_deal(self.container, proposed_rate=50, qty=5)
+        with self.assertRaises(frappe.PermissionError):
+            frappe.get_doc(
+                {
+                    "doctype": "Fresko Revision",
+                    "parent_doctype": "Fresko Deal",
+                    "parent_name": deal.name,
+                    "fieldname": "qty",
+                    "old_value": "5",
+                    "new_value": "4",
+                    "changed_by": "Guest",
+                    "changed_at": "2000-01-01 00:00:00",
+                    "reason": "direct forged revision",
+                    "status": "Pending",
+                }
+            ).insert(ignore_permissions=True)
+        with self.assertRaises(frappe.PermissionError):
+            frappe.get_doc(
+                {
+                    "doctype": "Fresko Approval",
+                    "deal": deal.name,
+                    "decision": "APPROVE",
+                    "approver": "Guest",
+                    "decided_at": "2000-01-01 00:00:00",
+                    "reason": "direct forged approval",
+                }
+            ).insert(ignore_permissions=True)
+
+    def test_controlled_insert_forces_server_provenance(self):
+        deal = make_deal(self.container, proposed_rate=50, qty=5)
+        rev = frappe.get_doc(
+            {
+                "doctype": "Fresko Revision",
+                "parent_doctype": "Fresko Deal",
+                "parent_name": deal.name,
+                "fieldname": "qty",
+                "old_value": "5",
+                "new_value": "4",
+                "changed_by": "Guest",
+                "changed_at": "2000-01-01 00:00:00",
+                "reason": "server provenance revision",
+                "status": "Pending",
+            }
+        )
+        rev.flags.allow_controlled_insert = True
+        rev.insert(ignore_permissions=True)
+        self.assertEqual(rev.changed_by, frappe.session.user)
+        self.assertNotEqual(str(rev.changed_at), "2000-01-01 00:00:00")
+
+        apr = frappe.get_doc(
+            {
+                "doctype": "Fresko Approval",
+                "deal": deal.name,
+                "revision": rev.name,
+                "decision": "APPROVE",
+                "approver": "Guest",
+                "decided_at": "2000-01-01 00:00:00",
+                "reason": "server provenance approval",
+            }
+        )
+        apr.flags.allow_controlled_insert = True
+        apr.insert(ignore_permissions=True)
+        self.assertEqual(apr.approver, frappe.session.user)
+        self.assertNotEqual(str(apr.decided_at), "2000-01-01 00:00:00")
+
+    def test_revision_allowlist_is_enforced_at_every_boundary(self):
+        deal = make_deal(self.container, proposed_rate=50, qty=5)
+        apply_rate_rules(deal.name)
+        deal.reload()
+
+        with self.assertRaises(frappe.ValidationError):
+            request_revision(deal.name, "container", "OTHER", reason="container move")
+
+        malicious = frappe.get_doc(
+            {
+                "doctype": "Fresko Revision",
+                "parent_doctype": "Fresko Deal",
+                "parent_name": deal.name,
+                "fieldname": "status",
+                "old_value": deal.status,
+                "new_value": "Reconciled",
+                "reason": "attempt arbitrary field",
+                "status": "Pending",
+            }
+        )
+        malicious.flags.allow_controlled_insert = True
+        with self.assertRaises(frappe.ValidationError):
+            malicious.insert(ignore_permissions=True)
+
+        legitimate = request_revision(
+            deal.name,
+            "item",
+            deal.item,
+            reason="create row for apply boundary",
+        )
+        frappe.db.set_value(
+            "Fresko Revision", legitimate["revision"], "fieldname", "status",
+            update_modified=False,
+        )
+        with self.assertRaises(frappe.ValidationError):
+            apply_revision(legitimate["revision"])
+
+    def test_approver_cannot_mint_revision_oversell_evidence(self):
+        deal = make_deal(self.container, proposed_rate=50, qty=5)
+        apply_rate_rules(deal.name)
+        ev = frappe.get_doc(
+            {
+                "doctype": "Fresko Evidence",
+                "evidence_type": "Note",
+                "deal": deal.name,
+                "container": self.container.name,
+                "notes": "revision oversell attack",
+            }
+        ).insert(ignore_permissions=True)
+        rev = request_revision(
+            deal.name,
+            "qty",
+            4,
+            reason="oversell-label attack",
+            supporting_evidence=ev.name,
+        )
+        frappe.set_user("fsec_approver@example.com")
+        with self.assertRaises(frappe.ValidationError):
+            create_revision_approval(
+                rev["revision"],
+                "OVERSELL_OVERRIDE",
+                reason="ordinary approver cannot mint D10 evidence",
+            )

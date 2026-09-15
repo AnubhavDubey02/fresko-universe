@@ -4,6 +4,8 @@
 import frappe
 from frappe.model.document import Document
 
+from fresko_universe.constants import REVISION_ELIGIBLE_FIELDS
+
 _HISTORICAL_FIELDS = (
     "old_value",
     "new_value",
@@ -20,12 +22,22 @@ _HISTORICAL_FIELDS = (
 
 class FreskoRevision(Document):
     def before_insert(self):
-        if not self.changed_by:
-            self.changed_by = frappe.session.user
-        if not self.changed_at:
-            self.changed_at = frappe.utils.now_datetime()
+        if not self.flags.get("allow_controlled_insert"):
+            frappe.throw(
+                "Fresko Revision can only be created through deals.request_revision",
+                frappe.PermissionError,
+            )
+        # Client-supplied provenance never wins, even on ignore_permissions inserts.
+        self.changed_by = frappe.session.user
+        self.changed_at = frappe.utils.now_datetime()
         if not self.reason:
             frappe.throw("Revision reason is mandatory")
+        if self.parent_doctype != "Fresko Deal":
+            frappe.throw("Only Fresko Deal revisions are supported in Phase 1")
+        if self.fieldname not in REVISION_ELIGIBLE_FIELDS:
+            frappe.throw(f"Field {self.fieldname} is not revision-eligible")
+        if self.status != "Pending":
+            frappe.throw("New Fresko Revision must start Pending")
 
     def validate(self):
         if self.is_new():

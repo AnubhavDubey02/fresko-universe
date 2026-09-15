@@ -10,7 +10,6 @@ from fresko_universe.ats import available_to_sell
 from fresko_universe.constants import OVERSELL_OVERRIDE_ROLES
 from fresko_universe.deals import _maybe_open_buyer_unresolved, _open_exception
 from fresko_universe.permissions import (
-    APPROVAL_APPLY_DECISIONS,
     assert_can_create_revision_approval,
 )
 
@@ -162,9 +161,11 @@ def create_revision_approval(
     """
     assert_can_create_revision_approval()
     decision = (decision or "").upper().strip()
-    if decision not in APPROVAL_APPLY_DECISIONS:
+    # Phase 1 revisions fail closed on ATS and have no valid oversell-apply path.
+    # Do not mint misleading OVERSELL_OVERRIDE evidence for this endpoint.
+    if decision != "APPROVE":
         frappe.throw(
-            _("create_revision_approval decision must be APPROVE or OVERSELL_OVERRIDE "
+            _("create_revision_approval decision must be APPROVE in Phase 1 "
               "(got {0})").format(decision or "(empty)")
         )
     if not reason:
@@ -227,6 +228,7 @@ def _insert_approval(deal, decision, rate, reason, oversell_override, exception_
             "consumed": 0,
         }
     )
+    ap.flags.allow_controlled_insert = True
     # Append-only Approval row; insert after decide() role gate (FSEC-001).
     ap.insert(ignore_permissions=True)
     return ap

@@ -17,8 +17,8 @@ ROLE_SYSTEM_MANAGER = "System Manager"
 
 FRESKO_ROLES = frozenset({ROLE_SALESPERSON, ROLE_APPROVER, ROLE_ACCOUNTS})
 
-# Material revision apply: only decisions that affirm a commercial change.
-APPROVAL_APPLY_DECISIONS = frozenset({"APPROVE", "OVERSELL_OVERRIDE"})
+# Phase 1 revision apply has no oversell path: ATS always fails closed.
+APPROVAL_APPLY_DECISIONS = frozenset({"APPROVE"})
 
 
 def current_roles(user: str | None = None) -> set[str]:
@@ -137,7 +137,7 @@ def assert_approval_bound_for_revision(approval, deal, revision=None) -> None:
         frappe.throw(
             _(
                 "Fresko Approval {0} decision {1} cannot apply a material revision "
-                "(need APPROVE or OVERSELL_OVERRIDE)"
+                "(need APPROVE)"
             ).format(approval.name, decision or "(empty)"),
             frappe.PermissionError,
         )

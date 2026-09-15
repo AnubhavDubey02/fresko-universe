@@ -72,7 +72,10 @@ Implemented on `phase1-doctype-scaffold` without merge / without Phase 2:
 
 1. **Commercial immutability:** `COMMERCIAL_LOCK_STATUSES` includes Cancelled, Rejected, Disputed (plus existing post-Proposed locks). Desk write remains Salesperson=Proposed-only; Accounts read-only.
 2. **Approval↔Revision bind:** Fresko Approval.`revision` + `consumed`; `approvals.create_revision_approval`; material `apply_revision` rejects Deal-only Approvals; stale old_value + consume replay guards.
-3. **RC Countered rate:** `decide(COUNTER)` stores rate on Approval.`decision_rate` only; Deal.`approved_rate` stays NULL; `accept_counter` copies decision_rate → approved_rate then Approved + D6.
+3. **Phase 1 Revision boundary:** `REVISION_ELIGIBLE_FIELDS` is the canonical server allowlist and is enforced by request, DocType controller, and apply. Container reassignment is explicitly unsupported until an atomic destination-lot/ATS flow exists.
+4. **Audit provenance:** Approval/Revision creation is server-method-only; actor and timestamp are always overwritten from the authenticated session/server clock. Phase 1 revision approvals support `APPROVE` only—`OVERSELL_OVERRIDE` remains a Deal-level System Manager decision and cannot label a revision.
+5. **Physical dispatch serialization:** every `record_dispatch` locks the stable Container row before reading lot inward or aggregate dispatched quantity and holds the lock through save/commit.
+6. **RC Countered rate:** `decide(COUNTER)` stores rate on Approval.`decision_rate` only; Deal.`approved_rate` stays NULL; `accept_counter` copies decision_rate → approved_rate then Approved + D6.
 
 **Security backlog (not fixed here — do not pad):**
 
@@ -80,4 +83,3 @@ Implemented on `phase1-doctype-scaffold` without merge / without Phase 2:
 - **FSEC-006** = before production (CI SAST / secret scan / dependency advisory).
 
 Gate1 / D4 / D10 unchanged.
-

@@ -16,6 +16,14 @@ from frappe.utils import flt
 from fresko_universe.constants import ATS_REDUCING_STATUSES
 
 
+def lock_container_for_update(container: str) -> None:
+    """Serialize stock-sensitive mutations on one stable container row."""
+    frappe.db.sql(
+        "SELECT name FROM `tabFresko Container` WHERE name=%s FOR UPDATE",
+        (container,),
+    )
+
+
 def available_to_sell(
     container: str,
     lot_no: str,
@@ -24,10 +32,7 @@ def available_to_sell(
     for_update: bool = False,
 ) -> float:
     if for_update:
-        frappe.db.sql(
-            "SELECT name FROM `tabFresko Container` WHERE name=%s FOR UPDATE",
-            (container,),
-        )
+        lock_container_for_update(container)
 
     lot_inward = _lot_inward_qty(container, lot_no)
     reserved = _reserved_qty(container, lot_no, exclude_deal=exclude_deal)

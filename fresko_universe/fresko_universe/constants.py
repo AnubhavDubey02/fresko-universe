@@ -135,6 +135,21 @@ MATERIAL_EXCEPTION_TYPES = frozenset(
 EXCEPTION_OPEN_STATUSES = frozenset({"Open", "In Progress"})
 OVERSELL_OVERRIDE_ROLES = frozenset({"System Manager"})  # D10 / DV4: Approver cannot oversell
 
+# Canonical server-side allowlist for Fresko Deal revisions.  This is deliberately
+# narrower than LOCKED_COMMERCIAL_FIELDS: container reassignment needs an atomic
+# destination-lot / ATS validation flow and is therefore immutable in Phase 1.
+REVISION_ELIGIBLE_FIELDS = frozenset(
+    {
+        "approved_rate",
+        "qty",
+        "lot_no",
+        "container_lot",
+        "customer",
+        "item",
+        "count_size",
+    }
+)
+
 # Post-approval commercial revisions require Approval + evidence (Controls B2)
 MATERIAL_REVISION_FIELDS = frozenset(
     {

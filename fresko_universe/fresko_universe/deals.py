@@ -6,8 +6,12 @@ import frappe
 from frappe import _
 from frappe.utils import flt
 
-from fresko_universe.ats import available_to_sell
-from fresko_universe.constants import COMMERCIAL_LOCK_STATUSES, MATERIAL_REVISION_FIELDS
+from fresko_universe.ats import available_to_sell, lock_container_for_update
+from fresko_universe.constants import (
+    COMMERCIAL_LOCK_STATUSES,
+    MATERIAL_REVISION_FIELDS,
+    REVISION_ELIGIBLE_FIELDS,
+)
 from fresko_universe.permissions import (
     assert_approval_bound_for_revision,
     assert_approval_not_consumed,
@@ -211,6 +215,12 @@ def record_dispatch(deal_name: str, dispatched_qty):
     """
     deal = frappe.get_doc("Fresko Deal", deal_name)
     assert_can_record_dispatch(deal)
+    # D10: every physical dispatch for this container uses the same row lock.
+    # Acquire it before reading lot inward or aggregate dispatched quantity and
+    # hold it until the mutation commits. Reload after a wait so validation uses
+    # the current Deal state rather than the pre-lock snapshot.
+    lock_container_for_update(deal.container)
+    deal.reload()
     qty = flt(dispatched_qty)
     if qty < 0:
         frappe.throw(_("dispatched_qty cannot be negative"))
@@ -286,16 +296,7 @@ def request_revision(
 
     deal = frappe.get_doc("Fresko Deal", deal_name)
     assert_can_request_revision(deal)
-    allowed_fields = {
-        "approved_rate",
-        "qty",
-        "lot_no",
-        "container_lot",
-        "customer",
-        "item",
-        "count_size",
-    }
-    if fieldname not in allowed_fields:
+    if fieldname not in REVISION_ELIGIBLE_FIELDS:
         frappe.throw(_("Field {0} is not revision-eligible").format(fieldname))
 
     if fieldname in MATERIAL_REVISION_FIELDS and not supporting_evidence:
@@ -319,6 +320,7 @@ def request_revision(
             "status": "Pending",
         }
     )
+    rev.flags.allow_controlled_insert = True
     # FSEC-001 audit: ignore_permissions AFTER assert_can_request_revision.
     rev.insert(ignore_permissions=True)
 
@@ -343,6 +345,9 @@ def apply_revision(revision_name: str, approval_name: str | None = None):
     Caller must be Fresko Approver or System Manager (FSEC-002).
     """
     assert_can_apply_revision()
+    # Serialize status + approval consumption. A second worker waits here and
+    # then observes Applied instead of reusing a stale Pending snapshot.
+    _lock_named_row("Fresko Revision", revision_name)
     rev = frappe.get_doc("Fresko Revision", revision_name)
     if rev.status != "Pending":
         frappe.throw(_("Revision {0} is not Pending").format(revision_name))
@@ -351,6 +356,10 @@ def apply_revision(revision_name: str, approval_name: str | None = None):
 
     deal = frappe.get_doc("Fresko Deal", rev.parent_name)
     fieldname = rev.fieldname
+    # Defense in depth: never trust that a persisted Revision came through
+    # request_revision (legacy/import/privileged SQL records may exist).
+    if fieldname not in REVISION_ELIGIBLE_FIELDS:
+        frappe.throw(_("Field {0} is not revision-eligible").format(fieldname))
     new_value = rev.new_value
 
     if fieldname in ("approved_rate", "qty"):
@@ -368,6 +377,7 @@ def apply_revision(revision_name: str, approval_name: str | None = None):
             )
         if not frappe.db.exists("Fresko Approval", approval_ref):
             frappe.throw(_("Fresko Approval {0} not found").format(approval_ref))
+        _lock_named_row("Fresko Approval", approval_ref)
         approval = frappe.get_doc("Fresko Approval", approval_ref)
         assert_approval_bound_for_revision(approval, deal, revision=rev)
         assert_approval_not_consumed(approval)
@@ -419,6 +429,17 @@ def apply_revision(revision_name: str, approval_name: str | None = None):
         "approval_reference": rev.approval_reference,
         "supporting_evidence": rev.supporting_evidence,
     }
+
+
+def _lock_named_row(doctype: str, name: str) -> None:
+    """Lock an exact audit row; callers still perform normal not-found checks."""
+    table = {
+        "Fresko Revision": "`tabFresko Revision`",
+        "Fresko Approval": "`tabFresko Approval`",
+    }.get(doctype)
+    if not table:
+        frappe.throw(_("Unsupported lock target {0}").format(doctype))
+    frappe.db.sql(f"SELECT name FROM {table} WHERE name=%s FOR UPDATE", (name,))
 
 
 def _assert_revision_old_value_matches_deal(deal, rev) -> None:

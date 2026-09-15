@@ -62,6 +62,7 @@ from fresko_universe.constants import (  # noqa: E402
     EXCEPTION_TYPES,
     MATERIAL_REVISION_FIELDS,
     OVERSELL_OVERRIDE_ROLES,
+    REVISION_ELIGIBLE_FIELDS,
 )
 from fresko_universe.rate_rules import (  # noqa: E402
     policy_resolved,
@@ -69,6 +70,7 @@ from fresko_universe.rate_rules import (  # noqa: E402
     resolve_rate_band,
 )
 from fresko_universe.ats import commercial_qty_for_ats  # noqa: E402
+from fresko_universe.permissions import APPROVAL_APPLY_DECISIONS  # noqa: E402
 
 
 class TestFingerprint(unittest.TestCase):
@@ -206,6 +208,40 @@ class TestCommercialLock(unittest.TestCase):
         # Blocker 1: Cancelled / Rejected / Disputed never freely editable
         for st in ("Cancelled", "Rejected", "Disputed"):
             self.assertIn(st, COMMERCIAL_LOCK_STATUSES)
+
+    def test_revision_allowlist_and_phase1_container_decision(self):
+        self.assertIn("qty", REVISION_ELIGIBLE_FIELDS)
+        self.assertIn("approved_rate", REVISION_ELIGIBLE_FIELDS)
+        self.assertNotIn("status", REVISION_ELIGIBLE_FIELDS)
+        self.assertNotIn("container", REVISION_ELIGIBLE_FIELDS)
+        self.assertEqual(APPROVAL_APPLY_DECISIONS, frozenset({"APPROVE"}))
+
+    def test_dispatch_lock_precedes_physical_reads(self):
+        deals_py = (ROOT / "fresko_universe" / "deals.py").read_text()
+        body = deals_py.split("def record_dispatch", 1)[1].split("def request_revision", 1)[0]
+        self.assertIn("lock_container_for_update(deal.container)", body)
+        self.assertLess(
+            body.index("lock_container_for_update(deal.container)"),
+            body.index("SELECT inward_qty"),
+        )
+
+    def test_revision_and_approval_are_server_created(self):
+        for doctype in ("fresko_revision", "fresko_approval"):
+            path = next((ROOT / "fresko_universe").rglob(f"{doctype}.json"))
+            data = json.loads(path.read_text())
+            for permission in data["permissions"]:
+                self.assertFalse(permission.get("create", 0), permission["role"])
+
+        deals_py = (ROOT / "fresko_universe" / "deals.py").read_text()
+        approvals_py = (ROOT / "fresko_universe" / "approvals.py").read_text()
+        rev_py = next((ROOT / "fresko_universe").rglob("fresko_revision.py")).read_text()
+        apr_py = next((ROOT / "fresko_universe").rglob("fresko_approval.py")).read_text()
+        self.assertIn("rev.flags.allow_controlled_insert = True", deals_py)
+        self.assertIn("ap.flags.allow_controlled_insert = True", approvals_py)
+        self.assertIn('self.changed_by = frappe.session.user', rev_py)
+        self.assertIn('self.approver = frappe.session.user', apr_py)
+        self.assertIn("REVISION_ELIGIBLE_FIELDS", rev_py)
+        self.assertIn("REVISION_ELIGIBLE_FIELDS", deals_py)
 
 
 class TestLayout(unittest.TestCase):

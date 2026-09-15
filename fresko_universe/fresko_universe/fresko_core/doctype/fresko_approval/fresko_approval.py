@@ -4,15 +4,24 @@
 import frappe
 from frappe.model.document import Document
 
+from fresko_universe.constants import OVERSELL_OVERRIDE_ROLES
+
 
 class FreskoApproval(Document):
     def before_insert(self):
-        if not self.approver:
-            self.approver = frappe.session.user
-        if not self.decided_at:
-            self.decided_at = frappe.utils.now_datetime()
+        if not self.flags.get("allow_controlled_insert"):
+            frappe.throw(
+                "Fresko Approval can only be created through controlled approval methods",
+                frappe.PermissionError,
+            )
+        # Client-supplied provenance never wins, even on ignore_permissions inserts.
+        self.approver = frappe.session.user
+        self.decided_at = frappe.utils.now_datetime()
         if self.consumed is None:
             self.consumed = 0
+        if self.decision == "OVERSELL_OVERRIDE" or int(self.oversell_override or 0):
+            if not (set(frappe.get_roles()) & OVERSELL_OVERRIDE_ROLES):
+                frappe.throw("Oversell override restricted to System Manager (D10)")
 
     def validate(self):
         if self.revision:
