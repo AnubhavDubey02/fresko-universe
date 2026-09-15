@@ -1,6 +1,6 @@
 # SECURITY_TESTING — current coverage vs needed regressions
 
-**Tip:** Gate 2 app tip `d785b632803948d9b1b6c6a54423db143f50c0ca` (`d785b63`) on `phase1-doctype-scaffold` (ledger update after Gate 2 green).
+**Tip:** Gate 2 app tip `3d9ac65a3aed0b64b9d02608b2fec392b40b8273` (`3d9ac65`) on `phase1-doctype-scaffold` (D6 accept_counter BUYER_UNRESOLVED; ACL tip `fdbd9bd` / prior Gate2 `d785b63`).
 
 ## RECORDED FACTS — What exists today
 
@@ -13,6 +13,7 @@ Runs in CI job `smoke-unit` without bench. Covers:
 - Constants: D10 roles, commercial lock includes Approval Required, salesperson in locked fields
 - Static source checks: DocType names, evidence hash field name, approval/revision under core, flag names (`allow_revision_apply`, `allow_dispatch_write`)
 - D4 ACL **unit** tests with mocked session user (`test_owner_can_accept`, SM/Approver cannot)
+- D6 accept_counter BUYER_UNRESOLVED smoke (`TestD6AcceptCounterBuyerUnresolved` empty vs set customer)
 - D10 Approver cannot oversell (mocked `get_roles`)
 
 ### Bench suites (require site)
@@ -27,7 +28,7 @@ Runs in CI job `smoke-unit` without bench. Covers:
 
 | Signal | Present? |
 |---|---|
-| Unit/acceptance business-logic tests | Partial (Gate 2 tip `d785b63`: smoke **56** + bench **59** green; still no dedicated security scanner jobs) |
+| Unit/acceptance business-logic tests | Partial (Gate 2 tip `3d9ac65`: smoke **58** + bench **61** green; still no dedicated security scanner jobs) |
 | SAST (CodeQL/semgrep/bandit) | **Missing** |
 | Secret scan (gitleaks/trufflehog) | **Missing** |
 | Dependency advisory (pip-audit/OSV) | **Missing** |
@@ -40,9 +41,11 @@ Static analysis + test reading only. **No** live attacks against deployed system
 
 ## TEST RESULTS
 
-- **Gate 2 CI green** on tip `d785b632803948d9b1b6c6a54423db143f50c0ca` (`d785b63`): Smoke **56** + Bench **59** (includes FSEC permission tests). CI run [34954607466](https://github.com/AnubhavDubey02/fresko-universe/actions/runs/34954607466) success. See `docs/GATE2_CI_RESULT.md`.
-- Intermediate red on `f7db7c3` was FSEC `make_deal` fingerprint collisions; fixed by `d785b63` test hygiene — Gate1/D4/D10 not weakened.
-- Tip status for this Gate 2 tip is **no longer UNKNOWN**. Hold merge / no Phase 2. CI green ≠ secure.
+- **Gate 2 CI green** on tip `3d9ac65a3aed0b64b9d02608b2fec392b40b8273` (`3d9ac65`): Smoke **58** + Bench **61** (includes FSEC permission tests + D6 accept_counter coverage). CI run [34957061073](https://github.com/AnubhavDubey02/fresko-universe/actions/runs/34957061073) success (`head_sha` match confirmed). See `docs/GATE2_CI_RESULT.md`.
+- Prior Gate 2 green on `d785b63`: Smoke **56** + Bench **59**, run 34954607466 — still valid for that SHA.
+- Local offline re-check (Security review): `python3 -m unittest tests.test_smoke_unit` → **Ran 58 tests … OK**.
+- Intermediate red on `f7db7c3` was FSEC `make_deal` fingerprint collisions; fixed by `d785b63` test hygiene — Gate1/D4/D10 not weakened by `3d9ac65`.
+- Tip status for `3d9ac65` Gate 2 is **no longer UNKNOWN**. Hold merge / no Phase 2. CI green ≠ secure.
 
 ## ASSUMPTIONS
 
@@ -53,7 +56,7 @@ Static analysis + test reading only. **No** live attacks against deployed system
 
 - Flaky concurrency test reliability under MariaDB isolation levels.
 - Whether `ignore_permissions` paths are ever exercised by non-SM in CI (likely always Administrator).
-- (Cleared for tip `d785b63`: Gate 2 smoke+bench outcome is green — see TEST RESULTS.)
+- (Cleared for tip `3d9ac65` / prior `d785b63`: Gate 2 smoke+bench outcome is green — see TEST RESULTS.)
 
 ## Needed security regression tests (backlog)
 

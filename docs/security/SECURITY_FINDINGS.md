@@ -1,10 +1,11 @@
 # SECURITY_FINDINGS — living log
 
 **Baseline date:** 2026-09-15  
-**Re-verify tip:** `fdbd9bd59435ac5f5d7e27d8c486c2046457f4dd` on `phase1-doctype-scaffold`  
-**Gate 2 CI tip (evidence):** `d785b632803948d9b1b6c6a54423db143f50c0ca` — Smoke 56 + Bench 59 green (run 34954607466); docs tip may be later.  
-**Statuses:** FSEC-001/002/003 **MITIGATED** (independent re-verify 2026-09-15); FSEC-004+ remain OPEN unless noted.  
-Fresko is **not** declared secure. Hold merge / no Phase 2.
+**Re-verify tip (ACL):** `fdbd9bd59435ac5f5d7e27d8c486c2046457f4dd` on `phase1-doctype-scaffold`  
+**App tip (this review):** `3d9ac65a3aed0b64b9d02608b2fec392b40b8273` (`3d9ac65`) — D6 `accept_counter` BUYER_UNRESOLVED  
+**Gate 2 CI tip (evidence):** `3d9ac65` — Smoke **58** + Bench **61** green (run [34957061073](https://github.com/AnubhavDubey02/fresko-universe/actions/runs/34957061073)); prior green `d785b63` run 34954607466 (56/59) still valid for that SHA. Docs tip may be ahead (`2f43aa2`).  
+**Statuses:** FSEC-001/002/003 **MITIGATED** (no ACL regression on `3d9ac65`); FSEC-004+ remain **OPEN**. D6 Countered→Approved gap **closed in code** (not a prior FSEC ID).  
+Fresko is **not** declared secure. Hold merge / no Phase 2. Verdict: **SECURITY_OK_TO_HOLD**.
 
 Severity gate: CRITICAL/HIGH require fix or documented human override before production.
 
@@ -41,6 +42,8 @@ Severity gate: CRITICAL/HIGH require fix or documented human override before pro
 Offline smoke for Accounts deny / stranger cancel / Salesperson dispatch deny / snapshot Guest deny: **18/18 FSEC smoke classes green** (FSEC-001 subset ok).
 
 **TEST RESULTS (Gate 2 CI — tip `d785b63`):** GREEN — CI run [34954607466](https://github.com/AnubhavDubey02/fresko-universe/actions/runs/34954607466): Smoke **56** + Bench **59** including FSEC permission tests (`test_fsec_permissions`). Intermediate red on `f7db7c3` was FSEC `make_deal` fingerprint collisions; fixed by `d785b63` test hygiene only — Gate1/D4/D10 not weakened. Hold merge / no Phase 2. Status remains **MITIGATED** (not reopened; not declared secure).
+
+**TEST RESULTS (Gate 2 CI — tip `3d9ac65`, independent Security review 2026-09-15):** GREEN — CI run [34957061073](https://github.com/AnubhavDubey02/fresko-universe/actions/runs/34957061073) `head_sha=3d9ac65…`, conclusion **success**: Smoke **58** + Bench **61**. App delta vs `d785b63`/`fdbd9bd`: **+1 line** `_maybe_open_buyer_unresolved(deal)` in `accept_counter` + D6 tests only — **no** `permissions.py` / `hooks.py` change. D4 ownership ACL still before `ignore_permissions`. FSEC-001 remains **MITIGATED**. Hold merge / no Phase 2.
 
 ### RESIDUAL (accepted under MITIGATED — not reopened)
 
@@ -112,6 +115,7 @@ Offline smoke for Accounts deny / stranger cancel / Salesperson dispatch deny / 
 - **Other DocTypes:** Container / Revision / Approval / Exception have **no** `permission_query` / `has_permission` hooks (Approver still RWC on Container via JSON alone).
 - **Evidence without `deal`:** `evidence_has_permission` allows Salesperson create/read/write when deal is unset (`permissions.py:293-295`).
 - **Prior residual (bench not run) UPDATED:** Gate 2 bench green on tip `d785b632803948d9b1b6c6a54423db143f50c0ca` (`d785b63`) includes FSEC permission tests (bench **59**). CI run 34954607466 success (Smoke 56 + Bench 59). See `docs/GATE2_CI_RESULT.md`. Intermediate red on `f7db7c3` was FSEC `make_deal` fingerprint collisions fixed by `d785b63` test hygiene — Gate1/D4/D10 not weakened. Hold merge / no Phase 2. FSEC-003 remains **MITIGATED** (not declared secure).
+- **Tip `3d9ac65` re-check:** `hooks.py` still wires Deal+Evidence `permission_query_conditions` / `has_permission`; offline smoke `TestFSEC003*` green within 58. No hook regression from D6 fix. FSEC-003 remains **MITIGATED**.
 
 ---
 
@@ -155,7 +159,7 @@ Offline smoke for Accounts deny / stranger cancel / Salesperson dispatch deny / 
 | **STATUS** | OPEN |
 | **Prerequisites** | PR merge via `.github/workflows/ci.yml` |
 | **Component** | `.github/workflows/ci.yml` |
-| **Impact** | Secrets, vulnerable Actions/deps, and authz regressions can merge on green smoke/bench alone. Gate 2 tip `d785b63` is green (Smoke 56 + Bench 59, run 34954607466) but CI still lacks SAST/secret/dep/permission jobs — security signal remains incomplete. |
+| **Impact** | Secrets, vulnerable Actions/deps, and authz regressions can merge on green smoke/bench alone. Gate 2 tip `3d9ac65` is green (Smoke 58 + Bench 61, run 34957061073; prior `d785b63` 56/59 run 34954607466) but CI still lacks SAST/secret/dep/permission jobs — security signal remains incomplete. |
 | **Evidence** | `ci.yml` jobs: `smoke-unit`, `frappe-bench` only — no CodeQL/semgrep/gitleaks/trivy/pip-audit/permission job |
 | **Repro (high-level)** | Read workflow; confirm absence of scan steps. |
 | **Fix** | Add gitleaks (or equivalent), pinned-action review, pip-audit/gh advisory job on lockfile/pins, and role-matrix unittest job. Do **not** auto-upgrade Frappe without Dependency Sovereignty proposal. |
@@ -258,7 +262,8 @@ Offline smoke for Accounts deny / stranger cancel / Salesperson dispatch deny / 
 ## Closed / mitigated notes (not findings)
 
 - Gate 1 empty rate band fail-closed: **implemented** (`rate_rules.policy_resolved`, `apply_rate_rules` RATE_POLICY_MISSING).
-- D4 accept_counter ACL: **implemented** with tests.
-- D10 SM-only oversell: **implemented** with tests.
+- D4 accept_counter ACL: **implemented** with tests (still intact at `3d9ac65`; SM/Approver cannot accept on behalf).
+- D6 Countered→Approved BUYER_UNRESOLVED: **fixed** at `3d9ac65` — `deals.accept_counter` calls `_maybe_open_buyer_unresolved` after ATS + `set_status("Approved")`, before save/commit (parity with `apply_rate_rules` / `decide(APPROVE)`). Smoke `TestD6AcceptCounterBuyerUnresolved` + bench `test_accept_counter_*_buyer_unresolved`. Was evidence-pack correctness gap (not a numbered FSEC). Residual: Exception insert before Deal.save shares pre-existing multi-doc atomicity ASSUMPTION.
+- D10 SM-only oversell: **implemented** with tests (unchanged by D6 tip).
 - Desk `approved_rate` / `dispatched_qty` locks: **implemented**.
 - No committed cloud API keys found in history scan (this baseline).
