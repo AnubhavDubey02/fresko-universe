@@ -1,37 +1,110 @@
-# BASELINE_ASSESSMENT — CURRENT repository
+# BASELINE_ASSESSMENT — Fresko Universe Phase 1
 
-**Assignment:** Anubhav 2026-09-15 — Security & Red Team permanent role.  
-**Instruction:** Inspect actual code. Produce attack-surface map through missing controls, then prioritized backlog. Do not implement every control immediately. Do not declare Fresko secure.
+**Date:** 2026-09-15  
+**Assessor role:** Fresko Security & Red Team  
+**Tip:** `18c5042` on `phase1-doctype-scaffold`  
+**Method:** Static review of app code, DocType JSON, hooks, fixtures, Docker/CI, dependency docs, QA/Controls docs. No live exploit against deployed systems. No clone/push/PR.
 
-**Target tip at creation:** see git history on `phase1-doctype-scaffold` (update SHA when assessment completes).
+Fresko is **not** declared secure.
 
-## Deliverables checklist
+## Scope coverage checklist
 
-1. Attack-surface map  
-2. Authentication architecture  
-3. Authorization architecture  
-4. Secrets exposure assessment  
-5. Dependency assessment  
-6. API attack surface  
-7. Business-logic vulnerabilities  
-8. AI attack surface  
-9. Data-integrity risks  
-10. Infrastructure / deployment risks  
-11. Current automated security coverage  
-12. Missing security controls  
+| # | Area | Outcome |
+|---|---|---|
+| 1 | Attack surface | Documented — whitelist set, DocTypes, Attach fields, compose, CI, fixtures |
+| 2 | Authn/z | Roles present; method ACL incomplete; no permission_query |
+| 3 | Secrets | No cloud keys in history; CI/compose defaults; gitignore gaps |
+| 4 | Dependencies | Pins recorded; CVEs UNKNOWN; flit_core range pin |
+| 5 | APIs | Whitelist validation uneven; no rate limit; error messages fairly specific |
+| 6 | Business logic | Strong server controls for ATS/D4/D10/Gate1/locks; gaps vs docs on revision authz & RATE_FLOOR_BREACH |
+| 7 | AI/LLM | Not in code — future surface recorded |
+| 8 | Data integrity | Append-only Approval; revision freeze; weak evidence hashing; track_changes uneven |
+| 9 | Races / partial failure | FOR UPDATE on ATS paths; commit after whitelist; webhook N/A |
+| 10 | CI | Functional tests only; security scanners missing; last recorded bench failed |
+| 11 | Coverage vs mission/QA | Many QA design gaps closed in code; authz & ingest uniqueness residuals remain |
 
-Then: prioritized backlog — **MUST FIX NOW** / **BEFORE PRODUCTION** / **LATER HARDENING**, with concrete repo evidence per significant finding.
+## RECORDED FACTS (summary)
 
-## Sections
+1. Ten `@frappe.whitelist` entrypoints; only `decide` and `accept_counter` implement meaningful ACL.
+2. Widespread `ignore_permissions=True` after business checks.
+3. DocType permissions grant Salesperson write-all-Deals; Approver write Containers+Deals.
+4. Deal idempotency fields unique; Evidence.message_id not unique.
+5. Evidence hash = SHA-256(path string).
+6. `.github/workflows/ci.yml` has no SAST/secret/dep/permission jobs.
+7. Compose exposes MariaDB/Redis with `root`/`root`.
+8. AI/WhatsApp/OCR absent from code; policy requires proposals before adoption.
+9. Controls doc claims revision whitelist validates role — **code does not**.
 
-_(Fresko Security fills below after independent review.)_
+## TEST RESULTS
 
-### RECORDED FACTS
+- Smoke unit designed green offline (CI smoke job).
+- Bench acceptance exists but Gate2 last written result was red; tip re-verification UNKNOWN.
+- No permission-negative tests for cancel/dispatch/apply_revision.
 
-### TEST RESULTS
+## ASSUMPTIONS
 
-### ASSUMPTIONS
+- Phase 1 remains Desk-user authenticated only.
+- Production will not reuse compose defaults.
 
-### UNKNOWN AREAS
+## UNKNOWN
 
-### RECOMMENDATIONS
+- CVE list for Frappe `9f8ae9cd…` / ERPNext `df8b7f96…` transitive tree.
+- Bench test status on tip `18c5042`.
+- Site-level File upload hardening.
+- Multi-role effective permissions.
+
+---
+
+## Prioritized backlog
+
+### MUST FIX NOW (before treating Phase 1 as internally trustworthy)
+
+| Item | Evidence | Finding |
+|---|---|---|
+| Add role/ownership gates to `cancel_deal`, `record_dispatch`, `set_dispatched_qty`, `apply_rate_rules`, `request_revision`, `apply_revision`, snapshots | `deals.py`, `container.py` | FSEC-001 |
+| Bind Approval→Deal (+ decision) inside `apply_revision`; require Approver/SM | `deals.py:302-318` | FSEC-002 |
+| Prove Accounts cannot mutate Deals via whitelist despite read-only DocType perm | matrix + ignore_permissions | FSEC-001/003 |
+| Re-run Gate 2 bench on tip; do not claim green from older SHA | `GATE2_CI_RESULT.md` vs `18c5042` | CI hygiene |
+
+### BEFORE PRODUCTION
+
+| Item | Evidence | Finding |
+|---|---|---|
+| Implement `has_permission` / `permission_query` for Deal (and ideally Evidence) | absence in repo | FSEC-003 |
+| Unique Evidence.message_id before WhatsApp | `fresko_evidence.json` | FSEC-005 |
+| Hash Evidence file bytes | `fresko_evidence.py` | FSEC-004 |
+| CI: secret scan + SAST + advisory job (report-only first; no auto-upgrade) | `ci.yml` | FSEC-006 |
+| Bind compose DB/Redis to localhost; rotate defaults | compose files | FSEC-007 |
+| API rate limits on mutate whitelist | no throttle code | FSEC-010 |
+| Align RATE_FLOOR_BREACH exception behavior with docs/close-gate | `deals.py:64-68` | FSEC-008 |
+| Expand `.gitignore` for keys/site_config | `.gitignore` | FSEC-009 |
+| Exact-pin `flit_core` before packaging releases | `pyproject.toml`, `THIRD_PARTY.md` | dep policy |
+
+### LATER HARDENING
+
+| Item | Notes |
+|---|---|
+| Dual-control / break-glass workflow for D10 oversell | SM alone is powerful |
+| Enable or replace `track_changes` on Approval/Evidence | FSEC-012 |
+| Settlement snapshot immutability (QA residual) | Phase beyond current Deal stub |
+| WhatsApp webhook auth, replay, PII; OCR/LLM isolation | FSEC-011; Dependency Sovereignty proposals required |
+| Formal penetration test on staging | After authz fixes land |
+| Immutable evidence object store (WORM) | Beyond Attach |
+
+## Dependency Sovereignty reminder
+
+Do **not** auto-upgrade Frappe/ERPNext or add SDKs because a scanner flagged a CVE. Follow `docs/DEPENDENCY_POLICY.md`: proposal → pin/SHA → `THIRD_PARTY.md` → Anubhav approval. Report breaking-change risk explicitly when recommending a pin move.
+
+## Coverage gaps vs QA / Controls mission
+
+| QA / Controls expectation | Code status |
+|---|---|
+| Duplicate message/fingerprint | Largely implemented on Deal |
+| Concurrent ATS | Implemented with FOR UPDATE + tests (bench health UNKNOWN) |
+| Lot membership | Implemented |
+| approved_rate Desk lock | Implemented |
+| Unresolved buyer blocks Reconciled | Implemented |
+| Container close w/ open exceptions | Implemented for listed types |
+| Revision path validates **role** | **Not in code** — finding |
+| WhatsApp ingest / payment verified | Not implemented |
+| Settlement certificate immutability | Not in Phase 1 scope code |

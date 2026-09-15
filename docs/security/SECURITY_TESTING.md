@@ -1,20 +1,80 @@
-# SECURITY_TESTING — Fresko Universe
+# SECURITY_TESTING — current coverage vs needed regressions
 
-## Principles
+**Tip:** `18c5042`.
 
-- Scanners are **signals**, not proof.
-- Prefer tests that encode Fresko business rules (D3 ATS, D4 counter ACL, D5 floors, D10 oversell, Gate 1 fail-closed, immutability).
-- Red-team only in **controlled non-production** environments unless Anubhav explicitly authorizes otherwise.
-- Human override: Security may block CI per agreed gate; must not autonomously destroy prod data, rotate prod secrets, disable prod, attack third parties, or mutate financial records.
+## RECORDED FACTS — What exists today
 
-## Current automated coverage (RECORDED FACTS — update with evidence)
+### Offline smoke (`fresko_universe/tests/test_smoke_unit.py`)
 
-| Signal | Location / CI | What it proves | Gaps |
-|---|---|---|---|
-| Offline smoke (Gate1/D4/constants) | `.github/workflows/ci.yml` smoke-unit | Static contracts / mocked paths | Not full authz matrix |
-| Bench `run-tests --app fresko_universe` | Gate 2 job | DocType/server behavior on pinned v15 | Security suite not separate yet |
-| Dependency pin file | `.github/frappe-versions.json` | Reproducible platform versions | No CVE scanner in CI yet |
+Runs in CI job `smoke-unit` without bench. Covers:
 
-## Planned security suites
+- Fingerprint shape, D5 rate hierarchy, Gate 1 empty-band semantics
+- ATS `commercial_qty_for_ats` (Proposed excluded, cancel keeps dispatched)
+- Constants: D10 roles, commercial lock includes Approval Required, salesperson in locked fields
+- Static source checks: DocType names, evidence hash field name, approval/revision under core, flag names (`allow_revision_apply`, `allow_dispatch_write`)
+- D4 ACL **unit** tests with mocked session user (`test_owner_can_accept`, SM/Approver cannot)
+- D10 Approver cannot oversell (mocked `get_roles`)
 
-Permission matrix tests; whitelist ACL tests; race/idempotency; malicious input; secret scan; dependency advisory report (non-auto-upgrade).
+### Bench suites (require site)
+
+| File | Security-relevant tests (names) |
+|---|---|
+| `fresko_universe/tests/test_phase1_acceptance.py` | duplicate message/fingerprint, lot membership, floor→Approval Required, Gate1 policy missing, desk edit approved_rate rejected, revision+approval, unresolved buyer blocks Reconciled, illegal status transition, ATS cancel/approved, concurrent over-approve, close blocked w/ exception, D4 counter+accept, decide rejects from Proposed |
+| `fresko_deals/.../test_fresko_deal.py` | Similar + qty frozen in Approval Required, oversell override exception, lot inward floor, dispatch desk reject, SM cannot accept_counter unless owner, Gate1 variants |
+| `tests/test_constants_and_fingerprint.py` | Transition map, ATS status sets, D10 constant, rate hierarchy |
+
+### CI security tooling
+
+| Signal | Present? |
+|---|---|
+| Unit/acceptance business-logic tests | Partial (smoke green; bench last recorded **failed**) |
+| SAST (CodeQL/semgrep/bandit) | **Missing** |
+| Secret scan (gitleaks/trufflehog) | **Missing** |
+| Dependency advisory (pip-audit/OSV) | **Missing** |
+| Permission / role matrix tests as CI gate | **Missing** as dedicated job |
+| Container image scan | **Missing** (compose only) |
+
+### Controlled red-team posture this baseline
+
+Static analysis + test reading only. **No** live attacks against deployed systems.
+
+## TEST RESULTS
+
+- Local execution of full bench suite: **not re-run** in this Security baseline (environment is ledger-writing box, not a green Gate 2 runner).
+- Documented Gate 2 (`docs/GATE2_CI_RESULT.md` @ `6a4db0e`): 52 tests, 11 failed, 8 errors — later commits claim product fixes; tip `18c5042` outcome **UNKNOWN**.
+
+## ASSUMPTIONS
+
+- When bench is green, acceptance tests remain the primary regression net for ATS/D4/D10/Gate1.
+- Frappe core CSRF/session tests are out of scope for Fresko app CI.
+
+## UNKNOWN
+
+- Flaky concurrency test reliability under MariaDB isolation levels.
+- Whether `ignore_permissions` paths are ever exercised by non-SM in CI (likely always Administrator).
+
+## Needed security regression tests (backlog)
+
+| Priority | Test idea | Maps to finding |
+|---|---|---|
+| P0 | Role matrix: each whitelist method × {Salesperson, Approver, Accounts, SM, stranger} | FSEC-001 |
+| P0 | `apply_revision` rejects Approval for different deal / REJECT decision / non-Approver | FSEC-002 |
+| P0 | Salesperson A cannot write Salesperson B’s Deal (after has_permission) | FSEC-003 |
+| P1 | Evidence `message_id` uniqueness | FSEC-005 |
+| P1 | Evidence hash equals SHA-256 of file bytes | FSEC-004 |
+| P1 | RATE_FLOOR_BREACH exception (or documented absence) | FSEC-008 |
+| P1 | Burst whitelist calls limited | FSEC-010 |
+| P2 | gitleaks clean on PR | FSEC-006/009 |
+| P2 | Concurrent approve under load (repeat ATS test) | threat A2 |
+
+## How to run (developers)
+
+```bash
+# Offline
+cd fresko_universe && python3 -m unittest tests.test_smoke_unit -v
+
+# Bench (pinned) — see scripts/ci_bench.sh / docs/VERSIONS.md
+bench --site <site> run-tests --app fresko_universe
+```
+
+CI green ≠ secure. Prefer failing closed on missing security jobs over silent absence.
