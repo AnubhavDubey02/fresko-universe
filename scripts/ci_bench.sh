@@ -146,19 +146,22 @@ fi
 echo "==> migrate"
 bench --site "${SITE}" migrate
 
-# Company test records call create_default_warehouses() which links warehouse_type="Transit".
-# That master is only created by the setup wizard (install_fixtures), not by install-app erpnext.
-echo "==> allow_tests + seed ERPNext setup fixtures (Warehouse Type Transit etc.)"
+# run-tests --app fresko_universe only runs fresko before_tests hooks (none yet).
+# ERPNext/Frappe masters (Gender, Warehouse Type Transit, Company, …) come from
+# erpnext.setup.utils.before_tests → setup_complete. Invoke it explicitly.
+echo "==> allow_tests + ERPNext before_tests bootstrap (setup wizard + company)"
 bench --site "${SITE}" set-config allow_tests true
-bench --site "${SITE}" execute erpnext.setup.setup_wizard.operations.install_fixtures.install \
-  --kwargs "{\"country\": \"United States\"}"
-# Fail-closed verify Transit exists (created by install_fixtures).
-if ! bench --site "${SITE}" mariadb -N -e "SELECT name FROM \`tabWarehouse Type\` WHERE name='Transit' LIMIT 1" \
-  | grep -qx Transit; then
-  echo "ERROR: Warehouse Type Transit missing after install_fixtures" >&2
-  exit 1
-fi
-echo "==> Warehouse Type Transit present"
+bench --site "${SITE}" execute erpnext.setup.utils.before_tests
+# Fail-closed sanity on the two masters that already bit us.
+for pair in "Warehouse Type|Transit" "Gender|Female"; do
+  DT="${pair%%|*}"; NAME="${pair##*|}"
+  if ! bench --site "${SITE}" mariadb -N -e "SELECT name FROM \\`tab${DT}\\` WHERE name='${NAME}' LIMIT 1" \
+    | grep -qx "${NAME}"; then
+    echo "ERROR: missing ${DT}: ${NAME} after erpnext.before_tests" >&2
+    exit 1
+  fi
+done
+echo "==> ERPNext test masters present (Transit, Gender Female)"
 
 echo "==> run-tests --app fresko_universe"
 bench --site "${SITE}" run-tests --app fresko_universe
