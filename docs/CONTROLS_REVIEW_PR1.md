@@ -162,3 +162,49 @@ GST / invoice timing (D9), Project vs dimension (D8), physical inward posting fo
 | Merge now? | **No** |
 | After B1–B3 | Controls can re-review to PASS (scaffold) |
 
+---
+
+## Re-review — tip `9ffab5f` (15 Sep 2026)
+
+**Tip SHA:** `9ffab5f58a3951af08e178761c713fe5c5c3e845`  
+(`phase1-doctype-scaffold`; message: `fix(controls): D4 accept_counter ACL + Approver oversell runtime smoke`)  
+**Prior tip in this chain:** `568b22f` (F-H5/H6 flag alignment)  
+**Verdict:** **PASS**
+
+### Blocker / follow-up closure
+
+| ID | Item | Status @ 9ffab5f | Evidence |
+|---|---|---|---|
+| **B1** | D10 / DV4 — Approver cannot oversell | **CLOSED** | `OVERSELL_OVERRIDE_ROLES = frozenset({"System Manager"})`; Approver ∉ set; smoke `TestD10` + `TestD10Runtime`; DV4 aligned |
+| **B2** | Material Revision requires Approval + evidence; Applied freeze | **CLOSED** | `apply_revision` requires `approval_reference` + `supporting_evidence` for `MATERIAL_REVISION_FIELDS`; `_HISTORICAL_FIELDS` frozen after Applied |
+| **B2-fix** | `allow_revision_apply` flag contract | **CLOSED** | `deals.apply_revision` sets `rev.flags.allow_revision_apply = True` (matches `FreskoRevision.validate`); no `allow_applied_write`; return includes `supporting_evidence`. Smoke `test_apply_revision_uses_allow_revision_apply` |
+| **B3** | Control tests / API surface | **CLOSED** | `test_fresko_deal.py` imports `fresko_universe.deals` / `approvals`; soft-ATS concurrent semantics |
+| **B3-fix** | dispatch / cancel unification | **CLOSED** | Single `cancel_deal`; `set_dispatched_qty` → `record_dispatch`; both use `allow_dispatch_write` (Deal validate); dead `allow_dispatched_qty_write` gone. Smoke `test_dispatch_flag_unified_to_allow_dispatch_write` |
+
+### Tip delta vs `568b22f`
+
+- D4 `accept_counter` ACL tightened to owner / `salesperson_user` / System Manager only (Approver no longer privileged) — S2/F-M6 improved.
+- Runtime smoke for Approver oversell + Applied trail / lot-delete contracts present.
+- **B2-fix / B3-fix unchanged and still hold** (no regression on revision/dispatch flags).
+
+### Tests run (no bench)
+
+| Suite | Result |
+|---|---|
+| `python3 -m unittest tests.test_smoke_unit -v` | **23 OK** |
+| `fresko_universe.tests.test_constants_and_fingerprint` | **12 OK** |
+| bench acceptance / doctype suites | Not run (require Frappe site) |
+
+### Residual (non-blocking)
+
+S1 (Approval/Revision delete), S3 (inward Revision), S4–S6, Phase 2/3 items — tracked; do not reopen B1–B3.
+
+### Sign-off
+
+| Item | Decision |
+|---|---|
+| Overall | **PASS** (scaffold) |
+| Merge now? | **Yes** for Phase 0/1 controls shape |
+| B2-fix / B3-fix | **CLOSED** at `9ffab5f` |
+
+*Fresko Controls — re-review append on tip `9ffab5f`. Supersedes CONDITIONAL merge gate for B1–B3 / B2-fix / B3-fix.*
