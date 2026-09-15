@@ -155,9 +155,9 @@ bench --site "${SITE}" execute erpnext.setup.utils.before_tests
 # Fail-closed sanity on the two masters that already bit us.
 for pair in "Warehouse Type|Transit" "Gender|Female"; do
   DT="${pair%%|*}"; NAME="${pair##*|}"
-  if ! bench --site "${SITE}" mariadb -N -e "SELECT name FROM \\`tab${DT}\\` WHERE name='${NAME}' LIMIT 1" \
-    | grep -qx "${NAME}"; then
-    echo "ERROR: missing ${DT}: ${NAME} after erpnext.before_tests" >&2
+  exists="$(bench --site "${SITE}" execute frappe.db.exists --args "['${DT}', '${NAME}']" | tr -d '[:space:]')"
+  if [[ "${exists}" != "True" && "${exists}" != "1" ]]; then
+    echo "ERROR: missing ${DT}: ${NAME} after erpnext.before_tests (got: ${exists})" >&2
     exit 1
   fi
 done
