@@ -47,6 +47,11 @@ bench get-app ./fresko_universe   # path to app package root
 | `fresko_universe.deals.accept_counter` | D4: originator accepts counter → Approved |
 | `fresko_universe.container.snapshot` | ATS / inward / approved_sold |
 
+## Versions (Gate 2)
+
+Pinned Frappe/ERPNext v15 SHAs: see repo `docs/VERSIONS.md` and `.github/frappe-versions.json`.
+CI: `.github/workflows/ci.yml` (smoke-unit + full bench).
+
 ## Tests
 
 ### With full bench (preferred)

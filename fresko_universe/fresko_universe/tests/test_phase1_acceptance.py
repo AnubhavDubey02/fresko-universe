@@ -57,6 +57,30 @@ class TestPhase1Acceptance(FrappeTestCase):
         d.reload()
         self.assertEqual(flt_status(d.rate_floor), 100)
 
+    def test_gate1_empty_band_rate_policy_missing(self):
+        """Gate 1: no floor/rule → Approval Required + RATE_POLICY_MISSING; keep proposed_rate."""
+        c = make_container(
+            self.masters,
+            container_no=f"NOPOL-{frappe.generate_hash(length=6)}",
+            rate_floor=None,
+            rate_ceiling=None,
+        )
+        c.default_rate_floor = None
+        c.default_rate_ceiling = None
+        c.save(ignore_permissions=True)
+        d = make_deal(c, proposed_rate=77, qty=5)
+        result = apply_rate_rules(d.name)
+        self.assertEqual(result["status"], "Approval Required")
+        d.reload()
+        self.assertEqual(d.proposed_rate, 77)
+        self.assertFalse(d.approved_rate)
+        self.assertTrue(
+            frappe.db.exists(
+                "Fresko Exception",
+                {"deal": d.name, "exception_type": "RATE_POLICY_MISSING"},
+            )
+        )
+
     def test_approval_sets_approved_rate_keeps_proposed_rate(self):
         c = make_container(self.masters, container_no=f"APR-{frappe.generate_hash(length=6)}", rate_floor=100)
         d = make_deal(c, proposed_rate=50, qty=5)

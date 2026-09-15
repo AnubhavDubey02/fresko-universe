@@ -31,3 +31,4 @@
 
 - **F-M7 closed:** empty-band auto-approve is no longer residual; Gate 1 enforces `policy_resolved` + `RATE_POLICY_MISSING`.
 - **Versions pinned:** Frappe `v15.120.1` / ERPNext `v15.121.2` — see `docs/VERSIONS.md` (provisional → pinned for Gate 2 CI).
+- **D4 tighter:** `accept_counter` only `deal.owner` or `deal.salesperson_user` — System Manager must not accept on behalf.

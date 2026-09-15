@@ -387,3 +387,71 @@ class TestFreskoDeal(FrappeTestCase):
         deal.dispatched_qty = 5
         with self.assertRaises(frappe.ValidationError):
             deal.save(ignore_permissions=True)
+
+
+    def test_gate1_no_rate_rule_rate_policy_missing(self):
+        """Gate 1: no applicable floor/rule → Approval Required + RATE_POLICY_MISSING."""
+        company, currency = _ensure_masters()
+        c = _make_container(company, currency, inward=100, floor=None, ceiling=None)
+        # Clear defaults if Currency None coerced
+        c.default_rate_floor = None
+        c.default_rate_ceiling = None
+        c.save(ignore_permissions=True)
+        deal = _make_deal(c, rate=50, alias="NoPolicy")
+        result = deals_api.apply_rate_rules(deal.name)
+        self.assertEqual(result["status"], "Approval Required")
+        deal.reload()
+        self.assertIsNone(deal.approved_rate)
+        self.assertEqual(flt(deal.proposed_rate), 50)
+        self.assertTrue(
+            frappe.db.exists(
+                "Fresko Exception",
+                {"deal": deal.name, "exception_type": "RATE_POLICY_MISSING"},
+            )
+        )
+
+    def test_gate1_mismatched_count_size_no_default_policy_missing(self):
+        company, currency = _ensure_masters()
+        c = _make_container(company, currency, inward=100, floor=None, ceiling=None)
+        c.default_rate_floor = None
+        c.default_rate_ceiling = None
+        c.append("rate_rules", {"count_size": "32/36", "rate_floor": 90, "rate_ceiling": 140})
+        c.save(ignore_permissions=True)
+        deal = _make_deal(c, rate=100, alias="MismatchCS")
+        # deal count_size from lot is 16/20 — no match
+        result = deals_api.apply_rate_rules(deal.name)
+        self.assertEqual(result["status"], "Approval Required")
+        self.assertTrue(
+            frappe.db.exists(
+                "Fresko Exception",
+                {"deal": deal.name, "exception_type": "RATE_POLICY_MISSING"},
+            )
+        )
+
+    def test_gate1_lot_override_auto_approves_in_band(self):
+        company, currency = _ensure_masters()
+        c = _make_container(company, currency, inward=100, floor=100, ceiling=200)
+        c.lots[0].rate_floor_override = 80
+        c.lots[0].rate_ceiling_override = 150
+        c.save(ignore_permissions=True)
+        deal = _make_deal(c, rate=85, alias="LotOv")
+        result = deals_api.apply_rate_rules(deal.name)
+        self.assertEqual(result["status"], "Auto Approved")
+        deal.reload()
+        self.assertEqual(flt(deal.rate_floor), 80)
+        self.assertEqual(flt(deal.approved_rate), 85)
+
+    def test_system_manager_cannot_accept_counter_unless_owner(self):
+        """D4: SM who is not owner/salesperson cannot accept_counter."""
+        deal = _make_deal(self.container, rate=5, alias="D4SM")
+        deals_api.apply_rate_rules(deal.name)
+        approvals_api.decide(deal.name, "COUNTER", decision_rate=11, reason="counter")
+        deal.reload()
+        # Test-only ACL fixture (DV9: db.set_value residual — not a production path)
+        frappe.db.set_value("Fresko Deal", deal.name, "owner", "Guest")
+        frappe.db.set_value("Fresko Deal", deal.name, "salesperson_user", None)
+        deal.reload()
+        # Administrator is System Manager but not owner → must throw
+        with self.assertRaises(frappe.ValidationError):
+            deals_api.accept_counter(deal.name)
+

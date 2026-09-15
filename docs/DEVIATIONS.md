@@ -14,4 +14,6 @@ No architecture blockers. Incremental deviations:
 | DV8 | Empty rate band | Fail-closed missing policy | **CLOSED Gate 1:** `policy_resolved` + `RATE_POLICY_MISSING` → Approval Required; no auto-approve when floor & ceiling None (F-M7) | Anubhav merge gate |
 | DV9 | `frappe.db.set_value` bypass | Document.validate always | **Residual (non-blocking platform risk):** `db.set_value` skips Document.validate / commercial locks. Mitigate via whitelist APIs + audit; do not use in production paths or as supported test setup (F-I2) | Platform limitation |
 
+**Non-blocking residuals (do not hold merge):** F-M3 cross-day fingerprint (Phase 2); F-M4 Fully Reconciled ATS residual; DV9 `db.set_value` platform bypass.
+
 If any of the above becomes unacceptable, escalate via `BLOCKER.md` (none filed for this PR).
