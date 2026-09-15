@@ -1,0 +1,150 @@
+{
+ "doctype": "DocType",
+ "name": "Fresko Evidence",
+ "module": "Fresko Core",
+ "engine": "InnoDB",
+ "autoname": "hash",
+ "track_changes": 0,
+ "allow_rename": 0,
+ "fields": [
+  {
+   "fieldname": "evidence_type",
+   "fieldtype": "Select",
+   "label": "Evidence Type",
+   "reqd": 1,
+   "default": "Note",
+   "options": "WhatsApp Message\nEmail\nDocument\nPhoto\nNote\nOther"
+  },
+  {
+   "fieldname": "file",
+   "fieldtype": "Attach",
+   "label": "File"
+  },
+  {
+   "fieldname": "external_ref",
+   "fieldtype": "Data",
+   "label": "External Ref"
+  },
+  {
+   "fieldname": "message_id",
+   "fieldtype": "Data",
+   "label": "Message ID"
+  },
+  {
+   "fieldname": "content_sha256",
+   "fieldtype": "Data",
+   "label": "Content SHA256",
+   "read_only": 1
+  },
+  {
+   "fieldname": "parser_version",
+   "fieldtype": "Data",
+   "label": "Parser Version"
+  },
+  {
+   "fieldname": "linked_doctype",
+   "fieldtype": "Link",
+   "label": "Linked DocType",
+   "options": "DocType"
+  },
+  {
+   "fieldname": "linked_name",
+   "fieldtype": "Dynamic Link",
+   "label": "Linked Name",
+   "options": "linked_doctype"
+  },
+  {
+   "fieldname": "deal",
+   "fieldtype": "Link",
+   "label": "Deal",
+   "options": "Fresko Deal"
+  },
+  {
+   "fieldname": "container",
+   "fieldtype": "Link",
+   "label": "Container",
+   "options": "Fresko Container"
+  },
+  {
+   "fieldname": "human_verified",
+   "fieldtype": "Check",
+   "label": "Human Verified",
+   "default": 0
+  },
+  {
+   "fieldname": "notes",
+   "fieldtype": "Small Text",
+   "label": "Notes"
+  }
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "report": 1,
+   "export": 1,
+   "import": 0,
+   "share": 0,
+   "print": 1,
+   "email": 0,
+   "if_owner": 0
+  },
+  {
+   "role": "Fresko Approver",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "report": 1,
+   "export": 1,
+   "import": 0,
+   "share": 0,
+   "print": 1,
+   "email": 0,
+   "if_owner": 0
+  },
+  {
+   "role": "Fresko Accounts",
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "delete": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "report": 1,
+   "export": 1,
+   "import": 0,
+   "share": 0,
+   "print": 1,
+   "email": 0,
+   "if_owner": 0
+  },
+  {
+   "role": "Fresko Salesperson",
+   "read": 1,
+   "write": 0,
+   "create": 1,
+   "delete": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "report": 1,
+   "export": 0,
+   "import": 0,
+   "share": 0,
+   "print": 1,
+   "email": 0,
+   "if_owner": 0
+  }
+ ]
+}

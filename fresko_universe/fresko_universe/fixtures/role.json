@@ -1,0 +1,20 @@
+[
+ {
+  "doctype": "Role",
+  "name": "Fresko Salesperson",
+  "role_name": "Fresko Salesperson",
+  "desk_access": 1
+ },
+ {
+  "doctype": "Role",
+  "name": "Fresko Approver",
+  "role_name": "Fresko Approver",
+  "desk_access": 1
+ },
+ {
+  "doctype": "Role",
+  "name": "Fresko Accounts",
+  "role_name": "Fresko Accounts",
+  "desk_access": 1
+ }
+]

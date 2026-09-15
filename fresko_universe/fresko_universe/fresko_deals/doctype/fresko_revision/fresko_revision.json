@@ -1,0 +1,155 @@
+{
+ "doctype": "DocType",
+ "name": "Fresko Revision",
+ "module": "Fresko Deals",
+ "engine": "InnoDB",
+ "autoname": "hash",
+ "track_changes": 0,
+ "allow_rename": 0,
+ "title_field": "parent_name",
+ "search_fields": "parent_doctype,parent_name,fieldname",
+ "fields": [
+  {
+   "fieldname": "parent_doctype",
+   "fieldtype": "Link",
+   "label": "Parent DocType",
+   "options": "DocType",
+   "reqd": 1
+  },
+  {
+   "fieldname": "parent_name",
+   "fieldtype": "Dynamic Link",
+   "label": "Parent Name",
+   "options": "parent_doctype",
+   "reqd": 1
+  },
+  {
+   "fieldname": "fieldname",
+   "fieldtype": "Data",
+   "label": "Fieldname",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "old_value",
+   "fieldtype": "Small Text",
+   "label": "Old Value"
+  },
+  {
+   "fieldname": "new_value",
+   "fieldtype": "Small Text",
+   "label": "New Value"
+  },
+  {
+   "fieldname": "changed_by",
+   "fieldtype": "Link",
+   "label": "Changed By",
+   "options": "User",
+   "reqd": 1,
+   "default": "__user"
+  },
+  {
+   "fieldname": "changed_at",
+   "fieldtype": "Datetime",
+   "label": "Changed At",
+   "reqd": 1,
+   "default": "Now"
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
+   "label": "Reason",
+   "reqd": 1
+  },
+  {
+   "fieldname": "supporting_evidence",
+   "fieldtype": "Link",
+   "label": "Supporting Evidence",
+   "options": "Fresko Evidence"
+  },
+  {
+   "fieldname": "approval_reference",
+   "fieldtype": "Link",
+   "label": "Approval Reference",
+   "options": "Fresko Approval"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "reqd": 1,
+   "default": "Pending",
+   "options": "Pending\nApplied\nRejected\nCancelled"
+  }
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 0,
+   "create": 1,
+   "delete": 1,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "report": 1,
+   "export": 1,
+   "import": 0,
+   "share": 0,
+   "print": 1,
+   "email": 0,
+   "if_owner": 0
+  },
+  {
+   "role": "Fresko Approver",
+   "read": 1,
+   "write": 0,
+   "create": 1,
+   "delete": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "report": 1,
+   "export": 1,
+   "import": 0,
+   "share": 0,
+   "print": 1,
+   "email": 0,
+   "if_owner": 0
+  },
+  {
+   "role": "Fresko Accounts",
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "delete": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "report": 1,
+   "export": 1,
+   "import": 0,
+   "share": 0,
+   "print": 1,
+   "email": 0,
+   "if_owner": 0
+  },
+  {
+   "role": "Fresko Salesperson",
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "delete": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "report": 1,
+   "export": 0,
+   "import": 0,
+   "share": 0,
+   "print": 1,
+   "email": 0,
+   "if_owner": 0
+  }
+ ]
+}

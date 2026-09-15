@@ -1,0 +1,18 @@
+# Optional local stack sketch — full Frappe bench image when available.
+# Phase 1 scaffold does not require this to develop DocTypes/tests offline.
+services:
+  mariadb:
+    image: mariadb:10.6
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: fresko
+    ports:
+      - "3306:3306"
+    volumes:
+      - fresko-mariadb:/var/lib/mysql
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+volumes:
+  fresko-mariadb:
