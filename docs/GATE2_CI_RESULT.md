@@ -2,11 +2,11 @@
 
 **Date:** 2026-09-15  
 **Branch:** `phase1-doctype-scaffold`  
-**Tip SHA:** `d785b632803948d9b1b6c6a54423db143f50c0ca` (`d785b63`)  
-**Tip message:** `test(fsec): unique make_deal buyer_alias to avoid fingerprint collisions`  
-**App lineage under tip:** `d785b63` (FSEC test hygiene) → `f7db7c3` (re-verify docs) → `fdbd9bd` (FSEC ACL) on Gate2 rate fixes `00e1273` / `b5f8dc9` / `dafed00`  
-**Run (push):** [34954607466](https://github.com/AnubhavDubey02/fresko-universe/actions/runs/34954607466)  
-**PR twin:** [34954609241](https://github.com/AnubhavDubey02/fresko-universe/actions/runs/34954609241) — same conclusion  
+**Tip SHA:** `3d9ac65a3aed0b64b9d02608b2fec392b40b8273` (`3d9ac65`)  
+**Tip message:** `fix(D6): accept_counter opens BUYER_UNRESOLVED before Approved save`  
+**App lineage under tip:** `3d9ac65` (D6 accept_counter BUYER_UNRESOLVED) → `703fc5a` (evidence pack docs) → `73273cd` (Gate2 docs) → `d785b63` (FSEC test hygiene)  
+**Run (push):** [34957061073](https://github.com/AnubhavDubey02/fresko-universe/actions/runs/34957061073)  
+**PR twin:** [34957065131](https://github.com/AnubhavDubey02/fresko-universe/actions/runs/34957065131) — same conclusion  
 **Overall conclusion:** **success** (Smoke + Bench green)
 
 ## Pins (confirmed in Bench logs)
@@ -18,14 +18,14 @@
 
 Smoke pin assert also printed: `pins OK v15.120.1 v15.121.2`.
 
-## Job results (tip `d785b63`)
+## Job results (tip `3d9ac65`)
 
 | Job | Conclusion |
 |-----|------------|
-| Smoke unit (Gate 1 / D4 / constants) | **success** — `Ran 56 tests in 0.065s` / OK |
-| Bench install + migrate + run-tests (pinned v15) | **success** — `Ran 59 tests in 3.843s` / OK / `==> CI bench OK` |
+| Smoke unit (Gate 1 / D4 / constants) | **success** — `Ran 58 tests in 0.037s` / OK |
+| Bench install + migrate + run-tests (pinned v15) | **success** — `Ran 61 tests in 4.122s` / OK / `==> CI bench OK` |
 
-**56 smoke passed**, **59 bench passed**, **0 failures**, **0 errors**.
+**58 smoke passed**, **61 bench passed**, **0 failures**, **0 errors**.
 
 ## Bench stage evidence (`==>` markers) — tip run
 
@@ -37,22 +37,21 @@ All infrastructure stages **passed**:
 4. Vendor + pip install + install-app fresko_universe — OK  
 5. migrate — OK  
 6. ERPNext `before_tests` — OK  
-7. `run-tests --app fresko_universe` — OK (`Ran 59 tests in 3.843s`)  
+7. `run-tests --app fresko_universe` — OK (`Ran 61 tests in 4.122s`)  
 8. `==> CI bench OK`
 
-## Prior red tip (resolved by this watch)
+## Count delta vs prior green `d785b63`
 
-| Item | Value |
-|------|-------|
-| SHA | `f7db7c35ad784f750a073399f17a7a964a1fb332` (`f7db7c3`) |
-| Bench | `FAILED (errors=2)` — FSEC `make_deal` fingerprint collisions |
-| Fix | `d785b63` unique `buyer_alias` per deal in FSEC fixtures (test hygiene only) |
+| Suite | `d785b63` | `3d9ac65` | Delta |
+|-------|-----------|-----------|-------|
+| Smoke | 56 | 58 | +2 (D6 accept_counter BUYER_UNRESOLVED smoke) |
+| Bench | 59 | 61 | +2 (D6 accept_counter bench coverage) |
 
 Gate 1 fingerprint / D4 / D10 were **not** weakened.
 
 ## Success criteria mapping
 
-- (a) Phase1 CI green with migrate+tests evidence on **current tip** — **met** (`d785b63`, Smoke 56 + Bench 59).  
+- (a) Phase1 CI green with migrate+tests evidence on **current tip** — **met** (`3d9ac65`, Smoke 58 + Bench 61).  
 - (b) No merge / no Phase 2 — **honored**.
 
 **Do not merge the PR. Do not start Phase 2.**

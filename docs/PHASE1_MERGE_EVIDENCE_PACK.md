@@ -186,6 +186,7 @@ Empty defaults/rules → Approval Required + RATE_POLICY_MISSING; floor/ceiling/
 | **App-verified Gate 2 green** | `d785b632803948d9b1b6c6a54423db143f50c0ca` | Last commit that changed app/test code for Gate 2 green |
 | **Docs tip before this evidence pack** | `73273cd66c4867326f7524629a5b110d22e5c1d9` | docs(security) only after `d785b63` |
 | **This evidence pack commit** | *(filled at push)* | `docs: Phase 1 Merge Evidence Pack (RC review, no merge)` |
+| **D6 fix tip (CI green)** | `3d9ac65a3aed0b64b9d02608b2fec392b40b8273` | `fix(D6): accept_counter opens BUYER_UNRESOLVED…`; smoke 58 + bench 61 |
 
 ### Immutable Gate 2 evidence (do not invent)
 
@@ -199,6 +200,21 @@ Empty defaults/rules → Approval Required + RATE_POLICY_MISSING; floor/ceiling/
 | Bench | **59 OK**, 0 fail, 0 error |
 | Frappe pin | **v15.120.1** @ `9f8ae9cd25b6735be345da6cc12e9f5a96050c68` |
 | ERPNext pin | **v15.121.2** @ `df8b7f9648c2ec4da12db8c4022edc8dd1018c6b` |
+
+### Tip `3d9ac65` Phase1 CI (D6 fix) — watched 2026-09-15
+
+| Field | Value |
+|---|---|
+| Commit SHA | `3d9ac65a3aed0b64b9d02608b2fec392b40b8273` |
+| Run ID (push) | `34957061073` |
+| Workflow URL | https://github.com/AnubhavDubey02/fresko-universe/actions/runs/34957061073 |
+| PR twin run | `34957065131` (success; same tip) |
+| Smoke | **58 OK**, 0 fail, 0 error (`Ran 58 tests in 0.037s`) |
+| Bench | **61 OK**, 0 fail, 0 error (`Ran 61 tests in 4.122s` / `==> CI bench OK`) |
+| Pins | Frappe **v15.120.1** / ERPNext **v15.121.2** (`pins OK`) |
+| Notes | D6 `accept_counter` opens BUYER_UNRESOLVED before Approved save; Gate1/D4/D10 unchanged |
+
+Prior immutable Gate 2 green on `d785b63` (smoke 56 / bench 59, run `34954607466`) remains valid for that SHA; tip evidence above supersedes counts for RC on `3d9ac65`.
 
 ### Commands (reproduce)
 
