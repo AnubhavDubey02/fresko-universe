@@ -2,10 +2,11 @@
 
 **Baseline date:** 2026-09-15  
 **Re-verify tip (ACL):** `fdbd9bd59435ac5f5d7e27d8c486c2046457f4dd` on `phase1-doctype-scaffold`  
-**App tip (this review):** `3d9ac65a3aed0b64b9d02608b2fec392b40b8273` (`3d9ac65`) — D6 `accept_counter` BUYER_UNRESOLVED  
-**Gate 2 CI tip (evidence):** `3d9ac65` — Smoke **58** + Bench **61** green (run [34957061073](https://github.com/AnubhavDubey02/fresko-universe/actions/runs/34957061073)); prior green `d785b63` run 34954607466 (56/59) still valid for that SHA. Docs tip may be ahead (`2f43aa2`).  
-**Statuses:** FSEC-001/002/003 **MITIGATED** (no ACL regression on `3d9ac65`); FSEC-004+ remain **OPEN**. D6 Countered→Approved gap **closed in code** (not a prior FSEC ID).  
-Fresko is **not** declared secure. Hold merge / no Phase 2. Verdict: **SECURITY_OK_TO_HOLD**.
+**App tip (this review):** `6ee6cb9f6b4287fb871cd8cb23c544f77c8fa691` (`6ee6cb9`) — ChatGPT blockers: commercial lock terminals, revision-bound Approval+consume, Countered `approved_rate` NULL  
+**Prior app tip:** `3d9ac65` — D6 `accept_counter` BUYER_UNRESOLVED (still holds)  
+**Gate 2 CI tip (evidence):** `6ee6cb9` — Smoke **75** + Bench **75** green (run [34960445631](https://github.com/AnubhavDubey02/fresko-universe/actions/runs/34960445631)); prior green `3d9ac65` 58/61 run 34957061073; `d785b63` 56/59 run 34954607466. Docs tip may be ahead (`40e9e56`).  
+**Statuses:** FSEC-001/002/003 **MITIGATED** (re-verified on `6ee6cb9`; FSEC-002 strengthened); ChatGPT blockers 1–3 **independently verified PASS / MITIGATED** (see Closed notes); FSEC-004/005 **OPEN — Phase 2 entry**; FSEC-006 **OPEN — before production**; FSEC-007+ remain **OPEN**.  
+Fresko is **not** declared secure. Hold merge / no Phase 2. Verdict: **SECURITY_OK_TO_HOLD**. Full re-attack: `/workspace/fresko-security-reattack-6ee6cb9.md`.
 
 Severity gate: CRITICAL/HIGH require fix or documented human override before production.
 
@@ -45,6 +46,9 @@ Offline smoke for Accounts deny / stranger cancel / Salesperson dispatch deny / 
 
 **TEST RESULTS (Gate 2 CI — tip `3d9ac65`, independent Security review 2026-09-15):** GREEN — CI run [34957061073](https://github.com/AnubhavDubey02/fresko-universe/actions/runs/34957061073) `head_sha=3d9ac65…`, conclusion **success**: Smoke **58** + Bench **61**. App delta vs `d785b63`/`fdbd9bd`: **+1 line** `_maybe_open_buyer_unresolved(deal)` in `accept_counter` + D6 tests only — **no** `permissions.py` / `hooks.py` change. D4 ownership ACL still before `ignore_permissions`. FSEC-001 remains **MITIGATED**. Hold merge / no Phase 2.
 
+**RE-ATTACK (tip `6ee6cb9`, independent Security 2026-09-15):** PASS — whitelist ACL gates unchanged in order (assert_* / D4 / role **before** `ignore_permissions`). Tip adds Approver Desk write Proposed-only (`permissions.py` deal_has_permission) and commercial lock terminals; does **not** weaken FSEC-001. Gate2 **75/75** green run 34960445631. FSEC-001 remains **MITIGATED**. Hold merge / no Phase 2.
+
+
 ### RESIDUAL (accepted under MITIGATED — not reopened)
 
 - `ignore_permissions` remains on authorized paths by design (status/commercial flags).
@@ -77,6 +81,19 @@ Offline smoke for Accounts deny / stranger cancel / Salesperson dispatch deny / 
 | `exists()`-only | Removed as sole gate; still used as presence check then full load | OK |
 
 `exists()`-only is **not** sufficient anymore. Offline mismatch / REJECT / non-approver tests: **ok**.
+
+### VERIFICATION (independent re-attack — tip `6ee6cb9`)
+
+| Check | Location | Result |
+|---|---|---|
+| Approval.`revision` + `consumed` fields | `fresko_approval.json` | Present |
+| `create_revision_approval` | `approvals.py` + `assert_can_create_revision_approval` | Present |
+| Exact revision bind (not Deal-only) | `assert_approval_bound_for_revision(..., revision=rev)` `permissions.py`; called `deals.py` material path | Present — Deal-only rejected |
+| Consume / replay | `assert_approval_not_consumed` + `_mark_approval_consumed` | Present |
+| Stale old_value + Applied reuse | `_assert_revision_old_value_matches_deal` + `assert_approval_not_stale` | Present |
+| Bench/smoke | `test_apply_revision_*` (unbound/mismatch/consume/replay) | Green in Gate2 75/75 |
+
+FSEC-002 remains **MITIGATED** and is **stronger** than Deal-only bind (ChatGPT blocker 2 closed in code). Hold merge / no Phase 2.
 
 ### RESIDUAL (accepted under MITIGATED)
 
@@ -116,6 +133,7 @@ Offline smoke for Accounts deny / stranger cancel / Salesperson dispatch deny / 
 - **Evidence without `deal`:** `evidence_has_permission` allows Salesperson create/read/write when deal is unset (`permissions.py:293-295`).
 - **Prior residual (bench not run) UPDATED:** Gate 2 bench green on tip `d785b632803948d9b1b6c6a54423db143f50c0ca` (`d785b63`) includes FSEC permission tests (bench **59**). CI run 34954607466 success (Smoke 56 + Bench 59). See `docs/GATE2_CI_RESULT.md`. Intermediate red on `f7db7c3` was FSEC `make_deal` fingerprint collisions fixed by `d785b63` test hygiene — Gate1/D4/D10 not weakened. Hold merge / no Phase 2. FSEC-003 remains **MITIGATED** (not declared secure).
 - **Tip `3d9ac65` re-check:** `hooks.py` still wires Deal+Evidence `permission_query_conditions` / `has_permission`; offline smoke `TestFSEC003*` green within 58. No hook regression from D6 fix. FSEC-003 remains **MITIGATED**.
+- **Tip `6ee6cb9` re-attack:** hooks still wired; Approver Desk write now Proposed-only (aligned with Salesperson); Cancelled/Rejected/Disputed Desk write denied for non-SM. Offline `TestFSEC003*` green within 75. FSEC-003 remains **MITIGATED** (JSON coarse write residual unchanged).
 
 ---
 
@@ -159,7 +177,7 @@ Offline smoke for Accounts deny / stranger cancel / Salesperson dispatch deny / 
 | **STATUS** | OPEN |
 | **Prerequisites** | PR merge via `.github/workflows/ci.yml` |
 | **Component** | `.github/workflows/ci.yml` |
-| **Impact** | Secrets, vulnerable Actions/deps, and authz regressions can merge on green smoke/bench alone. Gate 2 tip `3d9ac65` is green (Smoke 58 + Bench 61, run 34957061073; prior `d785b63` 56/59 run 34954607466) but CI still lacks SAST/secret/dep/permission jobs — security signal remains incomplete. |
+| **Impact** | Secrets, vulnerable Actions/deps, and authz regressions can merge on green smoke/bench alone. Gate 2 tip `6ee6cb9` is green (Smoke 75 + Bench 75, run 34960445631; prior `3d9ac65` 58/61; `d785b63` 56/59) but CI still lacks SAST/secret/dep/permission jobs — security signal remains incomplete. |
 | **Evidence** | `ci.yml` jobs: `smoke-unit`, `frappe-bench` only — no CodeQL/semgrep/gitleaks/trivy/pip-audit/permission job |
 | **Repro (high-level)** | Read workflow; confirm absence of scan steps. |
 | **Fix** | Add gitleaks (or equivalent), pinned-action review, pip-audit/gh advisory job on lockfile/pins, and role-matrix unittest job. Do **not** auto-upgrade Frappe without Dependency Sovereignty proposal. |
@@ -261,9 +279,13 @@ Offline smoke for Accounts deny / stranger cancel / Salesperson dispatch deny / 
 
 ## Closed / mitigated notes (not findings)
 
-- Gate 1 empty rate band fail-closed: **implemented** (`rate_rules.policy_resolved`, `apply_rate_rules` RATE_POLICY_MISSING).
-- D4 accept_counter ACL: **implemented** with tests (still intact at `3d9ac65`; SM/Approver cannot accept on behalf).
-- D6 Countered→Approved BUYER_UNRESOLVED: **fixed** at `3d9ac65` — `deals.accept_counter` calls `_maybe_open_buyer_unresolved` after ATS + `set_status("Approved")`, before save/commit (parity with `apply_rate_rules` / `decide(APPROVE)`). Smoke `TestD6AcceptCounterBuyerUnresolved` + bench `test_accept_counter_*_buyer_unresolved`. Was evidence-pack correctness gap (not a numbered FSEC). Residual: Exception insert before Deal.save shares pre-existing multi-doc atomicity ASSUMPTION.
-- D10 SM-only oversell: **implemented** with tests (unchanged by D6 tip).
+- Gate 1 empty rate band fail-closed: **implemented** (`rate_rules.policy_resolved`, `apply_rate_rules` RATE_POLICY_MISSING). **Re-verified PASS** at `6ee6cb9`.
+- D4 accept_counter ACL: **implemented** with tests (intact at `3d9ac65` and `6ee6cb9`; SM/Approver cannot accept on behalf).
+- D6 Countered→Approved BUYER_UNRESOLVED: **fixed** at `3d9ac65` — still called from `accept_counter` at `6ee6cb9` after rate copy + Approved. Residual: multi-doc atomicity ASSUMPTION.
+- D10 SM-only oversell: **implemented** with tests (unchanged by `6ee6cb9`).
 - Desk `approved_rate` / `dispatched_qty` locks: **implemented**.
+- **ChatGPT blocker 1 (commercial immutability / Cancelled·Rejected·Disputed):** **independently verified PASS / MITIGATED** at `6ee6cb9` — `COMMERCIAL_LOCK_STATUSES` + `_enforce_commercial_lock` + Approver/Sales Desk write Proposed-only. Free Desk mutation blocked; controlled revision path remains. Report: `fresko-security-reattack-6ee6cb9.md`.
+- **ChatGPT blocker 2 (Approval.revision exact bind + consume/stale):** **independently verified PASS / MITIGATED** at `6ee6cb9` — strengthens FSEC-002. Deal-only Approvals rejected for material apply; consume blocks replay.
+- **ChatGPT blocker 3 (Countered approved_rate NULL until accept_counter):** **independently verified PASS / MITIGATED** at `6ee6cb9` — COUNTER stores `decision_rate` on Approval only; `accept_counter` copies into `approved_rate`.
 - No committed cloud API keys found in history scan (this baseline).
+- **Not a merge certificate / not declared secure.** FSEC-004+ remain OPEN.
