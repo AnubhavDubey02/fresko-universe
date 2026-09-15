@@ -66,25 +66,25 @@ pin_checkout() {
 
 echo "==> Checkout Frappe SHA"
 pin_checkout apps/frappe "${FRAPPE_SHA}" "${FRAPPE_TAG}"
+echo "==> Reinstall pinned frappe into bench env"
+./env/bin/pip install -q -e ./apps/frappe
 
 if [[ ! -d apps/erpnext ]]; then
   echo "==> get-app erpnext"
-  bench get-app https://github.com/frappe/erpnext --branch version-15 || \
-    bench get-app erpnext https://github.com/frappe/erpnext --branch version-15
+  bench get-app https://github.com/frappe/erpnext --branch version-15 --skip-assets || \
+    bench get-app erpnext https://github.com/frappe/erpnext --branch version-15 --skip-assets
 fi
 pin_checkout apps/erpnext "${ERPNEXT_SHA}" "${ERPNEXT_TAG}"
-
-APP_SRC="${ROOT}/fresko_universe"
-if [[ ! -d apps/fresko_universe ]]; then
-  echo "==> Link fresko_universe from ${APP_SRC}"
-  ln -sfn "${APP_SRC}" apps/fresko_universe
-fi
-if [[ -f sites/apps.txt ]] && ! grep -qx 'fresko_universe' sites/apps.txt 2>/dev/null; then
-  echo fresko_universe >> sites/apps.txt
-fi
-bench setup requirements || true
+echo "==> Reinstall pinned erpnext into bench env"
+./env/bin/pip install -q -e ./apps/erpnext
 
 mkdir -p sites
+# Never register fresko_universe before it is copied + pip-installed (breaks new-site).
+if [[ -f sites/apps.txt ]]; then
+  grep -vx 'fresko_universe' sites/apps.txt > sites/apps.txt.tmp || true
+  mv sites/apps.txt.tmp sites/apps.txt
+fi
+
 cat > sites/common_site_config.json <<JSON
 {
   "db_host": "${DB_HOST}",
@@ -106,11 +106,40 @@ if [[ ! -d "sites/${SITE}" ]]; then
 fi
 
 echo "==> install-app erpnext"
-bench --site "${SITE}" install-app erpnext || true
+if ! bench --site "${SITE}" list-apps 2>/dev/null | grep -q '^erpnext'; then
+  bench --site "${SITE}" install-app erpnext
+fi
+
+APP_SRC="${ROOT}/fresko_universe"
+echo "==> Vendor fresko_universe from ${APP_SRC} (copy + mini git repo for bench)"
+rm -rf apps/fresko_universe
+mkdir -p apps/fresko_universe
+# Prefer rsync; fall back to cp
+if command -v rsync >/dev/null 2>&1; then
+  rsync -a --delete --exclude '.git' --exclude '*.egg-info' --exclude '__pycache__' \
+    "${APP_SRC}/" apps/fresko_universe/
+else
+  cp -a "${APP_SRC}/." apps/fresko_universe/
+  rm -rf apps/fresko_universe/.git apps/fresko_universe/*.egg-info
+fi
+git -C apps/fresko_universe init -q
+git -C apps/fresko_universe config user.email "ci@fresko.local"
+git -C apps/fresko_universe config user.name "Fresko CI"
+git -C apps/fresko_universe add -A
+git -C apps/fresko_universe commit -qm "ci: vendor fresko_universe for Gate 2 bench"
+
+echo "==> pip install -e fresko_universe"
+./env/bin/pip install -q -e ./apps/fresko_universe
+
 echo "==> install-app fresko_universe"
-bench --site "${SITE}" install-app fresko_universe
+if ! bench --site "${SITE}" list-apps 2>/dev/null | grep -q '^fresko_universe'; then
+  bench --site "${SITE}" install-app fresko_universe
+fi
+
 echo "==> migrate"
 bench --site "${SITE}" migrate
+
 echo "==> run-tests --app fresko_universe"
 bench --site "${SITE}" run-tests --app fresko_universe
+
 echo "==> CI bench OK"
