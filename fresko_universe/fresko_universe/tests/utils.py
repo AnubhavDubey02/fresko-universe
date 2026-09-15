@@ -85,3 +85,26 @@ def make_deal(container, lot_no="LOT-A", qty=10, proposed_rate=120, **kwargs):
     )
     doc.insert(ignore_permissions=True)
     return doc
+
+
+def ensure_commercially_approved(deal_name: str, *, decision_rate=None, reason: str = "test: advance past rate gate"):
+    """Apply rate rules; if still Approval Required, APPROVE so status can move Outward.
+
+    Used by acceptance helpers that walk Auto Approved/Approved → Outward Pending → …
+    without assuming in-band auto-approve (still exercises product transitions).
+    """
+    from fresko_universe.deals import apply_rate_rules
+    from fresko_universe.approvals import decide
+
+    result = apply_rate_rules(deal_name)
+    deal = frappe.get_doc("Fresko Deal", deal_name)
+    if deal.status == "Approval Required":
+        rate = decision_rate if decision_rate is not None else deal.proposed_rate
+        decide(deal_name, "APPROVE", decision_rate=rate, reason=reason)
+        deal.reload()
+    if deal.status not in ("Auto Approved", "Approved"):
+        frappe.throw(
+            f"ensure_commercially_approved expected Auto Approved/Approved, got {deal.status}"
+        )
+    return deal
+

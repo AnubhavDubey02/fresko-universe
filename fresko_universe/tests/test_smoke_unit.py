@@ -116,10 +116,43 @@ class TestRateFloorD5(unittest.TestCase):
         self.assertTrue(policy_resolved(None, 200))
         self.assertTrue(policy_resolved(100, 200))
 
+    def test_currency_zero_overrides_fall_through_to_default(self):
+        """Bench Currency empty → 0.0 must not win over container defaults."""
+        lot = MagicMock(
+            lot_no="L1",
+            rate_floor_override=0.0,
+            rate_ceiling_override=0.0,
+            count_size="16/20",
+        )
+        lot.get = lambda k, d=None: getattr(lot, k, d)
+        c = self._c(default_rate_floor=100, default_rate_ceiling=200, lots=[lot], rate_rules=[])
+        floor, ceiling = resolve_rate_band(c, "L1", "16/20")
+        self.assertEqual(floor, 100)
+        self.assertEqual(ceiling, 200)
+
+    def test_currency_zero_defaults_are_unresolved(self):
+        lot = MagicMock(
+            lot_no="L1",
+            rate_floor_override=0.0,
+            rate_ceiling_override=0.0,
+            count_size=None,
+        )
+        lot.get = lambda k, d=None: getattr(lot, k, d)
+        c = self._c(default_rate_floor=0.0, default_rate_ceiling=0.0, lots=[lot], rate_rules=[])
+        floor, ceiling = resolve_rate_band(c, "L1", None)
+        self.assertIsNone(floor)
+        self.assertIsNone(ceiling)
+        self.assertFalse(policy_resolved(floor, ceiling))
+
     def test_empty_band_must_not_imply_resolved(self):
         # F-M7 closed: empty band is not resolved and not in-band
         self.assertFalse(policy_resolved(None, None))
         self.assertFalse(rate_in_band(50, None, None))
+        # Currency empty → 0.0 must also be unresolved (bench)
+        self.assertFalse(policy_resolved(0, 0))
+        self.assertFalse(policy_resolved(0.0, None))
+        self.assertFalse(rate_in_band(50, 0, 0))
+
 
 
 class TestATS(unittest.TestCase):

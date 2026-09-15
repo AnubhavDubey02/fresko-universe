@@ -32,7 +32,9 @@ def apply_rate_rules(deal_name: str):
         # Fail-closed: empty band must never auto-approve (F-M7 / Gate 1)
         deal.approval_required = 1
         deal.set_status("Approval Required")
-        # Do not set approved_rate; preserve proposed_rate
+        # Preserve proposed_rate; keep approved_rate unset (Gate 1).
+        # Currency fields coerce None→0.0 on Document.save — force SQL NULL after.
+        deal.approved_rate = None
         _open_exception(
             deal,
             "RATE_POLICY_MISSING",
@@ -45,6 +47,7 @@ def apply_rate_rules(deal_name: str):
         ats = available_to_sell(deal.container, deal.lot_no, exclude_deal=deal.name, for_update=True)
         if flt(deal.qty) > ats:
             deal.approval_required = 1
+            deal.approved_rate = None
             deal.set_status("Approval Required")
             _open_exception(
                 deal,
@@ -61,9 +64,28 @@ def apply_rate_rules(deal_name: str):
     else:
         # Policy resolved but out of band — Approval Required (RATE_FLOOR_BREACH path as today)
         deal.approval_required = 1
+        deal.approved_rate = None
         deal.set_status("Approval Required")
 
     deal.save(ignore_permissions=True)
+    # Currency fields coerce None→0.0 on Document.save. Force SQL NULL where
+    # commercial semantics require "unset" (Gate 1 approved_rate; empty snapshots).
+    null_fields = {}
+    if deal.status == "Approval Required":
+        null_fields["approved_rate"] = None
+    if not policy_resolved(floor, ceiling):
+        null_fields["rate_floor"] = None
+        null_fields["rate_ceiling"] = None
+        null_fields["approved_rate"] = None
+    if null_fields:
+        frappe.db.set_value(
+            "Fresko Deal",
+            deal.name,
+            null_fields,
+            update_modified=False,
+        )
+        for k, v in null_fields.items():
+            setattr(deal, k, v)
     frappe.db.commit()
     return {
         "name": deal.name,

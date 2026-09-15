@@ -8,10 +8,12 @@ from frappe.utils import now_datetime
 
 class FreskoException(Document):
     def validate(self):
-        if not self.opened_by:
+        # Audit fields (opened_by/opened_at/resolved_*) live on the DocType JSON.
+        # getattr keeps validate safe if a site is mid-migrate.
+        if not getattr(self, "opened_by", None):
             self.opened_by = frappe.session.user
-        if not self.opened_at:
+        if not getattr(self, "opened_at", None):
             self.opened_at = now_datetime()
-        if self.status in ("Resolved", "Waived") and not self.resolved_at:
+        if self.status in ("Resolved", "Waived") and not getattr(self, "resolved_at", None):
             self.resolved_at = now_datetime()
-            self.resolved_by = self.resolved_by or frappe.session.user
+            self.resolved_by = getattr(self, "resolved_by", None) or frappe.session.user

@@ -258,6 +258,12 @@ class TestFreskoDeal(FrappeTestCase):
         deal = _make_deal(self.container, rate=20, alias="UnresolvedBuyer")
         deals_api.apply_rate_rules(deal.name)
         deal.reload()
+        if deal.status == "Approval Required":
+            approvals_api.decide(
+                deal.name, "APPROVE", decision_rate=deal.proposed_rate, reason="test advance"
+            )
+            deal.reload()
+        self.assertIn(deal.status, ("Auto Approved", "Approved"))
         self.assertFalse(deal.customer)
         for st in (
             "Outward Pending",
@@ -401,7 +407,10 @@ class TestFreskoDeal(FrappeTestCase):
         result = deals_api.apply_rate_rules(deal.name)
         self.assertEqual(result["status"], "Approval Required")
         deal.reload()
-        self.assertIsNone(deal.approved_rate)
+        # Gate 1: approved_rate / floor / ceiling must stay unset (NULL, not 0.0)
+        self.assertFalse(deal.approved_rate)
+        self.assertIsNone(deal.rate_floor)
+        self.assertIsNone(deal.rate_ceiling)
         self.assertEqual(flt(deal.proposed_rate), 50)
         self.assertTrue(
             frappe.db.exists(

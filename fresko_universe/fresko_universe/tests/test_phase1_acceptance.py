@@ -14,7 +14,7 @@ from fresko_universe.deals import (
     request_revision,
 )
 from fresko_universe.approvals import decide
-from fresko_universe.tests.utils import ensure_masters, make_container, make_deal
+from fresko_universe.tests.utils import ensure_commercially_approved, ensure_masters, make_container, make_deal
 
 
 class TestPhase1Acceptance(FrappeTestCase):
@@ -74,6 +74,8 @@ class TestPhase1Acceptance(FrappeTestCase):
         d.reload()
         self.assertEqual(d.proposed_rate, 77)
         self.assertFalse(d.approved_rate)
+        self.assertIsNone(d.rate_floor)
+        self.assertIsNone(d.rate_ceiling)
         self.assertTrue(
             frappe.db.exists(
                 "Fresko Exception",
@@ -156,8 +158,7 @@ class TestPhase1Acceptance(FrappeTestCase):
     def test_unresolved_buyer_blocks_reconciled(self):
         c = make_container(self.masters, container_no=f"BUY-{frappe.generate_hash(length=6)}", rate_floor=10)
         d = make_deal(c, proposed_rate=50, qty=5, customer=None)
-        apply_rate_rules(d.name)
-        d.reload()
+        d = ensure_commercially_approved(d.name)
         self.assertFalse(d.customer)
         for st in ("Outward Pending", "Dispatched", "Payment Pending", "Paid"):
             d.reload()
