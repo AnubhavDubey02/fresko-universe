@@ -1,5 +1,28 @@
 # Gate 2 CI Result
 
+## Verified closeout baseline `8ae1945` — 2026-09-18
+
+Remote branch and PR #2 head were verified as
+`8ae19458ddb3a3ce2694f3e7f3e0a95d9ab9835f`. PR #2 remained open and unmerged.
+Primary PR run: [35384805933](https://github.com/AnubhavDubey02/fresko-universe/actions/runs/35384805933).
+Push twin: [35384801777](https://github.com/AnubhavDubey02/fresko-universe/actions/runs/35384801777).
+Both completed successfully on that exact SHA.
+
+| Primary run gate | Result | Count | Failures/errors | Test skips reported |
+|---|---|---:|---:|---:|
+| Smoke suite, job `105729102188` | `OK` | 78 tests | 0 | 0 |
+| Readiness corpus, same job | Validated | 19 fixtures | 0 | N/A |
+| Readiness contract tests, same job | `OK` | 6 tests | 0 | 0 |
+| Pinned bench, job `105729158428` | `OK`; `CI bench OK` | 81 tests | 0 | 0 |
+
+Push twin run [35384801777](https://github.com/AnubhavDubey02/fresko-universe/actions/runs/35384801777) also completed successfully with identical counts:
+smoke job `105729087593` (78 smoke unit tests, 19 validated fixtures, 6 contract tests) and bench job `105729128751` (81 tests, `CI bench OK`).
+
+Counts were read directly from the job logs, not inferred from an ancestor.
+Frappe `v15.120.1` and ERPNext `v15.121.2` pin assertions passed. Local smoke passed 78 tests, fixture validation passed 19 fixtures, and contract tests passed 6 tests. The external archive remains outside Git.
+
+This verifies exact SHA `8ae19458ddb3a3ce2694f3e7f3e0a95d9ab9835f` (`8ae1945`), distinguishing it from any later documentation commit. It does not authorize merging PR #2 or starting Phase 2 implementation.
+
 ## Verified closeout baseline `4280451` — 2026-09-18
 
 Remote branch and PR #2 head were rechecked as
