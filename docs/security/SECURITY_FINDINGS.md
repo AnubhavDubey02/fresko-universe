@@ -164,8 +164,8 @@ FSEC-002 remains **MITIGATED** and is **stronger** than Deal-only bind (ChatGPT 
 | **Impact** | Duplicate ingest evidence rows with same Meta message id possible; QA attack report residual for double-count if fingerprint optional. Deal `source_message_id` **is** unique=1. |
 | **Evidence** | Deal field `source_message_id unique=1`; Evidence `message_id unique=None` (JSON parse baseline) |
 | **Repro (high-level)** | Insert two Evidence docs with identical `message_id`. |
-| **Fix** | Unique index on Evidence.message_id (nullable unique / partial as MariaDB allows) before webhook work. |
-| **Regression test** | `test_evidence_message_id_unique`. |
+| **Fix (refined 2026-09-18)** | Before webhook work, choose and persist provider-scoped identity: either composite unique `(provider, provider_account_id, conversation_id, provider_message_id)` or one canonical scoped-message key. Do not make the current bare `message_id` globally unique without that decision. Model one message to many attachments separately. |
+| **Regression test** | Same provider-scoped message redelivery reuses Evidence; distinct provider messages with identical text remain distinct; one Evidence accepts multiple unique attachments. |
 
 ---
 

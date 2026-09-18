@@ -1,5 +1,9 @@
 # Fresko Universe — Accounting & Controls Design Memo
 
+> **Historical specialist proposal — 15 September 2026.** Retained as design
+> evidence. Use `docs/PHASE1_BLUEPRINT_FINAL.md` and `docs/DECISIONS.md` for
+> current Phase 1 decisions. See `docs/CANONICAL_DOCUMENTS.md`.
+
 **Role:** Accounting / Controls specialist  
 **Scope:** Phase 1 — Fresko Container + Fresko Deal design review  
 **Focus:** Auditability · Stock integrity · No silent modification of approved financial records  

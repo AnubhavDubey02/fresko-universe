@@ -23,6 +23,8 @@ jobs:
       - name: Run offline smoke suite
         working-directory: fresko_universe
         run: python3 -m unittest tests.test_smoke_unit -v
+      - name: Validate Phase 2 readiness fixtures
+        run: python3 scripts/validate_phase2_readiness_fixtures.py
       - name: Assert pin file present
         run: |
           test -f .github/frappe-versions.json

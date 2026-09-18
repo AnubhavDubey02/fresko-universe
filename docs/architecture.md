@@ -1,5 +1,10 @@
 # Fresko Universe — Architecture Design Memo
 
+> **Historical specialist proposal — 15 September 2026.** Retained as design
+> evidence. `docs/PHASE1_BLUEPRINT_FINAL.md` and `docs/DECISIONS.md` supersede
+> this memo where they conflict, including its Sales-Order-on-approval proposal.
+> See `docs/CANONICAL_DOCUMENTS.md`.
+
 **Audience:** Anubhav Dubey (product owner), Phase 1 implementers  
 **Scope:** Phase 1 blueprint — **Fresko Container** and **Fresko Deal** only  
 **Stack:** Frappe v15 + ERPNext v15 (Serial and Batch Bundle)  

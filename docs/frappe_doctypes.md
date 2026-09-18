@@ -1,5 +1,9 @@
 # Fresko Universe — Frappe DocType Design Memo
 
+> **Historical specialist proposal — 15 September 2026.** Retained as design
+> evidence. Use `docs/PHASE1_BLUEPRINT_FINAL.md` and `docs/DECISIONS.md` for
+> current Phase 1 decisions. See `docs/CANONICAL_DOCUMENTS.md`.
+
 **App:** `fresko_universe`  
 **Target:** Frappe / ERPNext **v15**  
 **Scope:** `Fresko Container` + `Fresko Deal` only  

@@ -1,5 +1,10 @@
 # Fresko Container + Fresko Deal — DocType Design (v1)
 
+> **Superseded design draft — 15 September 2026.** Retained as historical
+> evidence. The mandatory Revision path, Counter acceptance, and all other
+> current Phase 1 decisions are governed by `docs/PHASE1_BLUEPRINT_FINAL.md` and
+> `docs/DECISIONS.md`. See `docs/CANONICAL_DOCUMENTS.md`.
+
 App: `fresko_universe`  
 Target: Frappe / ERPNext **v15**  
 Date: 2026-09-15  

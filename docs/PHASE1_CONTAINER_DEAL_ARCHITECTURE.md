@@ -1,5 +1,10 @@
 # Phase 1 — Container + Deal architecture (ERPNext v15)
 
+> **Superseded architecture proposal — 15 September 2026.** Retained as
+> historical evidence. Its Sales-Order-on-approval recommendation was rejected
+> by locked decision D1; the final blueprint requires soft reservation only.
+> See `docs/CANONICAL_DOCUMENTS.md`.
+
 Date: 15-Sep-2026  
 Scope: Fresko Container + Fresko Deal only (Approval/Evidence linkage for acceptance scenario).  
 Stack assumption: Frappe v15 + ERPNext v15 (Serial and Batch Bundle). Greenfield `fresko_universe` app.  

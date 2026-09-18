@@ -1,5 +1,40 @@
 # Gate 2 CI Result
 
+## Exact `f907b8b` evidence — 2026-09-18
+
+**Verified repository/PR:** `AnubhavDubey02/fresko-universe` PR #2, open and
+unmerged at verification time.
+
+**Exact checked-out SHA:** `f907b8b8af4e7b4d4b3240af43a237682508647d`
+(`f907b8b`)
+
+**Immutable app parent:** `25859fc8c9daea9eedc07f484c79c7ed59249efa`
+(`25859fc`)
+
+**Diff from app parent:** documentation only (`docs/GATE2_CI_RESULT.md` and
+`docs/OPEN_QUESTIONS.md`).
+
+Primary exact-SHA run:
+[35329916947](https://github.com/AnubhavDubey02/fresko-universe/actions/runs/35329916947)
+(`pull_request`, run 70). Push twin:
+[35329913359](https://github.com/AnubhavDubey02/fresko-universe/actions/runs/35329913359)
+(`push`, run 69). Both completed `success` with head SHA exactly `f907b8b`.
+
+| Gate in primary run 35329916947 | Result | Test count | Failures | Errors | Test skips |
+|---|---|---:|---:|---:|---:|
+| Smoke unit (Gate 1 / D4 / constants) | success | 78 | 0 | 0 | 0 |
+| Bench install + migrate + run-tests (pinned v15) | success | 81 | 0 | 0 | 0 |
+
+The bench log ends `Ran 81 tests`, `OK`, and `==> CI bench OK`; the smoke log
+ends `Ran 78 tests`, `OK`. Frappe `v15.120.1` and ERPNext `v15.121.2` pins were
+asserted. The workflow's failure-only **Upload bench logs on failure** step was
+skipped because the bench succeeded; that conditional workflow skip is not a
+skipped test. No failure required investigation on `f907b8b`.
+
+This exact-SHA evidence supersedes reliance on the earlier 75/75 result and
+closes the evidence gap after the failed `bb59e18` bench. It does not authorize
+merging PR #2 or starting Phase 2.
+
 ## Current-tip repair verification — 2026-09-18
 
 **Tip SHA:** `25859fc8c9daea9eedc07f484c79c7ed59249efa` (`25859fc`)

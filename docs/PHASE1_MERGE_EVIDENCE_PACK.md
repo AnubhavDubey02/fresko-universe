@@ -143,7 +143,7 @@ Source ledger: `docs/security/SECURITY_FINDINGS.md`. Enforcement = runtime gate,
 
 1. **Input:** Deal Proposed below floor → `apply_rate_rules` → `Approval Required` (no approved_rate).  
 2. **Call:** `approvals.decide(..., COUNTER, decision_rate=11, reason=…)`.  
-3. **Stored:** Approval row decision=COUNTER; Deal.status=`Countered`; `approved_rate=11`; ATS **unchanged** (Countered not reducing).  
+3. **Stored (corrected 2026-09-18):** Approval row decision=COUNTER with `decision_rate=11`; Deal.status=`Countered`; Deal.`approved_rate` remains **NULL**; ATS **unchanged** (Countered not reducing).
 4. **Bypass attempt:** `decide(APPROVE)` from Countered → throw (must `accept_counter`).  
 5. **Accept:** Owner/`salesperson_user` `accept_counter` → `Approved`; ATS reduces; `_maybe_open_buyer_unresolved` if `customer` empty. SM non-owner denied.  
 6. **D6:** empty customer → open BUYER_UNRESOLVED; customer set → no new exception.

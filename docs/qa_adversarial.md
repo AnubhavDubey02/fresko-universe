@@ -1,5 +1,9 @@
 # Fresko Universe — Adversarial QA Design Memo
 
+> **Historical specialist proposal — 15 September 2026.** Retained as design
+> evidence. Current verdicts live in the dated QA/security reports and locked
+> decisions. See `docs/CANONICAL_DOCUMENTS.md`.
+
 **Audience:** Phase 1 implementers (Fresko Container + Fresko Deal on ERPNext v15)  
 **Author role:** Adversarial QA specialist  
 **Date:** 15 September 2026  
