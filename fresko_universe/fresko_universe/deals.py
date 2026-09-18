@@ -216,11 +216,14 @@ def record_dispatch(deal_name: str, dispatched_qty):
     deal = frappe.get_doc("Fresko Deal", deal_name)
     assert_can_record_dispatch(deal)
     # D10: every physical dispatch for this container uses the same row lock.
-    # Acquire it before reading lot inward or aggregate dispatched quantity and
-    # hold it until the mutation commits. Reload after a wait so validation uses
-    # the current Deal state rather than the pre-lock snapshot.
-    lock_container_for_update(deal.container)
-    deal.reload()
+    # The first Deal read only identifies that stable lock target. After a wait,
+    # use locking reads throughout: under MariaDB REPEATABLE READ, a normal
+    # reload/SELECT could otherwise keep the pre-lock transaction snapshot.
+    locked_container = deal.container
+    lock_container_for_update(locked_container)
+    deal = frappe.get_doc("Fresko Deal", deal_name, for_update=True)
+    if deal.container != locked_container:
+        frappe.throw(_("Deal container changed while acquiring dispatch lock"))
     qty = flt(dispatched_qty)
     if qty < 0:
         frappe.throw(_("dispatched_qty cannot be negative"))
@@ -234,7 +237,8 @@ def record_dispatch(deal_name: str, dispatched_qty):
     lot_inward = frappe.db.sql(
         """
         SELECT inward_qty FROM `tabFresko Container Lot`
-        WHERE parent=%s AND parenttype='Fresko Container' AND lot_no=%s LIMIT 1
+        WHERE parent=%s AND parenttype='Fresko Container' AND lot_no=%s
+        LIMIT 1 FOR UPDATE
         """,
         (deal.container, deal.lot_no),
     )
@@ -242,12 +246,13 @@ def record_dispatch(deal_name: str, dispatched_qty):
         inward = flt(lot_inward[0][0])
         others = frappe.db.sql(
             """
-            SELECT COALESCE(SUM(dispatched_qty), 0) FROM `tabFresko Deal`
+            SELECT dispatched_qty FROM `tabFresko Deal`
             WHERE container=%s AND lot_no=%s AND name!=%s
+            FOR UPDATE
             """,
             (deal.container, deal.lot_no, deal.name),
         )
-        other_disp = flt(others[0][0]) if others else 0.0
+        other_disp = sum(flt(row[0]) for row in others)
         if other_disp + qty > inward:
             frappe.throw(
                 _(

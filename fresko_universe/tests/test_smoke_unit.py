@@ -219,9 +219,15 @@ class TestCommercialLock(unittest.TestCase):
     def test_dispatch_lock_precedes_physical_reads(self):
         deals_py = (ROOT / "fresko_universe" / "deals.py").read_text()
         body = deals_py.split("def record_dispatch", 1)[1].split("def request_revision", 1)[0]
-        self.assertIn("lock_container_for_update(deal.container)", body)
+        self.assertIn("lock_container_for_update(locked_container)", body)
+        self.assertIn('frappe.get_doc("Fresko Deal", deal_name, for_update=True)', body)
+        self.assertEqual(body.count("FOR UPDATE"), 2)
         self.assertLess(
-            body.index("lock_container_for_update(deal.container)"),
+            body.index("lock_container_for_update(locked_container)"),
+            body.index('frappe.get_doc("Fresko Deal", deal_name, for_update=True)'),
+        )
+        self.assertLess(
+            body.index('frappe.get_doc("Fresko Deal", deal_name, for_update=True)'),
             body.index("SELECT inward_qty"),
         )
 
