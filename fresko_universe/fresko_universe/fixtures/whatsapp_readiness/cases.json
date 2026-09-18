@@ -28,7 +28,7 @@
       "source": {
         "kind": "closeout_requirement",
         "reference": "User closeout instruction 6, 2026-09-18",
-        "raw_text": "Repeated delivery of the same provider message is different from two distinct messages containing identical text.",
+        "source_summary": "Repeated delivery of the same provider message is different from two distinct messages containing identical text.",
         "attachment_members": []
       },
       "interpretation": "The provider-scoped immutable message key, not body text, determines redelivery identity.",
@@ -37,7 +37,8 @@
       ],
       "expected": {
         "extraction_confidence": "UNKNOWN",
-        "identity_match_confidence": "CONFIRMED",
+        "identity_match_confidence": "UNKNOWN",
+        "provider_message_identity": "SAME_SCOPED_KEY_SYNTHETIC",
         "financial_verification": "NOT_APPLICABLE",
         "record_state": "IDEMPOTENT_REDELIVERY",
         "deduplication_action": "REUSE_EVIDENCE_AND_APPEND_DELIVERY_ATTEMPT",
@@ -55,7 +56,7 @@
         "kind": "whatsapp_export",
         "archive_member": "_chat.txt",
         "transcript_line_ranges": [[362, 369], [370, 377]],
-        "raw_text": "ORDER DK sapra/Mukesh LOT 42076/ 5 CRT Lotb42074/ 10 CRT Total 15 crate Vehicle no Anil Tempo",
+        "source_summary": "ORDER DK sapra/Mukesh LOT 42076/ 5 CRT Lotb42074/ 10 CRT Total 15 crate Vehicle no Anil Tempo",
         "attachment_members": []
       },
       "interpretation": "Two exported records contain identical text at the same displayed timestamp; the export has no provider message IDs proving redelivery.",
@@ -83,7 +84,7 @@
         "kind": "whatsapp_export",
         "archive_member": "_chat.txt",
         "transcript_line_ranges": [[397, 406], [751, 760]],
-        "raw_text": "Payment Date - 11-09-2026 Amount - ₹ 20850.00 Payment Ref # - 4RHDMB0010292127 Status - Authorization InProcess",
+        "source_summary": "Payment Date - 11-09-2026 Amount - ₹ 20850.00 Payment Ref # - 4RHDMB0010292127 Status - Authorization InProcess",
         "attachment_members": []
       },
       "interpretation": "The same transaction reference is posted in two export records. Evidence identity and financial transaction identity are separate questions.",
@@ -96,7 +97,7 @@
         "identity_match_confidence": "UNKNOWN",
         "financial_verification": "PENDING",
         "record_state": "TRANSACTION_DUPLICATE_CANDIDATE",
-        "deduplication_action": "PRESERVE_BOTH_EVIDENCE_RECORDS_AND_PREVENT_DOUBLE_COUNT_BY_TRANSACTION_REFERENCE",
+        "deduplication_action": "PRESERVE_BOTH_EVIDENCE_RECORDS_AND_HOLD_POSTING_PENDING_SCOPED_TRANSACTION_MATCH",
         "exceptions": ["PAYMENT_REFERENCE_DUPLICATE_CANDIDATE", "PAYMENT_CLEARING_PENDING"]
       },
       "expected_result_review": {
@@ -110,7 +111,7 @@
       "source": {
         "kind": "closeout_requirement",
         "reference": "User closeout instruction 6, 2026-09-18",
-        "raw_text": "One message can have multiple attachments.",
+        "source_summary": "One message can have multiple attachments.",
         "attachment_members": ["fixture-attachment-a", "fixture-attachment-b"]
       },
       "interpretation": "Message uniqueness must not force a one-to-one relationship between Evidence and attachments.",
@@ -137,7 +138,7 @@
         "kind": "whatsapp_export",
         "archive_member": "_chat.txt",
         "transcript_line_ranges": [[674, 675]],
-        "raw_text": "Add 10 Crate s Lot 42088",
+        "source_summary": "Add 10 Crate s Lot 42088",
         "attachment_members": []
       },
       "interpretation": "The amendment has quantity and lot but no validated parent order reference.",
@@ -165,7 +166,7 @@
         "kind": "whatsapp_export",
         "archive_member": "_chat.txt",
         "transcript_line_ranges": [[688, 690]],
-        "raw_text": "ADD 50 Crates Lot 42088",
+        "source_summary": "ADD 50 Crates Lot 42088",
         "attachment_members": []
       },
       "interpretation": "The amendment has quantity and lot but no validated parent order reference.",
@@ -193,7 +194,7 @@
         "kind": "whatsapp_export",
         "archive_member": "_chat.txt",
         "transcript_line_ranges": [[347, 354]],
-        "raw_text": "ORDER AZAD / SNS 20 Box Lot 42076 Vishal Tempo; request follows that sale price is needed",
+        "source_summary": "ORDER AZAD / SNS 20 Box Lot 42076 Vishal Tempo; request follows that sale price is needed",
         "attachment_members": []
       },
       "interpretation": "Buyer alias, quantity, lot, and vehicle are extractable, but rate is absent.",
@@ -221,7 +222,7 @@
         "kind": "whatsapp_export",
         "archive_member": "_chat.txt",
         "transcript_line_ranges": [[362, 369]],
-        "raw_text": "ORDER DK sapra/Mukesh LOT 42076/ 5 CRT Lotb42074/ 10 CRT Total 15 crate Vehicle no Anil Tempo",
+        "source_summary": "ORDER DK sapra/Mukesh LOT 42076/ 5 CRT Lotb42074/ 10 CRT Total 15 crate Vehicle no Anil Tempo",
         "attachment_members": []
       },
       "interpretation": "One commercial order contains two lot lines and one total quantity.",
@@ -251,7 +252,7 @@
         "kind": "whatsapp_export",
         "archive_member": "_chat.txt",
         "transcript_line_ranges": [[162, 168]],
-        "raw_text": "Hold Gatepass contradiction: ledger marked HOLD while physical outward evidence was reported to show dispatch.",
+        "source_summary": "Hold Gatepass contradiction: ledger marked HOLD while physical outward evidence was reported to show dispatch.",
         "attachment_members": []
       },
       "interpretation": "The chat asserts a ledger/physical conflict, but the summary alone is not the underlying gatepass evidence.",
@@ -278,7 +279,7 @@
         "kind": "whatsapp_export",
         "archive_member": "_chat.txt",
         "transcript_line_ranges": [[486, 491]],
-        "raw_text": "ORDER PRAFULL S 5 Crate Lot 42076 By hand",
+        "source_summary": "ORDER PRAFULL S 5 Crate Lot 42076 By hand",
         "attachment_members": ["00003309-FRESKO OUTWARD.pdf"]
       },
       "interpretation": "By hand is a positive dispatch mode, not a missing vehicle value.",
@@ -306,7 +307,7 @@
         "kind": "archive_workbook",
         "archive_member": "00003294-Fresko_Plum_SKRU9000221_Sale_Sheet_16_Sep_2026_Payments_Reconciled.xlsx",
         "member_locator": "Sale Sheet row 67",
-        "raw_text": "AU; NAME / DATE CHECK; Candidate GP 205952: ALI MARKET, 15-Sep",
+        "source_summary": "AU; NAME / DATE CHECK; Candidate GP 205952: ALI MARKET, 15-Sep",
         "attachment_members": ["00003294-Fresko_Plum_SKRU9000221_Sale_Sheet_16_Sep_2026_Payments_Reconciled.xlsx"]
       },
       "interpretation": "The workbook proposes a candidate alias match but does not establish identity.",
@@ -333,7 +334,7 @@
         "kind": "archive_workbook",
         "archive_member": "00003294-Fresko_Plum_SKRU9000221_Sale_Sheet_16_Sep_2026_Payments_Reconciled.xlsx",
         "member_locator": "Sale Sheet row 64",
-        "raw_text": "Sale 14-Sep; GP 205936; OUT 15-Sep; DATE CHECK",
+        "source_summary": "Sale 14-Sep; GP 205936; OUT 15-Sep; DATE CHECK",
         "attachment_members": ["00003294-Fresko_Plum_SKRU9000221_Sale_Sheet_16_Sep_2026_Payments_Reconciled.xlsx"]
       },
       "interpretation": "Commercial sale date and physical outward date may legitimately differ; neither may overwrite the other.",
@@ -359,7 +360,7 @@
         "kind": "whatsapp_export",
         "archive_member": "_chat.txt",
         "transcript_line_ranges": [[813, 818]],
-        "raw_text": "Payments for plum or grapes or both? First adjust in plum then grapes. Extra amount to go into grapes account? Yes.",
+        "source_summary": "Payments for plum or grapes or both? First adjust in plum then grapes. Extra amount to go into grapes account? Yes.",
         "attachment_members": []
       },
       "interpretation": "The conversation confirms allocation order at container/category level, not a per-receipt allocation or bank clearing result.",
@@ -386,7 +387,7 @@
         "kind": "whatsapp_export",
         "archive_member": "_chat.txt",
         "transcript_line_ranges": [[21, 30]],
-        "raw_text": "Payment Date - 03-09-2026 Amount - ₹ 250000.00 Payment Type - RTGS Status - Authorization InProcess",
+        "source_summary": "Payment Date - 03-09-2026 Amount - ₹ 250000.00 Payment Type - RTGS Status - Authorization InProcess",
         "attachment_members": []
       },
       "interpretation": "Authorization InProcess is not verified settlement or cleared receipt.",
@@ -399,6 +400,7 @@
         "financial_verification": "PENDING",
         "record_state": "AUTHORIZATION_IN_PROCESS",
         "ledger_received": false,
+        "settlement_status": "UNKNOWN",
         "exceptions": ["PAYMENT_CLEARING_PENDING"]
       },
       "expected_result_review": {
@@ -413,7 +415,7 @@
         "kind": "whatsapp_export",
         "archive_member": "_chat.txt",
         "transcript_line_ranges": [[852, 852]],
-        "raw_text": "Cold storage bills not received ussko zero kar doo we add later when we got complete sales of plum.",
+        "source_summary": "Cold storage bills not received ussko zero kar doo we add later when we got complete sales of plum.",
         "attachment_members": []
       },
       "interpretation": "A provisional display zero must not become a verified zero expense.",
@@ -441,7 +443,7 @@
         "kind": "whatsapp_export",
         "archive_member": "_chat.txt",
         "transcript_line_ranges": [[730, 730]],
-        "raw_text": "Paid almost 80 K extra to our CHA; FSSAI and PQ charges may be automatically exempted but were said to be charged in full.",
+        "source_summary": "Paid almost 80 K extra to our CHA; FSSAI and PQ charges may be automatically exempted but were said to be charged in full.",
         "attachment_members": ["00003258-PHOTO-2026-09-16-10-05-29.jpg"]
       },
       "interpretation": "This is a user-reported claim requiring shipment-specific receipts and exemption checks before any recoverable amount is asserted.",
@@ -470,7 +472,7 @@
         "kind": "whatsapp_export",
         "archive_member": "_chat.txt",
         "transcript_line_ranges": [[731, 736]],
-        "raw_text": "Six attachment records appear across two displayed timestamps.",
+        "source_summary": "Six attachment records appear across two displayed timestamps.",
         "attachment_members": [
           "00003259-PHOTO-2026-09-16-10-43-02.jpg",
           "00003260-PHOTO-2026-09-16-10-43-02.jpg",
@@ -488,7 +490,8 @@
         "extraction_confidence": "CONFIRMED",
         "identity_match_confidence": "UNKNOWN",
         "financial_verification": "NOT_APPLICABLE",
-        "record_state": "ATTACHMENTS_CAPTURED_MESSAGE_GROUPING_UNKNOWN",
+        "record_state": "ATTACHMENTS_PRESENT_CAPTURE_UNVERIFIED_MESSAGE_GROUPING_UNKNOWN",
+        "capture_status": "UNKNOWN",
         "exceptions": ["PROVIDER_MESSAGE_ID_REQUIRED"]
       },
       "expected_result_review": {
@@ -502,7 +505,7 @@
       "source": {
         "kind": "closeout_requirement",
         "reference": "User closeout instruction 8, 2026-09-18",
-        "raw_text": "No incomplete attachment may be marked successfully captured.",
+        "source_summary": "No incomplete attachment may be marked successfully captured.",
         "attachment_members": ["fixture-partial-download"]
       },
       "interpretation": "Transport completion, expected length, byte hash, durable write, and readback are distinct checkpoints.",
@@ -529,7 +532,7 @@
       "source": {
         "kind": "closeout_requirement",
         "reference": "User closeout instruction 8, 2026-09-18",
-        "raw_text": "Document human correction and rejected matches.",
+        "source_summary": "Document human correction and rejected matches.",
         "attachment_members": []
       },
       "interpretation": "Corrections append reviewed provenance; they do not overwrite raw evidence or erase rejected candidates.",

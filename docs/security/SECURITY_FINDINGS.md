@@ -167,6 +167,12 @@ FSEC-002 remains **MITIGATED** and is **stronger** than Deal-only bind (ChatGPT 
 | **Fix (refined 2026-09-18)** | Before webhook work, choose and persist provider-scoped identity: either composite unique `(provider, provider_account_id, conversation_id, provider_message_id)` or one canonical scoped-message key. Do not make the current bare `message_id` globally unique without that decision. Model one message to many attachments separately. |
 | **Regression test** | Same provider-scoped message redelivery reuses Evidence; distinct provider messages with identical text remain distinct; one Evidence accepts multiple unique attachments. |
 
+**2026-09-18 design resolution:** the canonical scoped-message key option is
+selected, retaining original scope fields and collision checks; see
+`docs/phase2_readiness/WHATSAPP_FIXTURE_CONTRACT.md`. The earlier choice above is
+preserved as history. Implementation and concurrency/migration tests remain
+PENDING; FSEC-005 remains OPEN.
+
 ---
 
 ## FSEC-006 — CI lacks SAST, secret scan, dependency advisory, permission tests

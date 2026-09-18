@@ -1,5 +1,27 @@
 # Gate 2 CI Result
 
+## Verified closeout baseline `4280451` — 2026-09-18
+
+Remote branch and PR #2 head were rechecked as
+`4280451a2225aeedb2c83144471d35c59825636c`. PR #2 remained open and unmerged.
+Primary PR run: [35334605825](https://github.com/AnubhavDubey02/fresko-universe/actions/runs/35334605825).
+Push twin: [35334602227](https://github.com/AnubhavDubey02/fresko-universe/actions/runs/35334602227).
+Both completed successfully on that exact SHA.
+
+| Primary run gate | Result | Count | Failures/errors | Test skips reported |
+|---|---|---:|---:|---:|
+| Smoke, job `105566434527` | `OK` | 78 tests | 0 | 0 |
+| Readiness corpus, same job | Validated | 19 fixtures | 0 | N/A |
+| Pinned bench, job `105566483534` | `OK`; `CI bench OK` | 81 tests | 0 | 0 |
+
+Counts were read from the job logs, not inferred from an ancestor. Frappe
+`v15.120.1` and ERPNext `v15.121.2` pin assertions passed. Local smoke also passed
+78 tests; the corpus passed standalone and external-archive validation against
+the manifest's ZIP SHA-256. The ZIP remained outside Git.
+
+This verifies `4280451`, not later documentation or fixture changes. It does not
+authorize merging or Phase 2 implementation.
+
 ## Exact `f907b8b` evidence — 2026-09-18
 
 **Verified repository/PR:** `AnubhavDubey02/fresko-universe` PR #2, open and

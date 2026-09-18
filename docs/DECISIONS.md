@@ -1,5 +1,18 @@
 # DECISIONS — Fresko Universe
 
+## 2026-09-18 — Readiness design closeout (delegated technical decision)
+
+- Following Anubhav's delegation, MSG-UNIQ design selects a versioned canonical
+  scoped-message key, retaining all four original identifiers and checking them
+  on duplicate-key hits. Serialization, collision, missing-ID, and attachment
+  rules are in `docs/phase2_readiness/WHATSAPP_FIXTURE_CONTRACT.md`.
+- FSEC-004 byte-hash/readback and FSEC-005 uniqueness remain **OPEN** until
+  implemented and tested; a design decision does not close a security finding.
+- Source summaries, extracted fields, identity matches, and settlement evidence
+  are separate. Archive file presence does not establish application capture.
+- This decision adds no dependency, provider integration, or runtime schema.
+  Phase 2 implementation and merging PR #2 remain on hold.
+
 ## 2026-09-15 — Phase 1 Container/Deal blueprint (Chief of Staff)
 
 - ERPNext/Frappe v15 assumed (Serial and Batch Bundle); greenfield `fresko_universe`.

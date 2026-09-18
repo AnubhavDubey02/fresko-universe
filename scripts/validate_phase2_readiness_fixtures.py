@@ -65,8 +65,10 @@ def validate_case(case: dict[str, Any], vocab: dict[str, list[str]]) -> None:
             fail(f"{case_id}: missing {key}")
 
     source = case["source"]
-    if not isinstance(source, dict) or not source.get("kind") or not source.get("raw_text"):
-        fail(f"{case_id}: source kind and raw_text are required")
+    if not isinstance(source, dict) or not source.get("kind") or not source.get("source_summary"):
+        fail(f"{case_id}: source kind and labelled source_summary are required")
+    if "raw_text" in source:
+        fail(f"{case_id}: condensed summaries must not be labelled raw_text")
     if not isinstance(source.get("attachment_members"), list):
         fail(f"{case_id}: attachment_members must be a list")
 
@@ -99,6 +101,8 @@ def validate_semantics(by_id: dict[str, dict[str, Any]]) -> None:
     identical = by_id["identical-text-distinct-message-records"]["expected"]
     if redelivery.get("deduplication_action") == identical.get("deduplication_action"):
         fail("provider redelivery and identical text must have different handling")
+    if redelivery.get("identity_match_confidence") != "UNKNOWN":
+        fail("transport redelivery does not establish buyer identity")
 
     multi = by_id["one-message-many-attachments"]
     if len(multi["source"]["attachment_members"]) < 2:
@@ -107,6 +111,12 @@ def validate_semantics(by_id: dict[str, dict[str, Any]]) -> None:
     bank = by_id["bank-authorization-not-cleared-receipt"]["expected"]
     if bank.get("financial_verification") != "PENDING" or bank.get("ledger_received") is not False:
         fail("Authorization InProcess must remain pending and not received")
+    if bank.get("settlement_status") != "UNKNOWN":
+        fail("Authorization InProcess does not establish settlement outcome")
+
+    attachments = by_id["same-timestamp-attachment-records"]["expected"]
+    if attachments.get("capture_status") != "UNKNOWN":
+        fail("archive presence does not prove successful application capture")
 
     cold = by_id["cold-storage-bill-missing"]["expected"]
     if cold.get("verified_amount") != "UNKNOWN":

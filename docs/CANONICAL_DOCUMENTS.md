@@ -22,6 +22,7 @@ conflicting proposal without rewriting the historical record.
 | Security posture | `docs/security/SECURITY_FINDINGS.md`, `docs/security/SECURITY_TESTING.md` | Finding status and test evidence; FSEC-004/FSEC-005 remain Phase 2 entry gates. |
 | Operational source provenance | `docs/SOURCES.md` | Drive identifiers, immutable local hashes, and permitted phase use. |
 | WhatsApp readiness contract | `docs/phase2_readiness/WHATSAPP_FIXTURE_CONTRACT.md` | Test-only evidence semantics; does not authorize live ingestion or implement Phase 2. |
+| Readiness source review | `docs/phase2_readiness/CLOSEOUT_REVIEW.md` | Source comparisons, corrected certainty claims, remaining operational evidence, and limits of fixture validation. |
 
 ## Historical or supporting evidence
 
