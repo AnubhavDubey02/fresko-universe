@@ -1,5 +1,41 @@
 # Gate 2 CI Result
 
+## Current-tip repair verification — 2026-09-18
+
+**Tip SHA:** `25859fc8c9daea9eedc07f484c79c7ed59249efa` (`25859fc`)
+
+**Tip message:** `fix(phase1): refresh dispatch ceiling under lock`
+
+**Failed predecessor run:** [34998759732](https://github.com/AnubhavDubey02/fresko-universe/actions/runs/34998759732) on `bb59e180e528a29ad26039e7d6b7f333a8683db9`
+
+**Repair runs:** [35329138786](https://github.com/AnubhavDubey02/fresko-universe/actions/runs/35329138786) (PR) and [35329134656](https://github.com/AnubhavDubey02/fresko-universe/actions/runs/35329134656) (push)
+
+**Overall conclusion:** **success** on both exact-SHA runs; PR #2 remains open and unmerged.
+
+The predecessor smoke job passed, but its pinned MariaDB bench failed
+`test_concurrent_dispatches_cannot_exceed_lot_inward`: both 60-unit dispatches
+committed against one 100-unit lot. The Container row lock existed, but normal
+Deal and aggregate reads after the wait could retain a pre-lock snapshot under
+MariaDB `REPEATABLE READ`.
+
+The repair retains the stable Container lock, then reloads the Deal with
+`for_update=True` and uses locking reads for lot inward and peer dispatched
+quantities. The offline contract now asserts that those reads occur after the
+shared lock.
+
+| Gate | Result on `25859fc` |
+|---|---|
+| Local smoke | **78 passed** (`python3 -m unittest tests.test_smoke_unit -v`) |
+| PR smoke | **success** |
+| PR pinned bench | **81 passed**, 0 failures/errors; migrate + ERPNext bootstrap + `CI bench OK` |
+| Push twin | **success** (smoke + pinned bench) |
+
+This supersedes the earlier 75/75 result only for current-tip verification; the
+older evidence below remains immutable evidence for `6ee6cb9`. No Phase 2 work
+was started, and this repair does not authorize merging PR #2.
+
+---
+
 **Date:** 2026-09-15  
 **Branch:** `phase1-doctype-scaffold`  
 **Tip SHA:** `6ee6cb9f6b4287fb871cd8cb23c544f77c8fa691` (`6ee6cb9`)  

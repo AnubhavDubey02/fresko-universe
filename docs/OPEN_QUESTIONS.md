@@ -12,6 +12,7 @@ D1, D3, D4, D5, D6, D10 — see DECISIONS.md.
 | D9 | GST / invoice timing | CA |
 | — | Legal entity / partner accounting model | CA |
 | — | Direct receipt meaning | Payments phase |
+| CHA-VERIFY | CHA bill verification before payment | **PENDING** — require shipment-specific receipts and exemption checks. Approximately ₹80,000 excess payment is user-reported and **not independently verified**. No CHA module is part of this Phase 1 repair. |
 | — | Credit/exposure limits | Later |
 | — | WhatsApp production number / templates | Phase 2 |
 | — | Evidence retention period | Compliance |
