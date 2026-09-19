@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sys
 import types
 import unittest
@@ -1815,9 +1816,20 @@ class TestFSEC004FSEC005Behavioral(unittest.TestCase):
         orig_savepoint = frappe.db.savepoint
         orig_rollback = frappe.db.rollback
         try:
+            attempt_row = {
+                "name": "ATT-ATTEMPT",
+                "evidence": "EV-1",
+                "operation": "MESSAGE_INGEST",
+                "source_payload": json.dumps({"document": {"file_size": 12}}),
+                "observed_byte_count": 12,
+                "observed_sha256": None,
+            }
+
             def flex_sql(query, params=None, as_dict=False):
                 if "FROM `tabFresko Evidence Attachment`" in query:
                     return [types.SimpleNamespace(**att_row)]
+                if "FROM `tabFresko Evidence Attempt`" in query:
+                    return [types.SimpleNamespace(**attempt_row)]
                 if "FROM `tabFresko Evidence`" in query:
                     return [types.SimpleNamespace(**parent_row)]
                 return []
@@ -1949,9 +1961,20 @@ class TestFSEC004FSEC005Behavioral(unittest.TestCase):
 
         orig_sql = frappe.db.sql
         try:
+            attempt_row = {
+                "name": "ATT-ATTEMPT",
+                "evidence": "EV-1",
+                "operation": "MESSAGE_INGEST",
+                "source_payload": json.dumps({"document": {"file_size": 10}}),
+                "observed_byte_count": 10,
+                "observed_sha256": None,
+            }
+
             def flex_sql(query, params=None, as_dict=False):
                 if "FROM `tabFresko Evidence Attachment`" in query:
                     return [types.SimpleNamespace(**att_row)]
+                if "FROM `tabFresko Evidence Attempt`" in query:
+                    return [types.SimpleNamespace(**attempt_row)]
                 if "FROM `tabFresko Evidence`" in query:
                     return [types.SimpleNamespace(**parent_row)]
                 return []
@@ -2227,6 +2250,375 @@ class TestFSEC004FSEC005Behavioral(unittest.TestCase):
             frappe.db.sql = orig_sql
             evidence_service.assert_file_read_permission = orig_assert_file
             evidence_service.get_validated_local_file_path = orig_get_path
+
+    def test_regression_completeness_provenance_binds_to_manifest_and_payload(self):
+        """Finding 1: Manifest contents must be verified and bound to attachment; provider payload must declare attachment."""
+        import os
+        import frappe
+        from fresko_universe.fresko_core.services.evidence_service import validate_completeness_provenance
+        import tempfile
+
+        # Case 1: Manifest has arbitrary JSON not mentioning this attachment -> must fail closed
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as tf:
+            json.dump({"random_key": "arbitrary_data"}, tf)
+            manifest_path = tf.name
+
+        try:
+            att_row = {
+                "name": "ATT-UNBOUND",
+                "file_url": "/private/files/invoice.pdf",
+                "identity_type": "ordinal",
+                "attachment_ordinal": 0,
+                "logical_attachment_key": "log_unbound",
+                "provenance_type": "OFFLINE_IMPORT_MANIFEST",
+                "provenance_ref": manifest_path,
+                "expected_byte_count": 1234,
+                "expected_sha256": "fakehash",
+            }
+            parent_row = {"name": "EV-1", "message_payload_sha256": "hash1"}
+            trusted, reason, _, _ = validate_completeness_provenance(att_row, parent_row)
+            self.assertFalse(trusted)
+            self.assertIn("no verified entry", reason.lower())
+
+            # Case 2: Manifest mentions this attachment explicitly with size and hash -> succeeds
+            with open(manifest_path, "w", encoding="utf-8") as tf2:
+                json.dump({
+                    "attachments": [
+                        {
+                            "file_name": "invoice.pdf",
+                            "expected_byte_count": 1234,
+                            "expected_sha256": "correct_hash",
+                        }
+                    ]
+                }, tf2)
+
+            att_row["expected_sha256"] = "correct_hash"
+            trusted2, reason2, bound_bytes, bound_hash = validate_completeness_provenance(att_row, parent_row)
+            self.assertTrue(trusted2, f"Failed with reason: {reason2}")
+            self.assertEqual(bound_bytes, 1234)
+            self.assertEqual(bound_hash, "correct_hash")
+
+            # Case 3: Provider payload lacks attachment declaration -> must fail closed
+            att_prov = {
+                "name": "ATT-PROV",
+                "file_url": "/private/files/doc.pdf",
+                "identity_type": "provider_id",
+                "provider_attachment_id": "att_unknown_id",
+                "logical_attachment_key": "log_prov",
+                "provenance_type": "PROVIDER_PAYLOAD_DIGEST",
+                "provenance_ref": None,
+                "expected_byte_count": 500,
+                "expected_sha256": "sha500",
+            }
+            parent_empty_payload = {"name": "EV-2", "message_payload_sha256": "parent_hash"}
+            trusted3, reason3, _, _ = validate_completeness_provenance(att_prov, parent_empty_payload)
+            self.assertFalse(trusted3)
+            self.assertIn("does not contain", reason3.lower())
+        finally:
+            if os.path.exists(manifest_path):
+                os.remove(manifest_path)
+
+    def test_regression_superseded_file_protection_and_verification_rejection(self):
+        """Finding 2: Files backing SUPERSEDED attachments must remain protected; superseded attachments cannot be verified."""
+        import os
+        import frappe
+        from fresko_universe.fresko_core.services.evidence_service import (
+            prevent_captured_file_deletion,
+            prevent_captured_file_modification,
+            verify_and_capture_attachment,
+        )
+
+        orig_sql = frappe.db.sql
+        try:
+            # File referenced by SUPERSEDED attachment cannot be deleted or modified
+            superseded_ref = [{"name": "ATT-OLD", "evidence": "EV-1", "capture_status": "SUPERSEDED", "version": 1, "is_superseded": 1}]
+            frappe.db.sql = MagicMock(return_value=superseded_ref)
+
+            file_doc = MagicMock()
+            file_doc.name = "FILE-OLD"
+            file_doc.file_url = "/private/files/old_receipt.pdf"
+            file_doc.is_new = lambda: False
+            file_doc.has_value_changed = lambda f: f == "file_url"
+
+            with self.assertRaises(Exception) as ctx_del:
+                prevent_captured_file_deletion(file_doc)
+            self.assertIn("cannot delete file", str(ctx_del.exception).lower())
+
+            with self.assertRaises(Exception) as ctx_mod:
+                prevent_captured_file_modification(file_doc)
+            self.assertIn("cannot modify file", str(ctx_mod.exception).lower())
+
+            # verify_and_capture_attachment on superseded attachment must fail
+            old_att_row = {
+                "name": "ATT-OLD",
+                "evidence": "EV-1",
+                "file_url": "/private/files/old_receipt.pdf",
+                "is_superseded": 1,
+                "is_current_version": 0,
+                "capture_status": "SUPERSEDED",
+                "version": 1,
+                "logical_attachment_key": "log1",
+                "scoped_attachment_version_key": "ver1",
+            }
+            parent_row = {"name": "EV-1", "overall_verification_status": "COMPLETE"}
+
+            def flex_sql(query, params=None, as_dict=False):
+                if "FROM `tabFresko Evidence Attachment`" in query:
+                    return [types.SimpleNamespace(**old_att_row)]
+                if "FROM `tabFresko Evidence`" in query:
+                    return [types.SimpleNamespace(**parent_row)]
+                return []
+
+            frappe.db.sql = MagicMock(side_effect=flex_sql)
+            frappe.get_doc = MagicMock(return_value=types.SimpleNamespace(**parent_row))
+            res = verify_and_capture_attachment("ATT-OLD")
+            self.assertFalse(res.success)
+            self.assertEqual(res.status, "SUPERSEDED")
+            self.assertIn("superseded", res.reason.lower())
+        finally:
+            frappe.db.sql = orig_sql
+
+    def test_regression_path_component_containment_and_traversal(self):
+        """Finding 3: Sibling directories (files-backup) and traversals must fail path containment."""
+        from fresko_universe.fresko_core.services.evidence_service import get_validated_local_file_path
+        import frappe
+
+        # Create sibling directory private/files-backup and a file inside it
+        sibling_dir = frappe.get_site_path("private", "files-backup")
+        os.makedirs(sibling_dir, exist_ok=True)
+        sibling_file = os.path.join(sibling_dir, "secret.pdf")
+        with open(sibling_file, "wb") as f:
+            f.write(b"secret")
+
+        try:
+            # Traversal outside
+            with self.assertRaises(Exception) as ctx1:
+                get_validated_local_file_path("/private/files/../../etc/passwd")
+            self.assertIn("forbidden", str(ctx1.exception).lower())
+
+            # Sibling prefix directory: private/files-backup must NOT pass containment for private/files
+            with self.assertRaises(Exception) as ctx2:
+                get_validated_local_file_path(sibling_file)
+            self.assertIn("forbidden", str(ctx2.exception).lower())
+        finally:
+            if os.path.exists(sibling_file):
+                os.remove(sibling_file)
+            if os.path.exists(sibling_dir):
+                os.rmdir(sibling_dir)
+
+    def test_regression_identity_contract_untrimmed_replay_and_ordinal(self):
+        """Finding 4: Provider IDs are untrimmed; ordinal identity requires stable-ordering provenance; replay checks content/provenance."""
+        from fresko_universe.fresko_core.services.evidence_service import (
+            compute_scoped_message_key,
+            compute_logical_attachment_key,
+            ingest_attachment,
+        )
+
+        # 4a: Opaque IDs must NOT be trimmed
+        key_raw = compute_scoped_message_key(" whatsapp-cloud ", " ACC ", " CHAT ", " MSG ")
+        key_stripped = compute_scoped_message_key("whatsapp-cloud", "ACC", "CHAT", "MSG")
+        self.assertNotEqual(key_raw, key_stripped, "Opaque identifiers must not be trimmed")
+
+        # 4b: Ordinal identity without stable-ordering provenance is rejected
+        parent_row = {
+            "name": "EV-1",
+            "deal": None,
+            "provider": "whatsapp-cloud",
+            "provider_account_id": "ACC",
+            "conversation_id": "CONV",
+            "provider_message_id": "MSG",
+        }
+        import frappe
+        orig_sql = frappe.db.sql
+        try:
+            def flex_sql(query, params=None, as_dict=False):
+                if "FROM `tabFresko Evidence`" in query:
+                    return [types.SimpleNamespace(**parent_row)]
+                return []
+
+            frappe.db.sql = MagicMock(side_effect=flex_sql)
+            with self.assertRaises(Exception) as ctx_ord:
+                ingest_attachment(
+                    evidence_name="EV-1",
+                    file_url="/private/files/doc.pdf",
+                    identity_type="ordinal",
+                    identity_value=0,
+                    provenance_type="UNTRUSTED_CALLER",
+                )
+            self.assertIn("stable-ordering", str(ctx_ord.exception).lower())
+        finally:
+            frappe.db.sql = orig_sql
+
+    def test_regression_conflict_audit_durability_on_rollback(self):
+        """Finding 5: Conflict attempt records must be committed so they survive transaction rollback."""
+        from fresko_universe.fresko_core.services.evidence_service import ingest_message_evidence
+        import frappe
+
+        existing_row = {
+            "name": "EV-COLLIDE",
+            "deal": None,
+            "provider": "whatsapp-cloud",
+            "provider_account_id": "ACC_ORIGINAL",
+            "conversation_id": "CONV_ORIGINAL",
+            "provider_message_id": "MSG_ORIGINAL",
+            "scoped_message_key": "COLLISION_KEY",
+            "message_payload_sha256": "pay_orig",
+            "overall_verification_status": "PENDING",
+        }
+
+        orig_new_doc = frappe.new_doc
+        orig_sql = frappe.db.sql
+        commit_called = []
+        try:
+            def flex_new_doc(dt, *a, **k):
+                d = MagicMock()
+                d.doctype = dt
+                if dt == "Fresko Evidence":
+                    d.insert = MagicMock(side_effect=frappe.UniqueValidationError("Fresko Evidence", "EV-NEW", "dup"))
+                else:
+                    d.insert = MagicMock()
+                return d
+
+            frappe.new_doc = MagicMock(side_effect=flex_new_doc)
+            frappe.db.sql = MagicMock(return_value=[types.SimpleNamespace(**existing_row)])
+            frappe.db.commit = MagicMock(side_effect=lambda: commit_called.append(True))
+
+            # Trigger key collision: scope fields differ
+            from fresko_universe.fresko_core.services.evidence_service import IntegrityConflictError
+            with self.assertRaises(IntegrityConflictError):
+                ingest_message_evidence(
+                    provider="whatsapp-cloud",
+                    provider_account_id="ACC_COLLIDING",
+                    conversation_id="CONV_COLLIDING",
+                    provider_message_id="MSG_COLLIDING",
+                    raw_payload={"text": "collision"},
+                )
+
+            # Assert frappe.db.commit was invoked so the attempt record persists across rollback
+            self.assertTrue(commit_called, "frappe.db.commit must be called on conflict attempt before raising")
+        finally:
+            frappe.new_doc = orig_new_doc
+            frappe.db.sql = orig_sql
+
+    def test_regression_db_failure_persists_failed_retryable_status(self):
+        """Finding 6: When database finalization fails, stored status in DB must be updated to FAILED_RETRYABLE."""
+        from fresko_universe.fresko_core.services.evidence_service import verify_and_capture_attachment
+        import frappe
+
+        att_row = {
+            "name": "ATT-FAIL-DB",
+            "evidence": "EV-1",
+            "file_url": "/private/files/test.pdf",
+            "storage_ref": "File/123",
+            "provenance_type": "PROVIDER_HEADER_CONTENT_LENGTH",
+            "provenance_ref": None,
+            "expected_byte_count": 5,
+            "expected_sha256": None,
+            "capture_status": "PENDING",
+            "readback_verified": 0,
+            "content_sha256": None,
+            "content_byte_count": 0,
+            "logical_attachment_key": "log_f",
+            "scoped_attachment_version_key": "ver_f",
+        }
+        parent_row = {
+            "name": "EV-1",
+            "deal": None,
+            "manifest_status": "FINALIZED",
+            "expected_attachment_count": 1,
+            "verified_attachment_count": 0,
+            "overall_verification_status": "PENDING",
+            "provider": "whatsapp-cloud",
+            "provider_account_id": "ACC",
+            "conversation_id": "CONV",
+            "provider_message_id": "MSG",
+            "scoped_message_key": "key",
+            "message_payload_sha256": "pay_hash",
+        }
+
+        orig_sql = frappe.db.sql
+        orig_set_value = frappe.db.set_value
+        from fresko_universe.fresko_core.services import evidence_service
+        orig_assert_file = evidence_service.assert_file_read_permission
+        orig_get_path = evidence_service.get_validated_local_file_path
+        status_updates = []
+        try:
+            evidence_service.assert_file_read_permission = MagicMock()
+            evidence_service.get_validated_local_file_path = MagicMock(return_value="mock.txt")
+
+            attempt_row = {
+                "name": "ATT-ATTEMPT",
+                "evidence": "EV-1",
+                "operation": "MESSAGE_INGEST",
+                "source_payload": json.dumps({"document": {"file_size": 5}}),
+                "observed_byte_count": 5,
+                "observed_sha256": None,
+            }
+
+            def flex_sql(query, params=None, as_dict=False):
+                if "FROM `tabFresko Evidence Attachment`" in query:
+                    return [types.SimpleNamespace(**att_row)]
+                if "FROM `tabFresko Evidence Attempt`" in query:
+                    return [types.SimpleNamespace(**attempt_row)]
+                if "FROM `tabFresko Evidence`" in query:
+                    return [types.SimpleNamespace(**parent_row)]
+                return []
+
+            frappe.db.sql = MagicMock(side_effect=flex_sql)
+            frappe.get_doc = MagicMock(return_value=types.SimpleNamespace(**parent_row))
+
+            def tracking_set_value(dt, dn, fields, *a, **k):
+                if isinstance(fields, dict):
+                    if fields.get("capture_status") == "CAPTURED":
+                        raise Exception("Simulated DB Deadlock / Constraint Error")
+                    status_updates.append(fields.get("capture_status"))
+
+            frappe.db.set_value = MagicMock(side_effect=tracking_set_value)
+
+            from unittest.mock import mock_open, patch
+            with patch("builtins.open", mock_open(read_data=b"12345")):
+                res = verify_and_capture_attachment("ATT-FAIL-DB")
+
+            self.assertEqual(res.status, "FAILED_RETRYABLE")
+            # Database stored status must have been updated to FAILED_RETRYABLE
+            self.assertIn("FAILED_RETRYABLE", status_updates, "Stored status in DB must be updated to FAILED_RETRYABLE on error")
+        finally:
+            frappe.db.sql = orig_sql
+            frappe.db.set_value = orig_set_value
+            evidence_service.assert_file_read_permission = orig_assert_file
+            evidence_service.get_validated_local_file_path = orig_get_path
+
+    def test_regression_parent_aggregation_uses_current_read(self):
+        """Finding 7: Parent aggregation must query child attachments with current-read semantics (LOCK IN SHARE MODE / FOR UPDATE)."""
+        from fresko_universe.fresko_core.services.evidence_service import aggregate_parent_evidence_status
+        import frappe
+
+        queries = []
+        orig_sql = frappe.db.sql
+        try:
+            def recording_sql(query, params=None, as_dict=False):
+                queries.append(query)
+                if "FROM `tabFresko Evidence`" in query:
+                    return [types.SimpleNamespace(
+                        name="EV-1",
+                        manifest_status="FINALIZED",
+                        expected_attachment_count=1,
+                        overall_verification_status="PENDING",
+                    )]
+                if "FROM `tabFresko Evidence Attachment`" in query:
+                    return []
+                return []
+
+            frappe.db.sql = MagicMock(side_effect=recording_sql)
+            aggregate_parent_evidence_status("EV-1")
+
+            child_query = next((q for q in queries if "FROM `tabFresko Evidence Attachment`" in q), "")
+            self.assertTrue(
+                "LOCK IN SHARE MODE" in child_query or "FOR UPDATE" in child_query,
+                f"Child attachment query must use current-read locking (LOCK IN SHARE MODE or FOR UPDATE), got: {child_query}",
+            )
+        finally:
+            frappe.db.sql = orig_sql
 
 
 

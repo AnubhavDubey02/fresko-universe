@@ -62,18 +62,21 @@ def compute_scoped_message_key(
     conversation_id: str | None,
     provider_message_id: str | None,
 ) -> str | None:
-    """Compute deterministic scoped-message key per WHATSAPP_FIXTURE_CONTRACT.md."""
+    """Compute deterministic scoped-message key per WHATSAPP_FIXTURE_CONTRACT.md.
+
+    Preserves opaque provider identifiers exactly without trimming.
+    """
     scope = [provider, provider_account_id, conversation_id, provider_message_id]
-    if not all(isinstance(v, str) and v.strip() for v in scope):
+    if not all(isinstance(v, str) and v for v in scope):
         return None
 
     payload = json.dumps(
         [
             SCOPED_MESSAGE_KEY_VERSION,
-            provider.strip(),
-            provider_account_id.strip(),
-            conversation_id.strip(),
-            provider_message_id.strip(),
+            provider,
+            provider_account_id,
+            conversation_id,
+            provider_message_id,
         ],
         separators=(",", ":"),
         ensure_ascii=False,
@@ -93,15 +96,16 @@ def compute_logical_attachment_key(
 
     Explicitly separates ["provider_id", val] from ["ordinal", val]
     so provider IDs like "ord:0" cannot collide with ordinal 0.
+    Preserves opaque provider identifiers exactly without trimming.
     """
     scope = [provider, provider_account_id, conversation_id, provider_message_id]
-    if not all(isinstance(v, str) and v.strip() for v in scope):
+    if not all(isinstance(v, str) and v for v in scope):
         return None
 
     if identity_type == "provider_id":
-        if not isinstance(identity_value, str) or not identity_value.strip():
+        if not isinstance(identity_value, str) or not identity_value:
             return None
-        id_spec = ["provider_id", identity_value.strip()]
+        id_spec = ["provider_id", identity_value]
     elif identity_type == "ordinal":
         if not isinstance(identity_value, int) or identity_value < 0:
             return None
@@ -112,10 +116,10 @@ def compute_logical_attachment_key(
     payload = json.dumps(
         [
             SCOPED_ATTACHMENT_LOGICAL_VERSION,
-            provider.strip(),
-            provider_account_id.strip(),
-            conversation_id.strip(),
-            provider_message_id.strip(),
+            provider,
+            provider_account_id,
+            conversation_id,
+            provider_message_id,
             id_spec,
         ],
         separators=(",", ":"),
@@ -177,6 +181,7 @@ def _record_attempt(
     observed_byte_count: int | None = None,
     observed_sha256: str | None = None,
     reason: str | None = None,
+    commit: bool = False,
 ) -> None:
     """Insert an authoritative, structured, append-only attempt record."""
     attempt = frappe.new_doc("Fresko Evidence Attempt")
@@ -200,10 +205,14 @@ def _record_attempt(
     attempt.observed_sha256 = observed_sha256
     attempt.reason = reason
     attempt.insert(ignore_permissions=True)
+    if commit and hasattr(frappe.db, "commit"):
+        frappe.db.commit()
 
 
 def get_validated_local_file_path(file_url: str) -> str:
-    """Validate file path against local site root; reject traversal and remote storage."""
+    """Validate file path against local site root using strict path-component containment."""
+    from pathlib import Path
+
     if not file_url:
         frappe.throw("Empty file URL", frappe.ValidationError)
 
@@ -228,10 +237,21 @@ def get_validated_local_file_path(file_url: str) -> str:
             file_path = frappe.get_site_path("private", "files", file_url)
 
     realpath = os.path.realpath(file_path)
-    private_root = os.path.realpath(frappe.get_site_path("private", "files"))
-    public_root = os.path.realpath(frappe.get_site_path("public", "files"))
+    file_p = Path(realpath)
+    private_root = Path(os.path.realpath(frappe.get_site_path("private", "files")))
+    public_root = Path(os.path.realpath(frappe.get_site_path("public", "files")))
 
-    if not (realpath.startswith(private_root) or realpath.startswith(public_root)):
+    def _is_component_contained(child: Path, root: Path) -> bool:
+        try:
+            return child.is_relative_to(root) and child != root
+        except AttributeError:
+            try:
+                rel = child.relative_to(root)
+                return str(rel) != "." and not str(rel).startswith("..")
+            except ValueError:
+                return False
+
+    if not (_is_component_contained(file_p, private_root) or _is_component_contained(file_p, public_root)):
         frappe.throw("File path traversal outside site files is forbidden", frappe.PermissionError)
 
     if not os.path.exists(realpath):
@@ -287,11 +307,26 @@ def validate_completeness_provenance(
     prov_ref = getattr(att_row, "provenance_ref", None) or (
         att_row.get("provenance_ref") if hasattr(att_row, "get") else None
     )
-    expected_bytes = getattr(att_row, "expected_byte_count", None) or (
+    caller_bytes = getattr(att_row, "expected_byte_count", None) or (
         att_row.get("expected_byte_count") if hasattr(att_row, "get") else None
     )
-    expected_hash = getattr(att_row, "expected_sha256", None) or (
+    caller_hash = getattr(att_row, "expected_sha256", None) or (
         att_row.get("expected_sha256") if hasattr(att_row, "get") else None
+    )
+    att_file_url = getattr(att_row, "file_url", None) or (
+        att_row.get("file_url") if hasattr(att_row, "get") else None
+    )
+    att_id_type = getattr(att_row, "identity_type", None) or (
+        att_row.get("identity_type") if hasattr(att_row, "get") else None
+    )
+    att_prov_id = getattr(att_row, "provider_attachment_id", None) or (
+        att_row.get("provider_attachment_id") if hasattr(att_row, "get") else None
+    )
+    att_ordinal = getattr(att_row, "attachment_ordinal", None) or (
+        att_row.get("attachment_ordinal") if hasattr(att_row, "get") else None
+    )
+    att_logical_key = getattr(att_row, "logical_attachment_key", None) or (
+        att_row.get("logical_attachment_key") if hasattr(att_row, "get") else None
     )
 
     if not prov_type or prov_type not in TRUSTED_PROVENANCE_TYPES:
@@ -302,8 +337,9 @@ def validate_completeness_provenance(
             None,
         )
 
+    file_basename = os.path.basename(att_file_url) if att_file_url else ""
+
     if prov_type == "OFFLINE_IMPORT_MANIFEST":
-        # Offline import verification: must bind to an immutable manifest file or record
         if not prov_ref or not str(prov_ref).strip():
             return (
                 False,
@@ -312,7 +348,7 @@ def validate_completeness_provenance(
                 None,
             )
 
-        manifest_found = False
+        manifest_data = None
         candidates = [
             str(prov_ref),
             frappe.get_site_path(str(prov_ref)) if hasattr(frappe, "get_site_path") else None,
@@ -322,16 +358,16 @@ def validate_completeness_provenance(
             if c and os.path.exists(c) and os.path.isfile(c):
                 try:
                     with open(c, "r", encoding="utf-8") as mf:
-                        json.load(mf)
-                    manifest_found = True
+                        manifest_data = json.load(mf)
                     break
                 except Exception:
                     pass
 
-        if not manifest_found:
+        if manifest_data is None:
             existing_attempts = frappe.db.sql(
                 """
-                SELECT name FROM `tabFresko Evidence Attempt`
+                SELECT name, source_payload, observed_byte_count, observed_sha256
+                FROM `tabFresko Evidence Attempt`
                 WHERE (name = %s OR old_doc_ref = %s OR new_doc_ref = %s)
                 LIMIT 1
                 """,
@@ -339,9 +375,22 @@ def validate_completeness_provenance(
                 as_dict=True,
             )
             if existing_attempts:
-                manifest_found = True
+                att_entry = existing_attempts[0]
+                if getattr(att_entry, "source_payload", None):
+                    try:
+                        manifest_data = json.loads(att_entry.source_payload)
+                    except Exception:
+                        pass
+                if manifest_data is None and getattr(att_entry, "observed_byte_count", None):
+                    manifest_data = {
+                        "attachments": [{
+                            "file_name": file_basename,
+                            "expected_byte_count": att_entry.observed_byte_count,
+                            "expected_sha256": att_entry.observed_sha256,
+                        }]
+                    }
 
-        if not manifest_found:
+        if manifest_data is None:
             return (
                 False,
                 f"Offline import manifest '{prov_ref}' could not be verified or located",
@@ -349,10 +398,103 @@ def validate_completeness_provenance(
                 None,
             )
 
-        return True, None, expected_bytes, expected_hash
+        # Inspect manifest contents: locate verified entry for THIS attachment
+        found_entry = None
+        items = []
+        if isinstance(manifest_data, dict):
+            if "attachments" in manifest_data and isinstance(manifest_data["attachments"], list):
+                items = manifest_data["attachments"]
+            elif "files" in manifest_data and isinstance(manifest_data["files"], list):
+                items = manifest_data["files"]
+            elif "cases" in manifest_data and isinstance(manifest_data["cases"], list):
+                for case in manifest_data["cases"]:
+                    src = case.get("source", {})
+                    for m in src.get("attachment_members", []):
+                        items.append(m if isinstance(m, dict) else {"file_name": str(m)})
+            else:
+                for k, v in manifest_data.items():
+                    if isinstance(v, dict):
+                        entry_copy = dict(v)
+                        entry_copy.setdefault("key", k)
+                        items.append(entry_copy)
+        elif isinstance(manifest_data, list):
+            items = manifest_data
+
+        for entry in items:
+            if not isinstance(entry, dict):
+                continue
+            entry_name = entry.get("file_name") or entry.get("file") or entry.get("archive_member") or entry.get("name")
+            entry_key = entry.get("logical_attachment_key") or entry.get("key")
+            entry_prov_id = entry.get("provider_attachment_id") or entry.get("id")
+            entry_ord = entry.get("attachment_ordinal") if "attachment_ordinal" in entry else entry.get("ordinal")
+
+            matches = False
+            if att_logical_key and entry_key and entry_key == att_logical_key:
+                matches = True
+            elif att_prov_id and entry_prov_id and str(entry_prov_id) == str(att_prov_id):
+                matches = True
+            elif att_id_type == "ordinal" and entry_ord is not None and entry_ord == att_ordinal:
+                matches = True
+            elif entry_name and file_basename and (
+                entry_name == file_basename or os.path.basename(str(entry_name)) == file_basename
+            ):
+                matches = True
+            elif entry_name and att_file_url and str(entry_name) == str(att_file_url):
+                matches = True
+
+            if matches:
+                found_entry = entry
+                break
+
+        if not found_entry:
+            return (
+                False,
+                f"Offline manifest '{prov_ref}' contains no verified entry for this attachment",
+                None,
+                None,
+            )
+
+        bound_bytes = (
+            found_entry.get("expected_byte_count")
+            or found_entry.get("size_bytes")
+            or found_entry.get("size")
+            or found_entry.get("byte_count")
+            or found_entry.get("content_byte_count")
+        )
+        bound_hash = (
+            found_entry.get("expected_sha256")
+            or found_entry.get("sha256")
+            or found_entry.get("content_sha256")
+            or found_entry.get("hash")
+        )
+
+        if bound_bytes is None and bound_hash is None:
+            return (
+                False,
+                f"Manifest entry for attachment '{file_basename}' provides neither expected size nor hash",
+                None,
+                None,
+            )
+
+        if caller_bytes is not None and caller_bytes > -1 and bound_bytes is not None and caller_bytes != bound_bytes:
+            return (
+                False,
+                f"Caller expected byte count ({caller_bytes}) conflicts with manifest declared count ({bound_bytes})",
+                None,
+                None,
+            )
+
+        if caller_hash and bound_hash and caller_hash != bound_hash:
+            return (
+                False,
+                f"Caller expected hash ({caller_hash}) conflicts with manifest declared hash ({bound_hash})",
+                None,
+                None,
+            )
+
+        return True, None, bound_bytes, bound_hash
 
     elif prov_type in ("PROVIDER_PAYLOAD_DIGEST", "PROVIDER_HEADER_CONTENT_LENGTH"):
-        # Provider-delivery verification: must be bound to immutable parent transport payload or attempt
         parent_hash = getattr(parent_row, "message_payload_sha256", None) or (
             parent_row.get("message_payload_sha256") if hasattr(parent_row, "get") else None
         )
@@ -368,25 +510,91 @@ def validate_completeness_provenance(
                 None,
             )
 
-        if prov_ref:
-            att_attempts = frappe.db.sql(
-                """
-                SELECT name FROM `tabFresko Evidence Attempt`
-                WHERE name = %s AND evidence = %s
-                LIMIT 1
-                """,
-                (prov_ref, parent_ev_name),
-                as_dict=True,
-            )
-            if not att_attempts:
-                return (
-                    False,
-                    f"Provider delivery provenance reference '{prov_ref}' does not match any attempt for evidence '{parent_ev_name}'",
-                    None,
-                    None,
-                )
+        # Retrieve transport payload from attempt or prov_ref
+        payload_data = None
+        attempt_rows = frappe.db.sql(
+            """
+            SELECT name, source_payload, observed_byte_count, observed_sha256
+            FROM `tabFresko Evidence Attempt`
+            WHERE evidence = %s AND operation IN ('MESSAGE_INGEST', 'ATTACHMENT_INGEST')
+            ORDER BY creation DESC
+            """,
+            (parent_ev_name,),
+            as_dict=True,
+        )
+        for att_rec in attempt_rows:
+            sp = getattr(att_rec, "source_payload", None) or (att_rec.get("source_payload") if hasattr(att_rec, "get") else None)
+            if sp:
+                try:
+                    payload_data = json.loads(sp)
+                    break
+                except Exception:
+                    pass
 
-        return True, None, expected_bytes, expected_hash
+        found_decl = None
+        if isinstance(payload_data, dict):
+            candidates = []
+            if "attachments" in payload_data and isinstance(payload_data["attachments"], list):
+                candidates.extend(payload_data["attachments"])
+            for media_key in ("document", "image", "video", "audio", "media"):
+                if media_key in payload_data and isinstance(payload_data[media_key], dict):
+                    candidates.append(payload_data[media_key])
+
+            for idx, c in enumerate(candidates):
+                c_id = c.get("id") or c.get("provider_attachment_id")
+                c_ord = c.get("ordinal", idx)
+                c_fn = c.get("filename") or c.get("file_name")
+                if att_prov_id and c_id and str(c_id) == str(att_prov_id):
+                    found_decl = c
+                    break
+                elif att_id_type == "ordinal" and att_ordinal is not None and c_ord == att_ordinal:
+                    found_decl = c
+                    break
+                elif file_basename and c_fn and (c_fn == file_basename or os.path.basename(str(c_fn)) == file_basename):
+                    found_decl = c
+                    break
+
+            if not found_decl and len(candidates) == 1 and not att_prov_id and (att_ordinal is None or att_ordinal == 0):
+                found_decl = candidates[0]
+
+        if not found_decl:
+            att_name = getattr(att_row, "name", None) or (att_row.get("name") if hasattr(att_row, "get") else None)
+            ref_attempts = [
+                a for a in attempt_rows
+                if (prov_ref and (getattr(a, "name", None) or (a.get("name") if hasattr(a, "get") else None)) == prov_ref)
+                or (att_name and (getattr(a, "evidence_attachment", None) or (a.get("evidence_attachment") if hasattr(a, "get") else None)) == att_name)
+            ]
+            if ref_attempts:
+                ref_a = ref_attempts[0]
+                obc = getattr(ref_a, "observed_byte_count", None) or (ref_a.get("observed_byte_count") if hasattr(ref_a, "get") else None)
+                osh = getattr(ref_a, "observed_sha256", None) or (ref_a.get("observed_sha256") if hasattr(ref_a, "get") else None)
+                if obc or osh:
+                    found_decl = {
+                        "byte_count": obc,
+                        "sha256": osh,
+                    }
+
+        if not found_decl:
+            return (
+                False,
+                "Provider transport payload/attempt does not contain expected length/hash declarations for this attachment",
+                None,
+                None,
+            )
+
+        bound_bytes = (
+            found_decl.get("file_size")
+            or found_decl.get("byte_count")
+            or found_decl.get("size")
+            or found_decl.get("expected_byte_count")
+        )
+        bound_hash = (
+            found_decl.get("sha256")
+            or found_decl.get("digest")
+            or found_decl.get("expected_sha256")
+        )
+
+        return True, None, bound_bytes or caller_bytes, bound_hash or caller_hash
 
     return False, f"Unsupported provenance type: {prov_type}", None, None
 
@@ -490,6 +698,7 @@ def ingest_message_evidence(
                 scoped_message_key=scoped_key,
                 payload_sha256=payload_sha,
                 reason="Caller lacks permission to access existing evidence on redelivery",
+                commit=True,
             )
             frappe.throw("Access denied", frappe.PermissionError)
 
@@ -509,6 +718,7 @@ def ingest_message_evidence(
                 payload_sha256=payload_sha,
                 source_payload=canonical_payload_str,
                 reason=f"Key collision: scope fields do not match existing row {existing.name}",
+                commit=True,
             )
             raise IntegrityConflictError(
                 f"Scoped message key collision detected on evidence {existing.name}",
@@ -532,6 +742,7 @@ def ingest_message_evidence(
                 existing_payload_sha256=existing.message_payload_sha256,
                 source_payload=canonical_payload_str,
                 reason="Conflicting payload received for existing scoped message key",
+                commit=True,
             )
             return frappe.get_doc("Fresko Evidence", existing.name), "CONFLICT_PAYLOAD_MISMATCH"
 
@@ -580,7 +791,8 @@ def ingest_attachment(
     # Check if a current version of this logical attachment already exists
     existing_att = frappe.db.sql(
         """
-        SELECT name, file_url, content_sha256, capture_status, version, logical_attachment_key
+        SELECT name, file_url, content_sha256, capture_status, version, logical_attachment_key,
+               provenance_type, provenance_ref, expected_byte_count, expected_sha256
         FROM `tabFresko Evidence Attachment`
         WHERE evidence = %s AND logical_attachment_key = %s AND is_current_version = 1
         FOR UPDATE
@@ -600,31 +812,74 @@ def ingest_attachment(
                 outcome="ACCESS_DENIED",
                 logical_attachment_key=logical_key,
                 reason="Caller lacks read permission for existing attachment on redelivery",
+                commit=True,
             )
             frappe.throw("Access denied", frappe.PermissionError)
 
-        if curr.file_url == file_url:
+        curr_prov_type = getattr(curr, "provenance_type", None) or (curr.get("provenance_type") if hasattr(curr, "get") else None)
+        curr_prov_ref = getattr(curr, "provenance_ref", None) or (curr.get("provenance_ref") if hasattr(curr, "get") else None)
+        curr_exp_bytes = getattr(curr, "expected_byte_count", None) if getattr(curr, "expected_byte_count", None) is not None else (curr.get("expected_byte_count") if hasattr(curr, "get") else None)
+        curr_exp_sha = getattr(curr, "expected_sha256", None) or (curr.get("expected_sha256") if hasattr(curr, "get") else None)
+        curr_file_url = getattr(curr, "file_url", None) or (curr.get("file_url") if hasattr(curr, "get") else None)
+        curr_sha = getattr(curr, "content_sha256", None) or (curr.get("content_sha256") if hasattr(curr, "get") else None)
+
+        prov_match = (
+            curr_prov_type == provenance_type
+            and (curr_prov_ref == provenance_ref or not provenance_ref)
+            and (expected_byte_count == -1 or curr_exp_bytes == expected_byte_count)
+            and (expected_sha256 is None or curr_exp_sha == expected_sha256)
+        )
+
+        content_match = (curr_file_url == file_url)
+        if not content_match and curr_sha:
+            try:
+                new_path = get_validated_local_file_path(file_url)
+                with open(new_path, "rb") as nf:
+                    new_hash = hashlib.sha256(nf.read()).hexdigest()
+                if new_hash == curr_sha:
+                    content_match = True
+            except Exception:
+                content_match = False
+
+        if prov_match and content_match:
             _record_attempt(
                 evidence=evidence_name,
                 evidence_attachment=curr.name,
                 operation="ATTACHMENT_INGEST",
                 outcome="SUCCESS_IDEMPOTENT_REDELIVERY",
                 logical_attachment_key=logical_key,
-                reason="Idempotent attachment replay",
+                reason="Idempotent attachment replay with verified content and provenance match",
             )
             return frappe.get_doc("Fresko Evidence Attachment", curr.name), "SUCCESS_IDEMPOTENT_REDELIVERY"
         else:
-            # Different file for same logical identity: requires explicit correction
+            reason = "New file or conflicting provenance submitted for existing logical attachment without correction flow"
             _record_attempt(
                 evidence=evidence_name,
                 evidence_attachment=curr.name,
                 operation="ATTACHMENT_INGEST",
                 outcome="CONFLICT_PAYLOAD_MISMATCH",
                 logical_attachment_key=logical_key,
-                reason="New file submitted for existing logical attachment without correction flow",
+                reason=reason,
+                commit=True,
             )
             frappe.throw(
-                f"Logical attachment '{curr.name}' already exists with different file; use supersede_attachment",
+                f"Logical attachment '{curr.name}' already exists with different content/provenance; use supersede_attachment",
+                frappe.ValidationError,
+            )
+
+    # Ordinal identity check: ordinal identity requires stable-ordering provenance
+    if identity_type == "ordinal":
+        if provenance_type not in ("OFFLINE_IMPORT_MANIFEST", "PROVIDER_PAYLOAD_DIGEST"):
+            _record_attempt(
+                evidence=evidence_name,
+                operation="ATTACHMENT_INGEST",
+                outcome="VALIDATION_FAILED",
+                logical_attachment_key=logical_key,
+                reason="Ordinal attachment identity requires verified stable-ordering provenance",
+                commit=True,
+            )
+            frappe.throw(
+                "Ordinal identity requires verified stable-ordering provenance (OFFLINE_IMPORT_MANIFEST or PROVIDER_PAYLOAD_DIGEST)",
                 frappe.ValidationError,
             )
 
@@ -706,7 +961,7 @@ def verify_and_capture_attachment(attachment_name: str) -> CaptureResult:
         SELECT name, evidence, file_url, storage_ref, provenance_type, provenance_ref,
                expected_byte_count, expected_sha256, capture_status, readback_verified,
                content_sha256, content_byte_count, logical_attachment_key,
-               scoped_attachment_version_key
+               scoped_attachment_version_key, is_current_version, is_superseded
         FROM `tabFresko Evidence Attachment`
         WHERE name = %s
         FOR UPDATE
@@ -718,6 +973,18 @@ def verify_and_capture_attachment(attachment_name: str) -> CaptureResult:
         frappe.throw(f"Attachment '{attachment_name}' not found", frappe.DoesNotExistError)
 
     att = att_rows[0]
+
+    # Guard against verifying superseded versions (Finding 2)
+    if (
+        getattr(att, "is_superseded", 0) == 1
+        or getattr(att, "capture_status", None) == "SUPERSEDED"
+        or getattr(att, "is_current_version", 1) == 0
+    ):
+        return CaptureResult(
+            success=False,
+            status="SUPERSEDED",
+            reason="Attachment has been superseded by a newer version and cannot be verified or captured",
+        )
 
     # 2. Authority and access check
     parent_doc = frappe.get_doc("Fresko Evidence", parent.name)
@@ -914,6 +1181,18 @@ def verify_and_capture_attachment(attachment_name: str) -> CaptureResult:
         frappe.db.release_savepoint(sp)
     except Exception as e:
         frappe.db.rollback(save_point=sp)
+        try:
+            frappe.db.set_value(
+                "Fresko Evidence Attachment",
+                att.name,
+                {
+                    "capture_status": "FAILED_RETRYABLE",
+                    "failure_reason": f"Database write failed during capture finalization: {e}",
+                },
+                update_modified=False,
+            )
+        except Exception:
+            pass
         _record_attempt(
             evidence=parent.name,
             evidence_attachment=att.name,
@@ -924,7 +1203,9 @@ def verify_and_capture_attachment(attachment_name: str) -> CaptureResult:
             observed_byte_count=byte_count,
             observed_sha256=computed_sha256,
             reason=f"Database write failed during capture finalization: {e}",
+            commit=True,
         )
+        aggregate_parent_evidence_status(parent.name)
         return CaptureResult(
             success=False,
             status="FAILED_RETRYABLE",
@@ -1089,6 +1370,7 @@ def aggregate_parent_evidence_status(evidence_name: str) -> str:
         FROM `tabFresko Evidence Attachment`
         WHERE evidence = %s AND is_current_version = 1
         ORDER BY name ASC
+        LOCK IN SHARE MODE
         """,
         (evidence_name,),
         as_dict=True,
@@ -1172,7 +1454,7 @@ def aggregate_parent_evidence_status(evidence_name: str) -> str:
 
 
 def prevent_captured_file_deletion(doc, method=None):
-    """FSEC-004/005: Protect captured original bytes against application-level deletion."""
+    """FSEC-004/005: Protect captured and superseded original bytes against application-level deletion."""
     file_url = getattr(doc, "file_url", None)
     file_name = getattr(doc, "name", None)
 
@@ -1181,7 +1463,7 @@ def prevent_captured_file_deletion(doc, method=None):
         SELECT name, evidence, capture_status, version
         FROM `tabFresko Evidence Attachment`
         WHERE (file = %s OR file_url = %s OR file = %s OR file_url = %s)
-          AND capture_status = 'CAPTURED'
+          AND (capture_status IN ('CAPTURED', 'SUPERSEDED') OR is_superseded = 1)
         LIMIT 1
         """,
         (file_name, file_name, file_url, file_url),
@@ -1190,14 +1472,14 @@ def prevent_captured_file_deletion(doc, method=None):
     if refs:
         ref_name = getattr(refs[0], "name", None) or (refs[0].get("name") if hasattr(refs[0], "get") else str(refs[0]))
         frappe.throw(
-            f"Cannot delete File '{file_name}': referenced by captured Evidence Attachment '{ref_name}'. "
+            f"Cannot delete File '{file_name}': referenced by captured Evidence Attachment '{ref_name}' (or superseded). "
             "Captured original bytes are immutable.",
             frappe.PermissionError,
         )
 
 
 def prevent_captured_file_modification(doc, method=None):
-    """FSEC-004/005: Protect captured original bytes against application-level modification/replacement."""
+    """FSEC-004/005: Protect captured and superseded original bytes against application-level modification/replacement."""
     if getattr(doc, "is_new", None) and doc.is_new():
         return
     file_url = getattr(doc, "file_url", None)
@@ -1208,7 +1490,7 @@ def prevent_captured_file_modification(doc, method=None):
         SELECT name, evidence, capture_status, version
         FROM `tabFresko Evidence Attachment`
         WHERE (file = %s OR file_url = %s OR file = %s OR file_url = %s)
-          AND capture_status = 'CAPTURED'
+          AND (capture_status IN ('CAPTURED', 'SUPERSEDED') OR is_superseded = 1)
         LIMIT 1
         """,
         (file_name, file_name, file_url, file_url),
@@ -1219,7 +1501,7 @@ def prevent_captured_file_modification(doc, method=None):
         for field in ("file_url", "content_hash", "file_name", "file_size"):
             if getattr(doc, "has_value_changed", None) and doc.has_value_changed(field):
                 frappe.throw(
-                    f"Cannot modify File '{file_name}' field '{field}': referenced by captured Evidence Attachment '{ref_name}'. "
+                    f"Cannot modify File '{file_name}' field '{field}': referenced by captured Evidence Attachment '{ref_name}' (or superseded). "
                     "Captured original bytes are immutable.",
                     frappe.PermissionError,
                 )
