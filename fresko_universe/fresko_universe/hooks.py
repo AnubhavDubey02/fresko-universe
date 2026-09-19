@@ -34,10 +34,15 @@ fixtures = [
 permission_query_conditions = {
     "Fresko Deal": "fresko_universe.permissions.deal_permission_query",
     "Fresko Evidence": "fresko_universe.permissions.evidence_permission_query",
+    "Fresko Evidence Attachment": "fresko_universe.permissions.evidence_attachment_permission_query",
+    "Fresko Evidence Attempt": "fresko_universe.permissions.evidence_attempt_permission_query",
 }
 
 has_permission = {
     "Fresko Deal": "fresko_universe.permissions.deal_has_permission",
     "Fresko Evidence": "fresko_universe.permissions.evidence_has_permission",
+    "Fresko Evidence Attachment": "fresko_universe.permissions.evidence_attachment_has_permission",
+    "Fresko Evidence Attempt": "fresko_universe.permissions.evidence_attempt_has_permission",
 }
+
 

@@ -1,0 +1,260 @@
+{
+ "doctype": "DocType",
+ "name": "Fresko Evidence Attachment",
+ "module": "Fresko Core",
+ "engine": "InnoDB",
+ "autoname": "hash",
+ "track_changes": 0,
+ "allow_rename": 0,
+ "fields": [
+  {
+   "fieldname": "evidence",
+   "fieldtype": "Link",
+   "label": "Evidence",
+   "options": "Fresko Evidence",
+   "reqd": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "provider",
+   "fieldtype": "Data",
+   "label": "Provider",
+   "read_only": 1
+  },
+  {
+   "fieldname": "provider_account_id",
+   "fieldtype": "Data",
+   "label": "Provider Account ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "conversation_id",
+   "fieldtype": "Data",
+   "label": "Conversation ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "provider_message_id",
+   "fieldtype": "Data",
+   "label": "Provider Message ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "identity_type",
+   "fieldtype": "Select",
+   "label": "Identity Type",
+   "options": "provider_id\nordinal",
+   "read_only": 1
+  },
+  {
+   "fieldname": "provider_attachment_id",
+   "fieldtype": "Data",
+   "label": "Provider Attachment ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "attachment_ordinal",
+   "fieldtype": "Int",
+   "label": "Attachment Ordinal",
+   "default": 0,
+   "read_only": 1
+  },
+  {
+   "fieldname": "logical_attachment_key",
+   "fieldtype": "Data",
+   "label": "Logical Attachment Key",
+   "read_only": 1
+  },
+  {
+   "fieldname": "version",
+   "fieldtype": "Int",
+   "label": "Version",
+   "default": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "scoped_attachment_version_key",
+   "fieldtype": "Data",
+   "label": "Scoped Attachment Version Key",
+   "unique": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "file",
+   "fieldtype": "Attach",
+   "label": "File",
+   "reqd": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "file_url",
+   "fieldtype": "Data",
+   "label": "File URL",
+   "read_only": 1
+  },
+  {
+   "fieldname": "storage_ref",
+   "fieldtype": "Data",
+   "label": "Storage Ref",
+   "read_only": 1
+  },
+  {
+   "fieldname": "provenance_type",
+   "fieldtype": "Select",
+   "label": "Provenance Type",
+   "options": "OFFLINE_IMPORT_MANIFEST\nPROVIDER_HEADER_CONTENT_LENGTH\nPROVIDER_PAYLOAD_DIGEST\nUNTRUSTED_CALLER\nMISSING_PROVENANCE",
+   "default": "MISSING_PROVENANCE",
+   "read_only": 1
+  },
+  {
+   "fieldname": "provenance_ref",
+   "fieldtype": "Data",
+   "label": "Provenance Ref",
+   "read_only": 1
+  },
+  {
+   "fieldname": "expected_byte_count",
+   "fieldtype": "Int",
+   "label": "Expected Byte Count",
+   "default": -1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "expected_sha256",
+   "fieldtype": "Data",
+   "label": "Expected SHA256",
+   "read_only": 1
+  },
+  {
+   "fieldname": "content_byte_count",
+   "fieldtype": "Int",
+   "label": "Content Byte Count",
+   "default": 0,
+   "read_only": 1
+  },
+  {
+   "fieldname": "content_sha256",
+   "fieldtype": "Data",
+   "label": "Content SHA256",
+   "read_only": 1
+  },
+  {
+   "fieldname": "hash_algorithm",
+   "fieldtype": "Data",
+   "label": "Hash Algorithm",
+   "read_only": 1
+  },
+  {
+   "fieldname": "capture_status",
+   "fieldtype": "Select",
+   "label": "Capture Status",
+   "options": "PENDING\nVERIFYING\nCAPTURED\nFAILED_RETRYABLE\nFAILED_PERMANENT\nPARTIAL\nHASH_MISMATCH\nSUPERSEDED",
+   "default": "PENDING",
+   "read_only": 1
+  },
+  {
+   "fieldname": "readback_verified",
+   "fieldtype": "Check",
+   "label": "Readback Verified",
+   "default": 0,
+   "read_only": 1
+  },
+  {
+   "fieldname": "failure_reason",
+   "fieldtype": "Small Text",
+   "label": "Failure Reason",
+   "read_only": 1
+  },
+  {
+   "fieldname": "is_current_version",
+   "fieldtype": "Check",
+   "label": "Is Current Version",
+   "default": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "is_superseded",
+   "fieldtype": "Check",
+   "label": "Is Superseded",
+   "default": 0,
+   "read_only": 1
+  },
+  {
+   "fieldname": "superseded_by",
+   "fieldtype": "Link",
+   "label": "Superseded By",
+   "options": "Fresko Evidence Attachment",
+   "read_only": 1
+  }
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "delete": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "report": 1,
+   "export": 1,
+   "import": 0,
+   "share": 0,
+   "print": 1,
+   "email": 0,
+   "if_owner": 0
+  },
+  {
+   "role": "Fresko Approver",
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "delete": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "report": 1,
+   "export": 1,
+   "import": 0,
+   "share": 0,
+   "print": 1,
+   "email": 0,
+   "if_owner": 0
+  },
+  {
+   "role": "Fresko Accounts",
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "delete": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "report": 1,
+   "export": 1,
+   "import": 0,
+   "share": 0,
+   "print": 1,
+   "email": 0,
+   "if_owner": 0
+  },
+  {
+   "role": "Fresko Salesperson",
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "delete": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "report": 1,
+   "export": 0,
+   "import": 0,
+   "share": 0,
+   "print": 1,
+   "email": 0,
+   "if_owner": 0
+  }
+ ]
+}

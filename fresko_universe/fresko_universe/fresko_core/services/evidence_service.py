@@ -1,0 +1,980 @@
+# Copyright (c) 2026, Anubhav Dubey and contributors
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+from dataclasses import dataclass
+from typing import Any
+
+import frappe
+from frappe.utils import now_datetime
+
+from fresko_universe.constants import (
+    EVIDENCE_ATTEMPT_OPERATIONS,
+    EVIDENCE_ATTEMPT_OUTCOMES,
+    HASH_ALGORITHM_SHA256_V1,
+    SCOPED_ATTACHMENT_LOGICAL_VERSION,
+    SCOPED_ATTACHMENT_VERSION,
+    SCOPED_MESSAGE_KEY_VERSION,
+    TRUSTED_PROVENANCE_TYPES,
+)
+from fresko_universe.permissions import current_roles, evidence_has_permission, is_system_manager, ROLE_APPROVER
+
+
+class IntegrityConflictError(frappe.ValidationError):
+    pass
+
+
+@dataclass
+class CaptureResult:
+    success: bool
+    status: str
+    content_sha256: str | None = None
+    content_byte_count: int = 0
+    reason: str | None = None
+
+
+def canonicalize_payload(payload: Any) -> tuple[str, str]:
+    """Return (canonical_json_string, sha256_hex) for a payload object or string."""
+    if payload is None:
+        payload_str = ""
+    elif isinstance(payload, (dict, list)):
+        payload_str = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    elif isinstance(payload, bytes):
+        payload_str = payload.decode("utf-8", errors="replace")
+    else:
+        payload_str = str(payload)
+
+    digest = hashlib.sha256(payload_str.encode("utf-8")).hexdigest()
+    return payload_str, digest
+
+
+def compute_scoped_message_key(
+    provider: str | None,
+    provider_account_id: str | None,
+    conversation_id: str | None,
+    provider_message_id: str | None,
+) -> str | None:
+    """Compute deterministic scoped-message key per WHATSAPP_FIXTURE_CONTRACT.md."""
+    scope = [provider, provider_account_id, conversation_id, provider_message_id]
+    if not all(isinstance(v, str) and v.strip() for v in scope):
+        return None
+
+    payload = json.dumps(
+        [
+            SCOPED_MESSAGE_KEY_VERSION,
+            provider.strip(),
+            provider_account_id.strip(),
+            conversation_id.strip(),
+            provider_message_id.strip(),
+        ],
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def compute_logical_attachment_key(
+    provider: str | None,
+    provider_account_id: str | None,
+    conversation_id: str | None,
+    provider_message_id: str | None,
+    identity_type: str,
+    identity_value: str | int,
+) -> str | None:
+    """Compute logical attachment key with typed identity namespace.
+
+    Explicitly separates ["provider_id", val] from ["ordinal", val]
+    so provider IDs like "ord:0" cannot collide with ordinal 0.
+    """
+    scope = [provider, provider_account_id, conversation_id, provider_message_id]
+    if not all(isinstance(v, str) and v.strip() for v in scope):
+        return None
+
+    if identity_type == "provider_id":
+        if not isinstance(identity_value, str) or not identity_value.strip():
+            return None
+        id_spec = ["provider_id", identity_value.strip()]
+    elif identity_type == "ordinal":
+        if not isinstance(identity_value, int) or identity_value < 0:
+            return None
+        id_spec = ["ordinal", identity_value]
+    else:
+        return None
+
+    payload = json.dumps(
+        [
+            SCOPED_ATTACHMENT_LOGICAL_VERSION,
+            provider.strip(),
+            provider_account_id.strip(),
+            conversation_id.strip(),
+            provider_message_id.strip(),
+            id_spec,
+        ],
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def compute_scoped_attachment_version_key(
+    logical_attachment_key: str | None,
+    version: int,
+) -> str | None:
+    """Compute version-scoped key for an immutable attachment capture version."""
+    if not logical_attachment_key or not isinstance(version, int) or version < 1:
+        return None
+
+    payload = json.dumps(
+        [SCOPED_ATTACHMENT_VERSION, logical_attachment_key, version],
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _lock_parent_evidence(evidence_name: str) -> dict:
+    """Lock the parent Fresko Evidence row first to enforce deterministic lock hierarchy."""
+    rows = frappe.db.sql(
+        """
+        SELECT name, deal, manifest_status, expected_attachment_count,
+               verified_attachment_count, overall_verification_status,
+               provider, provider_account_id, conversation_id, provider_message_id,
+               scoped_message_key, message_payload_sha256
+        FROM `tabFresko Evidence`
+        WHERE name = %s
+        FOR UPDATE
+        """,
+        (evidence_name,),
+        as_dict=True,
+    )
+    if not rows:
+        frappe.throw(f"Evidence '{evidence_name}' not found", frappe.DoesNotExistError)
+    return rows[0]
+
+
+def _record_attempt(
+    evidence: str,
+    operation: str,
+    outcome: str,
+    evidence_attachment: str | None = None,
+    scoped_message_key: str | None = None,
+    logical_attachment_key: str | None = None,
+    scoped_attachment_version_key: str | None = None,
+    payload_sha256: str | None = None,
+    existing_payload_sha256: str | None = None,
+    source_payload: str | None = None,
+    existing_payload: str | None = None,
+    old_doc_ref: str | None = None,
+    new_doc_ref: str | None = None,
+    observed_byte_count: int | None = None,
+    observed_sha256: str | None = None,
+    reason: str | None = None,
+) -> None:
+    """Insert an authoritative, structured, append-only attempt record."""
+    attempt = frappe.new_doc("Fresko Evidence Attempt")
+    attempt.flags.in_service = True
+    attempt.evidence = evidence
+    attempt.evidence_attachment = evidence_attachment
+    attempt.scoped_message_key = scoped_message_key
+    attempt.logical_attachment_key = logical_attachment_key
+    attempt.scoped_attachment_version_key = scoped_attachment_version_key
+    attempt.attempt_time = now_datetime()
+    attempt.actor = frappe.session.user or "Administrator"
+    attempt.operation = operation
+    attempt.outcome = outcome
+    attempt.payload_sha256 = payload_sha256
+    attempt.existing_payload_sha256 = existing_payload_sha256
+    attempt.source_payload = source_payload
+    attempt.existing_payload = existing_payload
+    attempt.old_doc_ref = old_doc_ref
+    attempt.new_doc_ref = new_doc_ref
+    attempt.observed_byte_count = observed_byte_count
+    attempt.observed_sha256 = observed_sha256
+    attempt.reason = reason
+    attempt.insert(ignore_permissions=True)
+
+
+def get_validated_local_file_path(file_url: str) -> str:
+    """Validate file path against local site root; reject traversal and remote storage."""
+    if not file_url:
+        frappe.throw("Empty file URL", frappe.ValidationError)
+
+    # Reject remote storage protocols explicitly
+    if file_url.startswith(("http://", "https://", "s3://", "gs://", "ftp://")):
+        frappe.throw(
+            f"Remote storage '{file_url}' is unsupported; local storage required",
+            title="Unsupported Storage",
+        )
+
+    if file_url.startswith("/private/files/"):
+        subpath = file_url[len("/private/files/") :]
+        file_path = frappe.get_site_path("private", "files", subpath)
+    elif file_url.startswith("/files/"):
+        subpath = file_url[len("/files/") :]
+        file_path = frappe.get_site_path("public", "files", subpath)
+    else:
+        # Check if absolute path or bare filename
+        if os.path.isabs(file_url):
+            file_path = file_url
+        else:
+            file_path = frappe.get_site_path("private", "files", file_url)
+
+    realpath = os.path.realpath(file_path)
+    private_root = os.path.realpath(frappe.get_site_path("private", "files"))
+    public_root = os.path.realpath(frappe.get_site_path("public", "files"))
+
+    if not (realpath.startswith(private_root) or realpath.startswith(public_root)):
+        frappe.throw("File path traversal outside site files is forbidden", frappe.PermissionError)
+
+    if not os.path.exists(realpath):
+        frappe.throw(f"File does not exist on disk: {file_url}", frappe.DoesNotExistError)
+
+    return realpath
+
+
+def assert_file_read_permission(file_name_or_url: str, user: str | None = None) -> None:
+    """Verify that user has read permission on the underlying File document."""
+    user = user or frappe.session.user
+    if user == "Administrator" or is_system_manager(current_roles(user)):
+        return
+
+    if frappe.db.exists("File", file_name_or_url):
+        file_doc = frappe.get_doc("File", file_name_or_url)
+    else:
+        matching = frappe.get_all("File", filters={"file_url": file_name_or_url}, pluck="name")
+        if not matching:
+            frappe.throw(f"File document '{file_name_or_url}' not found", frappe.DoesNotExistError)
+        file_doc = frappe.get_doc("File", matching[0])
+
+    if not frappe.has_permission("File", doc=file_doc, ptype="read", user=user):
+        frappe.throw(f"Access denied to file '{file_name_or_url}'", frappe.PermissionError)
+
+
+def assert_can_capture_evidence(evidence_doc: Any, user: str | None = None) -> None:
+    """Ensure user has Approver or System Manager role and read access to Evidence."""
+    user = user or frappe.session.user
+    roles = current_roles(user)
+    if user != "Administrator" and not is_system_manager(roles) and ROLE_APPROVER not in roles:
+        frappe.throw(
+            "Evidence capture requires Fresko Approver or System Manager role",
+            frappe.PermissionError,
+        )
+    if not evidence_has_permission(evidence_doc, "read", user=user):
+        frappe.throw("Access denied to Evidence", frappe.PermissionError)
+
+
+def ingest_message_evidence(
+    provider: str | None = None,
+    provider_account_id: str | None = None,
+    conversation_id: str | None = None,
+    provider_message_id: str | None = None,
+    raw_payload: Any = None,
+    deal: str | None = None,
+    container: str | None = None,
+    notes: str | None = None,
+    manifest_status: str = "UNKNOWN",
+    expected_attachment_count: int = -1,
+) -> tuple[Any, str]:
+    """Service method for idempotent message evidence creation.
+
+    Uses savepoint-isolated insert to catch UniqueValidationError on scoped_message_key.
+    Performs locking read, collision checks, payload conflict preservation,
+    and inherited permission checks.
+    """
+    canonical_payload_str, payload_sha = canonicalize_payload(raw_payload)
+    scoped_key = compute_scoped_message_key(
+        provider, provider_account_id, conversation_id, provider_message_id
+    )
+
+    doc = frappe.new_doc("Fresko Evidence")
+    doc.flags.in_service = True
+    doc.evidence_type = "WhatsApp Message" if provider == "whatsapp-cloud" else "Note"
+    doc.deal = deal
+    doc.container = container
+    doc.notes = notes
+    doc.provider = provider
+    doc.provider_account_id = provider_account_id
+    doc.conversation_id = conversation_id
+    doc.provider_message_id = provider_message_id
+    doc.scoped_message_key = scoped_key
+    doc.message_payload_sha256 = payload_sha
+    doc.manifest_status = manifest_status
+    doc.expected_attachment_count = expected_attachment_count
+    doc.verified_attachment_count = 0
+    doc.overall_verification_status = "PENDING"
+
+    if not scoped_key:
+        # Legacy or unresolved identity: normal insert
+        doc.insert()
+        _record_attempt(
+            evidence=doc.name,
+            operation="MESSAGE_INGEST",
+            outcome="SUCCESS_NEW",
+            payload_sha256=payload_sha,
+            source_payload=canonical_payload_str,
+            reason="New evidence inserted without scoped message key",
+        )
+        return doc, "SUCCESS_NEW"
+
+    # Savepoint-isolated insert for scoped key
+    sp = "sp_ev_" + frappe.generate_hash(length=8)
+    frappe.db.savepoint(sp)
+    try:
+        doc.insert()
+        frappe.db.release_savepoint(sp)
+        _record_attempt(
+            evidence=doc.name,
+            operation="MESSAGE_INGEST",
+            outcome="SUCCESS_NEW",
+            scoped_message_key=scoped_key,
+            payload_sha256=payload_sha,
+            source_payload=canonical_payload_str,
+            reason="New scoped message evidence ingested successfully",
+        )
+        return doc, "SUCCESS_NEW"
+    except frappe.UniqueValidationError:
+        frappe.db.rollback(save_point=sp)
+
+        # Locking read on existing record
+        existing_rows = frappe.db.sql(
+            """
+            SELECT name, deal, provider, provider_account_id, conversation_id,
+                   provider_message_id, scoped_message_key, message_payload_sha256,
+                   overall_verification_status
+            FROM `tabFresko Evidence`
+            WHERE scoped_message_key = %s
+            FOR UPDATE
+            """,
+            (scoped_key,),
+            as_dict=True,
+        )
+        if not existing_rows:
+            raise
+
+        existing = existing_rows[0]
+
+        # 1. Collision check: all 4 original scope fields must match exactly
+        scope_matches = (
+            existing.provider == provider
+            and existing.provider_account_id == provider_account_id
+            and existing.conversation_id == conversation_id
+            and existing.provider_message_id == provider_message_id
+        )
+        if not scope_matches:
+            _record_attempt(
+                evidence=existing.name,
+                operation="MESSAGE_INGEST",
+                outcome="CONFLICT_KEY_COLLISION",
+                scoped_message_key=scoped_key,
+                payload_sha256=payload_sha,
+                source_payload=canonical_payload_str,
+                reason=f"Key collision: scope fields do not match existing row {existing.name}",
+            )
+            raise IntegrityConflictError(
+                f"Scoped message key collision detected on evidence {existing.name}",
+            )
+
+        # 2. Payload conflict check
+        if existing.message_payload_sha256 and existing.message_payload_sha256 != payload_sha:
+            frappe.db.set_value(
+                "Fresko Evidence",
+                existing.name,
+                "overall_verification_status",
+                "CONFLICT",
+                update_modified=False,
+            )
+            _record_attempt(
+                evidence=existing.name,
+                operation="MESSAGE_INGEST",
+                outcome="CONFLICT_PAYLOAD_MISMATCH",
+                scoped_message_key=scoped_key,
+                payload_sha256=payload_sha,
+                existing_payload_sha256=existing.message_payload_sha256,
+                source_payload=canonical_payload_str,
+                reason="Conflicting payload received for existing scoped message key",
+            )
+            return frappe.get_doc("Fresko Evidence", existing.name), "CONFLICT_PAYLOAD_MISMATCH"
+
+        # 3. Permission check: never expose existing record merely because key matches
+        if not evidence_has_permission(existing.name, "read", user=frappe.session.user):
+            _record_attempt(
+                evidence=existing.name,
+                operation="MESSAGE_INGEST",
+                outcome="ACCESS_DENIED",
+                scoped_message_key=scoped_key,
+                payload_sha256=payload_sha,
+                reason="Caller lacks permission to access existing evidence on redelivery",
+            )
+            frappe.throw("Access denied", frappe.PermissionError)
+
+        # 4. Idempotent redelivery
+        _record_attempt(
+            evidence=existing.name,
+            operation="MESSAGE_INGEST",
+            outcome="SUCCESS_IDEMPOTENT_REDELIVERY",
+            scoped_message_key=scoped_key,
+            payload_sha256=payload_sha,
+            reason="Idempotent duplicate message delivery accepted",
+        )
+        return frappe.get_doc("Fresko Evidence", existing.name), "SUCCESS_IDEMPOTENT_REDELIVERY"
+
+
+def ingest_attachment(
+    evidence_name: str,
+    file_url: str,
+    identity_type: str,
+    identity_value: str | int,
+    provenance_type: str = "MISSING_PROVENANCE",
+    provenance_ref: str | None = None,
+    expected_byte_count: int = -1,
+    expected_sha256: str | None = None,
+) -> tuple[Any, str]:
+    """Ingest a logical attachment linked to a parent Fresko Evidence row.
+
+    Parent-first lock is acquired before checking or writing child records.
+    """
+    parent = _lock_parent_evidence(evidence_name)
+
+    # Permission check on parent and file
+    if not evidence_has_permission(evidence_name, "write", user=frappe.session.user):
+        frappe.throw("Access denied to create attachment for Evidence", frappe.PermissionError)
+    assert_file_read_permission(file_url)
+
+    logical_key = compute_logical_attachment_key(
+        parent.provider,
+        parent.provider_account_id,
+        parent.conversation_id,
+        parent.provider_message_id,
+        identity_type,
+        identity_value,
+    )
+
+    # Check if a current version of this logical attachment already exists
+    existing_att = frappe.db.sql(
+        """
+        SELECT name, file_url, content_sha256, capture_status, version, logical_attachment_key
+        FROM `tabFresko Evidence Attachment`
+        WHERE evidence = %s AND logical_attachment_key = %s AND is_current_version = 1
+        FOR UPDATE
+        """,
+        (evidence_name, logical_key),
+        as_dict=True,
+    )
+
+    if existing_att:
+        curr = existing_att[0]
+        if curr.file_url == file_url:
+            _record_attempt(
+                evidence=evidence_name,
+                evidence_attachment=curr.name,
+                operation="ATTACHMENT_INGEST",
+                outcome="SUCCESS_IDEMPOTENT_REDELIVERY",
+                logical_attachment_key=logical_key,
+                reason="Idempotent attachment replay",
+            )
+            return frappe.get_doc("Fresko Evidence Attachment", curr.name), "SUCCESS_IDEMPOTENT_REDELIVERY"
+        else:
+            # Different file for same logical identity: requires explicit correction
+            _record_attempt(
+                evidence=evidence_name,
+                evidence_attachment=curr.name,
+                operation="ATTACHMENT_INGEST",
+                outcome="CONFLICT_PAYLOAD_MISMATCH",
+                logical_attachment_key=logical_key,
+                reason="New file submitted for existing logical attachment without correction flow",
+            )
+            frappe.throw(
+                f"Logical attachment '{curr.name}' already exists with different file; use supersede_attachment",
+                frappe.ValidationError,
+            )
+
+    # Create version 1
+    version = 1
+    version_key = compute_scoped_attachment_version_key(logical_key, version)
+
+    att = frappe.new_doc("Fresko Evidence Attachment")
+    att.flags.in_service = True
+    att.evidence = evidence_name
+    att.provider = parent.provider
+    att.provider_account_id = parent.provider_account_id
+    att.conversation_id = parent.conversation_id
+    att.provider_message_id = parent.provider_message_id
+    att.identity_type = identity_type
+    if identity_type == "provider_id":
+        att.provider_attachment_id = str(identity_value)
+    else:
+        att.attachment_ordinal = int(identity_value)
+    att.logical_attachment_key = logical_key
+    att.version = version
+    att.scoped_attachment_version_key = version_key
+    att.file = file_url
+    att.file_url = file_url
+    att.provenance_type = provenance_type
+    att.provenance_ref = provenance_ref
+    att.expected_byte_count = expected_byte_count
+    att.expected_sha256 = expected_sha256
+    att.capture_status = "PENDING"
+    att.is_current_version = 1
+    att.is_superseded = 0
+    att.insert()
+
+    # Mark parent as having attachments
+    frappe.db.set_value("Fresko Evidence", evidence_name, "has_attachments", 1, update_modified=False)
+
+    _record_attempt(
+        evidence=evidence_name,
+        evidence_attachment=att.name,
+        operation="ATTACHMENT_INGEST",
+        outcome="SUCCESS_NEW",
+        logical_attachment_key=logical_key,
+        scoped_attachment_version_key=version_key,
+        reason="Logical attachment version 1 ingested successfully",
+    )
+
+    aggregate_parent_evidence_status(evidence_name)
+    return att, "SUCCESS_NEW"
+
+
+def verify_and_capture_attachment(attachment_name: str) -> CaptureResult:
+    """Verify attachment bytes, validate completeness provenance, and capture atomically.
+
+    Adheres strictly to:
+    - Parent-first lock order.
+    - Double raw binary disk read (bypassing File.get_content() string decoding).
+    - Trusted completeness provenance validation.
+    - Compare-and-set idempotency on repeated verification.
+    """
+    # 1. Fetch attachment and lock parent Evidence first
+    att_rows = frappe.db.sql(
+        """
+        SELECT name, evidence, file_url, storage_ref, provenance_type, provenance_ref,
+               expected_byte_count, expected_sha256, capture_status, readback_verified,
+               content_sha256, content_byte_count, logical_attachment_key,
+               scoped_attachment_version_key
+        FROM `tabFresko Evidence Attachment`
+        WHERE name = %s
+        FOR UPDATE
+        """,
+        (attachment_name,),
+        as_dict=True,
+    )
+    if not att_rows:
+        frappe.throw(f"Attachment '{attachment_name}' not found", frappe.DoesNotExistError)
+
+    att = att_rows[0]
+    parent = _lock_parent_evidence(att.evidence)
+
+    # 2. Authority and access check
+    parent_doc = frappe.get_doc("Fresko Evidence", parent.name)
+    assert_can_capture_evidence(parent_doc)
+    assert_file_read_permission(att.file_url)
+
+    # 3. Compare-and-set serialization: if already CAPTURED and verified, return existing
+    if att.capture_status == "CAPTURED" and att.readback_verified:
+        return CaptureResult(
+            success=True,
+            status="CAPTURED",
+            content_sha256=att.content_sha256,
+            content_byte_count=att.content_byte_count,
+            reason="Already verified and captured",
+        )
+
+    # 4. Check completeness provenance contract
+    if att.provenance_type not in TRUSTED_PROVENANCE_TYPES:
+        reason = (
+            f"Provenance '{att.provenance_type}' is unverified or untrusted; "
+            "matching disk reads do not prove transport completeness"
+        )
+        _record_attempt(
+            evidence=parent.name,
+            evidence_attachment=att.name,
+            operation="ATTACHMENT_VERIFY",
+            outcome="VERIFICATION_FAILURE_PERMANENT",
+            logical_attachment_key=att.logical_attachment_key,
+            reason=reason,
+        )
+        return CaptureResult(success=False, status="PENDING", reason=reason)
+
+    # 5. Transition to VERIFYING
+    frappe.db.set_value(
+        "Fresko Evidence Attachment", att.name, "capture_status", "VERIFYING", update_modified=False
+    )
+
+    # 6. Read actual persisted binary bytes directly from disk
+    try:
+        disk_path = get_validated_local_file_path(att.file_url)
+        with open(disk_path, "rb") as f:
+            read1 = f.read()
+        with open(disk_path, "rb") as f:
+            read2 = f.read()
+    except Exception as e:
+        frappe.db.set_value(
+            "Fresko Evidence Attachment",
+            att.name,
+            {"capture_status": "FAILED_RETRYABLE", "failure_reason": str(e)},
+            update_modified=False,
+        )
+        _record_attempt(
+            evidence=parent.name,
+            evidence_attachment=att.name,
+            operation="ATTACHMENT_VERIFY",
+            outcome="FAILED_STORAGE",
+            reason=f"Storage read error: {e}",
+        )
+        aggregate_parent_evidence_status(parent.name)
+        return CaptureResult(success=False, status="FAILED_RETRYABLE", reason=str(e))
+
+    # Double read consistency check
+    if read1 != read2:
+        frappe.db.set_value(
+            "Fresko Evidence Attachment",
+            att.name,
+            {
+                "capture_status": "FAILED_RETRYABLE",
+                "failure_reason": "Torn or inconsistent disk read detected",
+            },
+            update_modified=False,
+        )
+        _record_attempt(
+            evidence=parent.name,
+            evidence_attachment=att.name,
+            operation="ATTACHMENT_VERIFY",
+            outcome="VERIFICATION_FAILURE_RETRYABLE",
+            observed_byte_count=len(read1),
+            reason="Disk read consistency check failed",
+        )
+        aggregate_parent_evidence_status(parent.name)
+        return CaptureResult(
+            success=False,
+            status="FAILED_RETRYABLE",
+            reason="Disk read consistency check failed",
+        )
+
+    byte_count = len(read1)
+    computed_sha256 = hashlib.sha256(read1).hexdigest()
+
+    # 7. Check transport completeness against expected size/hash
+    expected_bytes = att.expected_byte_count
+    if expected_bytes is not None and expected_bytes > -1:
+        if byte_count < expected_bytes:
+            reason = f"Partial file: read {byte_count} bytes, expected {expected_bytes}"
+            frappe.db.set_value(
+                "Fresko Evidence Attachment",
+                att.name,
+                {"capture_status": "PARTIAL", "failure_reason": reason},
+                update_modified=False,
+            )
+            _record_attempt(
+                evidence=parent.name,
+                evidence_attachment=att.name,
+                operation="ATTACHMENT_VERIFY",
+                outcome="VERIFICATION_PARTIAL_BYTES",
+                observed_byte_count=byte_count,
+                observed_sha256=computed_sha256,
+                reason=reason,
+            )
+            aggregate_parent_evidence_status(parent.name)
+            return CaptureResult(
+                success=False,
+                status="PARTIAL",
+                content_byte_count=byte_count,
+                content_sha256=computed_sha256,
+                reason=reason,
+            )
+        elif byte_count > expected_bytes:
+            reason = f"Byte length overflow: read {byte_count} bytes, expected {expected_bytes}"
+            frappe.db.set_value(
+                "Fresko Evidence Attachment",
+                att.name,
+                {"capture_status": "HASH_MISMATCH", "failure_reason": reason},
+                update_modified=False,
+            )
+            _record_attempt(
+                evidence=parent.name,
+                evidence_attachment=att.name,
+                operation="ATTACHMENT_VERIFY",
+                outcome="VERIFICATION_HASH_MISMATCH",
+                observed_byte_count=byte_count,
+                observed_sha256=computed_sha256,
+                reason=reason,
+            )
+            aggregate_parent_evidence_status(parent.name)
+            return CaptureResult(success=False, status="HASH_MISMATCH", reason=reason)
+
+    if att.expected_sha256:
+        if computed_sha256 != att.expected_sha256:
+            reason = f"Hash mismatch: computed {computed_sha256}, expected {att.expected_sha256}"
+            frappe.db.set_value(
+                "Fresko Evidence Attachment",
+                att.name,
+                {"capture_status": "HASH_MISMATCH", "failure_reason": reason},
+                update_modified=False,
+            )
+            _record_attempt(
+                evidence=parent.name,
+                evidence_attachment=att.name,
+                operation="ATTACHMENT_VERIFY",
+                outcome="VERIFICATION_HASH_MISMATCH",
+                observed_byte_count=byte_count,
+                observed_sha256=computed_sha256,
+                reason=reason,
+            )
+            aggregate_parent_evidence_status(parent.name)
+            return CaptureResult(success=False, status="HASH_MISMATCH", reason=reason)
+
+    # Empty file check: zero-byte file without expected count 0 is retryable failure
+    if byte_count == 0 and (expected_bytes is None or expected_bytes != 0):
+        reason = "Zero-byte file without explicit zero-length expectation"
+        frappe.db.set_value(
+            "Fresko Evidence Attachment",
+            att.name,
+            {"capture_status": "FAILED_RETRYABLE", "failure_reason": reason},
+            update_modified=False,
+        )
+        _record_attempt(
+            evidence=parent.name,
+            evidence_attachment=att.name,
+            operation="ATTACHMENT_VERIFY",
+            outcome="VERIFICATION_FAILURE_RETRYABLE",
+            observed_byte_count=0,
+            reason=reason,
+        )
+        aggregate_parent_evidence_status(parent.name)
+        return CaptureResult(success=False, status="FAILED_RETRYABLE", reason=reason)
+
+    # 8. All verification invariants passed -> mark CAPTURED atomically
+    frappe.db.set_value(
+        "Fresko Evidence Attachment",
+        att.name,
+        {
+            "content_byte_count": byte_count,
+            "content_sha256": computed_sha256,
+            "hash_algorithm": HASH_ALGORITHM_SHA256_V1,
+            "capture_status": "CAPTURED",
+            "readback_verified": 1,
+            "failure_reason": None,
+        },
+        update_modified=False,
+    )
+
+    _record_attempt(
+        evidence=parent.name,
+        evidence_attachment=att.name,
+        operation="ATTACHMENT_VERIFY",
+        outcome="VERIFICATION_SUCCESS",
+        logical_attachment_key=att.logical_attachment_key,
+        scoped_attachment_version_key=att.scoped_attachment_version_key,
+        observed_byte_count=byte_count,
+        observed_sha256=computed_sha256,
+        reason="Attachment verified and captured with byte-hash readback",
+    )
+
+    aggregate_parent_evidence_status(parent.name)
+    return CaptureResult(
+        success=True,
+        status="CAPTURED",
+        content_sha256=computed_sha256,
+        content_byte_count=byte_count,
+    )
+
+
+def supersede_attachment(
+    attachment_name: str,
+    new_file_url: str,
+    reason: str,
+    provenance_type: str = "MISSING_PROVENANCE",
+    provenance_ref: str | None = None,
+    expected_byte_count: int = -1,
+    expected_sha256: str | None = None,
+) -> Any:
+    """Correct an attachment by superseding it with a new immutable version.
+
+    Preserves logical attachment identity without synthesizing new ordinals.
+    """
+    if not reason or not str(reason).strip():
+        frappe.throw("A justification reason is mandatory for corrections", frappe.ValidationError)
+
+    # Parent-first lock
+    att_rows = frappe.db.sql(
+        """
+        SELECT name, evidence, provider, provider_account_id, conversation_id,
+               provider_message_id, identity_type, provider_attachment_id,
+               attachment_ordinal, logical_attachment_key, version,
+               is_current_version, is_superseded
+        FROM `tabFresko Evidence Attachment`
+        WHERE name = %s
+        FOR UPDATE
+        """,
+        (attachment_name,),
+        as_dict=True,
+    )
+    if not att_rows:
+        frappe.throw(f"Attachment '{attachment_name}' not found", frappe.DoesNotExistError)
+
+    old_att = att_rows[0]
+    parent = _lock_parent_evidence(old_att.evidence)
+
+    # Permission check: Approver or System Manager only
+    parent_doc = frappe.get_doc("Fresko Evidence", parent.name)
+    assert_can_capture_evidence(parent_doc)
+    assert_file_read_permission(new_file_url)
+
+    if old_att.is_superseded:
+        frappe.throw("Attachment has already been superseded", frappe.ValidationError)
+
+    new_version = old_att.version + 1
+    new_version_key = compute_scoped_attachment_version_key(
+        old_att.logical_attachment_key, new_version
+    )
+
+    # Insert replacement version
+    new_doc = frappe.new_doc("Fresko Evidence Attachment")
+    new_doc.flags.in_service = True
+    new_doc.evidence = old_att.evidence
+    new_doc.provider = old_att.provider
+    new_doc.provider_account_id = old_att.provider_account_id
+    new_doc.conversation_id = old_att.conversation_id
+    new_doc.provider_message_id = old_att.provider_message_id
+    new_doc.identity_type = old_att.identity_type
+    new_doc.provider_attachment_id = old_att.provider_attachment_id
+    new_doc.attachment_ordinal = old_att.attachment_ordinal
+    new_doc.logical_attachment_key = old_att.logical_attachment_key
+    new_doc.version = new_version
+    new_doc.scoped_attachment_version_key = new_version_key
+    new_doc.file = new_file_url
+    new_doc.file_url = new_file_url
+    new_doc.provenance_type = provenance_type
+    new_doc.provenance_ref = provenance_ref
+    new_doc.expected_byte_count = expected_byte_count
+    new_doc.expected_sha256 = expected_sha256
+    new_doc.capture_status = "PENDING"
+    new_doc.is_current_version = 1
+    new_doc.is_superseded = 0
+    new_doc.insert()
+
+    # Mark old version superseded
+    frappe.db.set_value(
+        "Fresko Evidence Attachment",
+        old_att.name,
+        {
+            "is_current_version": 0,
+            "is_superseded": 1,
+            "superseded_by": new_doc.name,
+            "capture_status": "SUPERSEDED",
+        },
+        update_modified=False,
+    )
+
+    _record_attempt(
+        evidence=parent.name,
+        evidence_attachment=new_doc.name,
+        operation="CORRECTION_SUPERSEDE",
+        outcome="SUCCESS_NEW",
+        logical_attachment_key=old_att.logical_attachment_key,
+        scoped_attachment_version_key=new_version_key,
+        old_doc_ref=old_att.name,
+        new_doc_ref=new_doc.name,
+        reason=reason,
+    )
+
+    aggregate_parent_evidence_status(parent.name)
+    return new_doc
+
+
+def aggregate_parent_evidence_status(evidence_name: str) -> str:
+    """Parent-first locked aggregation of parent Evidence status.
+
+    Evaluates only current accepted versions (is_current_version = 1).
+    COMPLETE strictly requires manifest_status == 'FINALIZED' and every
+    expected logical attachment verified.
+    """
+    parent = _lock_parent_evidence(evidence_name)
+
+    if parent.overall_verification_status == "CONFLICT":
+        return "CONFLICT"
+
+    # Query only current versions
+    attachments = frappe.db.sql(
+        """
+        SELECT name, logical_attachment_key, capture_status, readback_verified
+        FROM `tabFresko Evidence Attachment`
+        WHERE evidence = %s AND is_current_version = 1
+        ORDER BY name ASC
+        """,
+        (evidence_name,),
+        as_dict=True,
+    )
+
+    has_conflict = any(a.capture_status == "CONFLICT" for a in attachments)
+    if has_conflict:
+        frappe.db.set_value(
+            "Fresko Evidence",
+            evidence_name,
+            "overall_verification_status",
+            "CONFLICT",
+            update_modified=False,
+        )
+        return "CONFLICT"
+
+    has_failing = any(
+        a.capture_status in ("PARTIAL", "HASH_MISMATCH", "FAILED_PERMANENT") for a in attachments
+    )
+
+    manifest_status = parent.manifest_status or "UNKNOWN"
+    expected_count = parent.expected_attachment_count
+    if expected_count is None:
+        expected_count = -1
+
+    captured_count = sum(
+        1 for a in attachments if a.capture_status == "CAPTURED" and a.readback_verified == 1
+    )
+
+    frappe.db.set_value(
+        "Fresko Evidence",
+        evidence_name,
+        "verified_attachment_count",
+        captured_count,
+        update_modified=False,
+    )
+
+    # If manifest is not finalized, count is UNKNOWN -> cannot be COMPLETE
+    if manifest_status != "FINALIZED" or expected_count < 0:
+        new_status = "PARTIAL" if has_failing else "PENDING"
+        frappe.db.set_value(
+            "Fresko Evidence",
+            evidence_name,
+            "overall_verification_status",
+            new_status,
+            update_modified=False,
+        )
+        return new_status
+
+    # Manifest is FINALIZED
+    if len(attachments) != expected_count:
+        new_status = "PARTIAL" if (has_failing or len(attachments) > expected_count) else "PENDING"
+        frappe.db.set_value(
+            "Fresko Evidence",
+            evidence_name,
+            "overall_verification_status",
+            new_status,
+            update_modified=False,
+        )
+        return new_status
+
+    if captured_count == expected_count and not has_failing:
+        new_status = "COMPLETE"
+    elif has_failing:
+        new_status = "PARTIAL"
+    else:
+        new_status = "PENDING"
+
+    frappe.db.set_value(
+        "Fresko Evidence",
+        evidence_name,
+        "overall_verification_status",
+        new_status,
+        update_modified=False,
+    )
+    return new_status

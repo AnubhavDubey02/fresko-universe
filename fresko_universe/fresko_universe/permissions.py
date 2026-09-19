@@ -345,3 +345,78 @@ def evidence_has_permission(doc, ptype: str | None = None, user: str | None = No
             return ptype in {"read", "create", "write", "print", "report", "export"}
         return _deal_is_assigned(deal_name, user)
     return False
+
+
+def evidence_attachment_permission_query(user: str | None = None) -> str:
+    user = user or frappe.session.user
+    if user == "Administrator" or is_system_manager(current_roles(user)):
+        return ""
+    roles = current_roles(user)
+    if ROLE_APPROVER in roles or ROLE_ACCOUNTS in roles:
+        return ""
+    if ROLE_SALESPERSON in roles:
+        user_esc = frappe.db.escape(user)
+        return (
+            "`tabFresko Evidence Attachment`.evidence IN ("
+            "SELECT name FROM `tabFresko Evidence` WHERE deal IS NULL OR deal IN ("
+            f"SELECT name FROM `tabFresko Deal` WHERE owner = {user_esc} "
+            f"OR IFNULL(salesperson_user, '') = {user_esc}))"
+        )
+    return "1=0"
+
+
+def evidence_attachment_has_permission(doc, ptype: str | None = None, user: str | None = None) -> bool:
+    ptype = ptype or "read"
+    if ptype == "delete":
+        return False
+
+    if ptype in ("write", "create"):
+        # Server-method only; desk creation/mutation forbidden
+        return bool(getattr(doc, "flags", None) and getattr(doc.flags, "in_service", False))
+
+    # Read access inherits strictly from parent Evidence
+    evidence_name = None
+    if isinstance(doc, str):
+        evidence_name = frappe.db.get_value("Fresko Evidence Attachment", doc, "evidence")
+    elif doc is not None:
+        evidence_name = getattr(doc, "evidence", None) or (doc.get("evidence") if hasattr(doc, "get") else None)
+
+    if not evidence_name:
+        return False
+    return evidence_has_permission(evidence_name, "read", user=user)
+
+
+def evidence_attempt_permission_query(user: str | None = None) -> str:
+    user = user or frappe.session.user
+    if user == "Administrator" or is_system_manager(current_roles(user)):
+        return ""
+    roles = current_roles(user)
+    if ROLE_APPROVER in roles or ROLE_ACCOUNTS in roles:
+        return ""
+    if ROLE_SALESPERSON in roles:
+        user_esc = frappe.db.escape(user)
+        return (
+            "`tabFresko Evidence Attempt`.evidence IN ("
+            "SELECT name FROM `tabFresko Evidence` WHERE deal IS NULL OR deal IN ("
+            f"SELECT name FROM `tabFresko Deal` WHERE owner = {user_esc} "
+            f"OR IFNULL(salesperson_user, '') = {user_esc}))"
+        )
+    return "1=0"
+
+
+def evidence_attempt_has_permission(doc, ptype: str | None = None, user: str | None = None) -> bool:
+    ptype = ptype or "read"
+    if ptype != "read":
+        # Attempts are strictly append-only by system services; no Desk write/delete
+        return False
+
+    evidence_name = None
+    if isinstance(doc, str):
+        evidence_name = frappe.db.get_value("Fresko Evidence Attempt", doc, "evidence")
+    elif doc is not None:
+        evidence_name = getattr(doc, "evidence", None) or (doc.get("evidence") if hasattr(doc, "get") else None)
+
+    if not evidence_name:
+        return False
+    return evidence_has_permission(evidence_name, "read", user=user)
+

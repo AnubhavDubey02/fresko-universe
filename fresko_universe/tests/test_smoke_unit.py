@@ -16,20 +16,40 @@ sys.path.insert(0, str(ROOT))
 
 def _install_frappe_stub():
     frappe = types.ModuleType("frappe")
-    frappe.throw = lambda *a, **k: (_ for _ in ()).throw(Exception(a[0] if a else "throw"))
+    validation_error = type("ValidationError", (Exception,), {})
+    permission_error = type("PermissionError", (Exception,), {})
+    does_not_exist = type("DoesNotExistError", (Exception,), {})
+    unique_validation = type("UniqueValidationError", (validation_error,), {})
+
+    def _throw(msg, exc=None, title=None, *a, **k):
+        err_cls = exc if (isinstance(exc, type) and issubclass(exc, Exception)) else Exception
+        raise err_cls(str(msg))
+
+    frappe.throw = _throw
     frappe._ = lambda msg, *a, **k: msg
     frappe.whitelist = lambda *a, **k: (lambda fn: fn)
     frappe.log_error = lambda *a, **k: None
     frappe.session = types.SimpleNamespace(user="Administrator")
-    frappe.PermissionError = type("PermissionError", (Exception,), {})
+    frappe.ValidationError = validation_error
+    frappe.PermissionError = permission_error
+    frappe.DoesNotExistError = does_not_exist
+    frappe.UniqueValidationError = unique_validation
     frappe.db = MagicMock()
-    frappe.db.escape = lambda v: "'%s'" % str(v).replace("'", "''")
+    frappe.db.escape = lambda v, percent=True: "'%s'" % str(v).replace("'", "''")
+    frappe.db.savepoint = MagicMock()
+    frappe.db.rollback = MagicMock()
+    frappe.db.release_savepoint = MagicMock()
+    frappe.db.sql = MagicMock(return_value=[])
+    frappe.db.set_value = MagicMock()
+    frappe.db.exists = MagicMock(return_value=False)
     frappe.get_doc = MagicMock()
     frappe.get_all = MagicMock(return_value=[])
     frappe.get_roles = MagicMock(return_value=["System Manager"])
     frappe.db.commit = MagicMock()
-    frappe.db.escape = lambda v, percent=True: "'%s'" % str(v).replace("'", "''")
-    frappe.PermissionError = type("PermissionError", (Exception,), {})
+    frappe.generate_hash = lambda length=8: "hash1234"
+    frappe.has_permission = MagicMock(return_value=True)
+    frappe.get_site_path = lambda *p: str(ROOT / "scratch" / Path(*p))
+    frappe.new_doc = MagicMock()
     utils = types.ModuleType("frappe.utils")
     utils.flt = lambda v, p=None: float(v or 0)
     utils.nowdate = lambda: "2026-09-15"
@@ -1287,6 +1307,384 @@ class TestDecideCounterRuntime(unittest.TestCase):
         self.assertTrue(any(i.get("decision") == "COUNTER" for i in inserted))
 
 
+class TestFSEC004FSEC005Behavioral(unittest.TestCase):
+    """Behavioral tests covering FSEC-004 & FSEC-005 requirements."""
+
+    def test_scoped_message_key_deterministic_and_opaque(self):
+        from fresko_universe.fresko_core.services.evidence_service import compute_scoped_message_key
+
+        key1 = compute_scoped_message_key("whatsapp-cloud", "ACC_1", "CHAT_A", "MSG_123")
+        self.assertIsNotNone(key1)
+        self.assertEqual(len(key1), 64)
+        # Deterministic
+        key2 = compute_scoped_message_key("whatsapp-cloud", "ACC_1", "CHAT_A", "MSG_123")
+        self.assertEqual(key1, key2)
+        # Opaque: preserves whitespace / case
+        key_case = compute_scoped_message_key("whatsapp-cloud", "acc_1", "CHAT_A", "MSG_123")
+        self.assertNotEqual(key1, key_case)
+        # Missing any field returns None
+        self.assertIsNone(compute_scoped_message_key("whatsapp-cloud", "", "CHAT_A", "MSG_123"))
+        self.assertIsNone(compute_scoped_message_key(None, "ACC_1", "CHAT_A", "MSG_123"))
+
+    def test_typed_attachment_identity_prevents_ord0_collision(self):
+        from fresko_universe.fresko_core.services.evidence_service import compute_logical_attachment_key
+
+        key_provider = compute_logical_attachment_key(
+            "whatsapp-cloud", "ACC_1", "CHAT_A", "MSG_123", "provider_id", "ord:0"
+        )
+        key_ordinal = compute_logical_attachment_key(
+            "whatsapp-cloud", "ACC_1", "CHAT_A", "MSG_123", "ordinal", 0
+        )
+        self.assertIsNotNone(key_provider)
+        self.assertIsNotNone(key_ordinal)
+        # Explicit identity type tuple ensures "ord:0" does NOT collide with ordinal 0
+        self.assertNotEqual(key_provider, key_ordinal)
+        # Missing identity returns None (does not default to ordinal 0)
+        self.assertIsNone(
+            compute_logical_attachment_key(
+                "whatsapp-cloud", "ACC_1", "CHAT_A", "MSG_123", "provider_id", ""
+            )
+        )
+        self.assertIsNone(
+            compute_logical_attachment_key(
+                "whatsapp-cloud", "ACC_1", "CHAT_A", "MSG_123", "ordinal", -1
+            )
+        )
+
+    def test_version_scoped_key_advances_without_changing_logical_identity(self):
+        from fresko_universe.fresko_core.services.evidence_service import (
+            compute_logical_attachment_key,
+            compute_scoped_attachment_version_key,
+        )
+
+        log_key = compute_logical_attachment_key(
+            "whatsapp-cloud", "ACC_1", "CHAT_A", "MSG_123", "ordinal", 0
+        )
+        v1_key = compute_scoped_attachment_version_key(log_key, 1)
+        v2_key = compute_scoped_attachment_version_key(log_key, 2)
+        self.assertNotEqual(v1_key, v2_key)
+        self.assertIsNone(compute_scoped_attachment_version_key(log_key, 0))
+
+    def test_forged_metadata_injection_blocked_on_attachment(self):
+        from fresko_universe.fresko_core.doctype.fresko_evidence_attachment.fresko_evidence_attachment import (
+            FreskoEvidenceAttachment,
+        )
+
+        doc = FreskoEvidenceAttachment()
+        doc.is_new = lambda: True
+        doc.flags = MagicMock(in_service=False)
+        doc.capture_status = "CAPTURED"
+        with self.assertRaises(Exception):
+            doc.validate()
+
+        doc2 = FreskoEvidenceAttachment()
+        doc2.is_new = lambda: True
+        doc2.flags = MagicMock(in_service=False)
+        doc2.capture_status = "PENDING"
+        doc2.content_sha256 = "forged_sha"
+        with self.assertRaises(Exception):
+            doc2.validate()
+
+    def test_forged_metadata_injection_blocked_on_evidence(self):
+        from fresko_universe.fresko_core.doctype.fresko_evidence.fresko_evidence import (
+            FreskoEvidence,
+        )
+
+        doc = FreskoEvidence()
+        doc.is_new = lambda: True
+        doc.flags = MagicMock(in_service=False)
+        doc.overall_verification_status = "COMPLETE"
+        with self.assertRaises(Exception):
+            doc.validate()
+
+    def test_attachment_and_attempt_deletion_blocked(self):
+        from fresko_universe.fresko_core.doctype.fresko_evidence_attachment.fresko_evidence_attachment import (
+            FreskoEvidenceAttachment,
+        )
+        from fresko_universe.fresko_core.doctype.fresko_evidence_attempt.fresko_evidence_attempt import (
+            FreskoEvidenceAttempt,
+        )
+
+        att = FreskoEvidenceAttachment()
+        with self.assertRaises(Exception):
+            att.on_trash()
+        attempt = FreskoEvidenceAttempt()
+        with self.assertRaises(Exception):
+            attempt.on_trash()
+
+    def test_attempt_immutability_enforced(self):
+        from fresko_universe.fresko_core.doctype.fresko_evidence_attempt.fresko_evidence_attempt import (
+            FreskoEvidenceAttempt,
+        )
+
+        attempt = FreskoEvidenceAttempt()
+        attempt.flags = MagicMock(in_service=False)
+        with self.assertRaises(Exception):
+            attempt.before_insert()
+        attempt.flags = MagicMock(in_service=True)
+        attempt.is_new = lambda: False
+        with self.assertRaises(Exception):
+            attempt.validate()
+
+    def test_remote_storage_paths_explicitly_rejected(self):
+        from fresko_universe.fresko_core.services.evidence_service import (
+            get_validated_local_file_path,
+        )
+
+        with self.assertRaises(Exception) as ctx:
+            get_validated_local_file_path("https://s3.amazonaws.com/bucket/file.pdf")
+        self.assertIn("unsupported", str(ctx.exception).lower())
+
+        with self.assertRaises(Exception) as ctx:
+            get_validated_local_file_path("s3://my-bucket/receipt.png")
+        self.assertIn("unsupported", str(ctx.exception).lower())
+
+    def test_migration_demonstrates_path_hash_origin(self):
+        from fresko_universe.patches.v1_0 import backfill_evidence_capture_status
+        import frappe
+
+        path_hash = hashlib.sha256("/files/test.pdf".encode()).hexdigest()
+        fake_hash = "1111222233334444555566667777888899990000aaaabbbbccccddddeeeeffff"
+
+        sample_rows = [
+            {
+                "name": "EV-1",
+                "file": "/files/test.pdf",
+                "external_ref": None,
+                "content_sha256": path_hash,
+                "hash_algorithm": None,
+            },
+            {
+                "name": "EV-2",
+                "file": "/files/other.pdf",
+                "external_ref": None,
+                "content_sha256": fake_hash,
+                "hash_algorithm": None,
+            },
+        ]
+        orig_sql = frappe.db.sql
+        orig_set_value = frappe.db.set_value
+        set_values = []
+        try:
+            frappe.db.sql = MagicMock(return_value=sample_rows)
+            frappe.db.set_value = MagicMock(
+                side_effect=lambda dt, dn, fn, val, **k: set_values.append((dn, fn, val))
+            )
+            backfill_evidence_capture_status.execute()
+            self.assertIn(("EV-1", "hash_algorithm", "legacy-path-url-v0"), set_values)
+            self.assertIn(("EV-2", "hash_algorithm", "legacy-unverified"), set_values)
+        finally:
+            frappe.db.sql = orig_sql
+            frappe.db.set_value = orig_set_value
+
+    def test_untrusted_completeness_provenance_cannot_become_captured(self):
+        from fresko_universe.fresko_core.services.evidence_service import verify_and_capture_attachment
+        import frappe
+
+        att_row = {
+            "name": "ATT-1",
+            "evidence": "EV-1",
+            "file_url": "/private/files/test.pdf",
+            "storage_ref": "File/123",
+            "provenance_type": "UNTRUSTED_CALLER",
+            "provenance_ref": None,
+            "expected_byte_count": 100,
+            "expected_sha256": None,
+            "capture_status": "PENDING",
+            "readback_verified": 0,
+            "content_sha256": None,
+            "content_byte_count": 0,
+            "logical_attachment_key": "log_key_1",
+            "scoped_attachment_version_key": "ver_key_1",
+        }
+        parent_row = {
+            "name": "EV-1",
+            "deal": None,
+            "manifest_status": "UNKNOWN",
+            "expected_attachment_count": -1,
+            "verified_attachment_count": 0,
+            "overall_verification_status": "PENDING",
+            "provider": "whatsapp-cloud",
+            "provider_account_id": "ACC",
+            "conversation_id": "CONV",
+            "provider_message_id": "MSG",
+            "scoped_message_key": "key",
+            "message_payload_sha256": "pay_hash",
+        }
+
+        orig_sql = frappe.db.sql
+        orig_get_doc = frappe.get_doc
+        try:
+            def flex_sql(query, params=None, as_dict=False):
+                if "tabFresko Evidence Attachment" in query:
+                    return [types.SimpleNamespace(**att_row)]
+                if "tabFresko Evidence" in query:
+                    return [types.SimpleNamespace(**parent_row)]
+                return []
+
+            frappe.db.sql = MagicMock(side_effect=flex_sql)
+            ev_doc = MagicMock()
+            ev_doc.name = "EV-1"
+            frappe.get_doc = MagicMock(return_value=ev_doc)
+            frappe.session = types.SimpleNamespace(user="Administrator")
+
+            res = verify_and_capture_attachment("ATT-1")
+            self.assertFalse(res.success)
+            self.assertEqual(res.status, "PENDING")
+            self.assertIn("untrusted", res.reason.lower())
+        finally:
+            frappe.db.sql = orig_sql
+            frappe.get_doc = orig_get_doc
+
+    def test_unknown_attachment_count_cannot_aggregate_complete(self):
+        from fresko_universe.fresko_core.services.evidence_service import aggregate_parent_evidence_status
+        import frappe
+
+        parent_row = {
+            "name": "EV-1",
+            "deal": None,
+            "manifest_status": "UNKNOWN",
+            "expected_attachment_count": -1,
+            "verified_attachment_count": 0,
+            "overall_verification_status": "PENDING",
+            "provider": "whatsapp-cloud",
+            "provider_account_id": "ACC",
+            "conversation_id": "CONV",
+            "provider_message_id": "MSG",
+            "scoped_message_key": "key",
+            "message_payload_sha256": "pay_hash",
+        }
+        att_row = {
+            "name": "ATT-1",
+            "logical_attachment_key": "k1",
+            "capture_status": "CAPTURED",
+            "readback_verified": 1,
+        }
+
+        orig_sql = frappe.db.sql
+        try:
+            def flex_sql(query, params=None, as_dict=False):
+                if "FROM `tabFresko Evidence`" in query:
+                    return [types.SimpleNamespace(**parent_row)]
+                if "FROM `tabFresko Evidence Attachment`" in query:
+                    return [types.SimpleNamespace(**att_row)]
+                return []
+
+            frappe.db.sql = MagicMock(side_effect=flex_sql)
+            # Manifest is UNKNOWN: even though attachment is CAPTURED, status remains PENDING
+            status = aggregate_parent_evidence_status("EV-1")
+            self.assertEqual(status, "PENDING")
+            self.assertNotEqual(status, "COMPLETE")
+
+            # Finalize manifest with count = 1
+            parent_row["manifest_status"] = "FINALIZED"
+            parent_row["expected_attachment_count"] = 1
+            status_final = aggregate_parent_evidence_status("EV-1")
+            self.assertEqual(status_final, "COMPLETE")
+        finally:
+            frappe.db.sql = orig_sql
+
+    def test_payload_conflict_preservation(self):
+        from fresko_universe.fresko_core.services.evidence_service import ingest_message_evidence
+        import frappe
+
+        existing_row = {
+            "name": "EV-EXISTING",
+            "deal": None,
+            "provider": "whatsapp-cloud",
+            "provider_account_id": "ACC_1",
+            "conversation_id": "CONV_1",
+            "provider_message_id": "MSG_1",
+            "scoped_message_key": "mocked_key",
+            "message_payload_sha256": "original_payload_hash_1111",
+            "overall_verification_status": "PENDING",
+        }
+
+        orig_new_doc = frappe.new_doc
+        orig_sql = frappe.db.sql
+        try:
+            def flex_new_doc(dt, *a, **k):
+                d = MagicMock()
+                d.doctype = dt
+                if dt == "Fresko Evidence":
+                    d.insert = MagicMock(side_effect=frappe.UniqueValidationError("Fresko Evidence", "EV-NEW", "Duplicate key"))
+                else:
+                    d.insert = MagicMock()
+                return d
+
+            frappe.new_doc = MagicMock(side_effect=flex_new_doc)
+            frappe.db.sql = MagicMock(return_value=[types.SimpleNamespace(**existing_row)])
+            existing_doc = MagicMock(name="EV-EXISTING", overall_verification_status="CONFLICT")
+            frappe.get_doc = MagicMock(return_value=existing_doc)
+
+            doc, outcome = ingest_message_evidence(
+                provider="whatsapp-cloud",
+                provider_account_id="ACC_1",
+                conversation_id="CONV_1",
+                provider_message_id="MSG_1",
+                raw_payload={"text": "Different conflicting message content"},
+            )
+            self.assertEqual(outcome, "CONFLICT_PAYLOAD_MISMATCH")
+        finally:
+            frappe.new_doc = orig_new_doc
+            frappe.db.sql = orig_sql
+
+    def test_unauthorized_redelivery_blocked(self):
+        from fresko_universe.fresko_core.services.evidence_service import ingest_message_evidence
+        import frappe
+
+        # The payload hash matches so it would normally be an idempotent redelivery
+        from fresko_universe.fresko_core.services.evidence_service import canonicalize_payload
+        _, expected_hash = canonicalize_payload({"text": "Same content"})
+
+        existing_row = {
+            "name": "EV-SECRET",
+            "deal": "DEAL-SECRET",
+            "provider": "whatsapp-cloud",
+            "provider_account_id": "ACC_1",
+            "conversation_id": "CONV_1",
+            "provider_message_id": "MSG_1",
+            "scoped_message_key": "mocked_key",
+            "message_payload_sha256": expected_hash,
+            "overall_verification_status": "PENDING",
+        }
+
+        orig_new_doc = frappe.new_doc
+        orig_sql = frappe.db.sql
+        try:
+            def flex_new_doc(dt, *a, **k):
+                d = MagicMock()
+                d.doctype = dt
+                if dt == "Fresko Evidence":
+                    d.insert = MagicMock(side_effect=frappe.UniqueValidationError("Fresko Evidence", "EV-NEW", "dup"))
+                else:
+                    d.insert = MagicMock()
+                return d
+
+            frappe.new_doc = MagicMock(side_effect=flex_new_doc)
+            frappe.db.sql = MagicMock(return_value=[types.SimpleNamespace(**existing_row)])
+            frappe.session = types.SimpleNamespace(user="unauthorized_salesperson@example.com")
+            from fresko_universe import permissions
+            orig_ev_has_perm = permissions.evidence_has_permission
+            permissions.evidence_has_permission = MagicMock(return_value=False)
+
+            with self.assertRaises(Exception) as ctx:
+                ingest_message_evidence(
+                    provider="whatsapp-cloud",
+                    provider_account_id="ACC_1",
+                    conversation_id="CONV_1",
+                    provider_message_id="MSG_1",
+                    raw_payload={"text": "Same content"},
+                )
+            self.assertIn("access denied", str(ctx.exception).lower())
+        finally:
+            frappe.new_doc = orig_new_doc
+            frappe.db.sql = orig_sql
+            permissions.evidence_has_permission = orig_ev_has_perm
+
+
 
 if __name__ == "__main__":
     unittest.main()
+
+

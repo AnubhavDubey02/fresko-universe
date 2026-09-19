@@ -75,6 +75,82 @@
    "fieldname": "notes",
    "fieldtype": "Small Text",
    "label": "Notes"
+  },
+  {
+   "fieldname": "provider",
+   "fieldtype": "Data",
+   "label": "Provider"
+  },
+  {
+   "fieldname": "provider_account_id",
+   "fieldtype": "Data",
+   "label": "Provider Account ID"
+  },
+  {
+   "fieldname": "conversation_id",
+   "fieldtype": "Data",
+   "label": "Conversation ID"
+  },
+  {
+   "fieldname": "provider_message_id",
+   "fieldtype": "Data",
+   "label": "Provider Message ID"
+  },
+  {
+   "fieldname": "scoped_message_key",
+   "fieldtype": "Data",
+   "label": "Scoped Message Key",
+   "unique": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "message_payload_sha256",
+   "fieldtype": "Data",
+   "label": "Message Payload SHA256",
+   "read_only": 1
+  },
+  {
+   "fieldname": "has_attachments",
+   "fieldtype": "Check",
+   "label": "Has Attachments",
+   "default": 0,
+   "read_only": 1
+  },
+  {
+   "fieldname": "manifest_status",
+   "fieldtype": "Select",
+   "label": "Manifest Status",
+   "options": "UNKNOWN\nFINALIZED",
+   "default": "UNKNOWN",
+   "read_only": 1
+  },
+  {
+   "fieldname": "expected_attachment_count",
+   "fieldtype": "Int",
+   "label": "Expected Attachment Count",
+   "default": -1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "verified_attachment_count",
+   "fieldtype": "Int",
+   "label": "Verified Attachment Count",
+   "default": 0,
+   "read_only": 1
+  },
+  {
+   "fieldname": "overall_verification_status",
+   "fieldtype": "Select",
+   "label": "Overall Verification Status",
+   "options": "PENDING\nCOMPLETE\nPARTIAL\nCONFLICT",
+   "default": "PENDING",
+   "read_only": 1
+  },
+  {
+   "fieldname": "hash_algorithm",
+   "fieldtype": "Data",
+   "label": "Hash Algorithm",
+   "read_only": 1
   }
  ],
  "permissions": [
