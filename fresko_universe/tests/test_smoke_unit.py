@@ -2445,12 +2445,12 @@ class TestFSEC004FSEC005Behavioral(unittest.TestCase):
                     identity_value=0,
                     provenance_type="UNTRUSTED_CALLER",
                 )
-            self.assertIn("stable-ordering", str(ctx_ord.exception).lower())
+            self.assertIn("stable ordering", str(ctx_ord.exception).lower())
         finally:
             frappe.db.sql = orig_sql
 
-    def test_regression_conflict_audit_durability_on_rollback(self):
-        """Finding 5: Conflict attempt records must be committed so they survive transaction rollback."""
+    def test_regression_transaction_boundary_no_blanket_commits(self):
+        """Finding 1: Internal blanket commits must be removed; unrelated caller changes are NOT committed."""
         from fresko_universe.fresko_core.services.evidence_service import ingest_message_evidence
         import frappe
 
@@ -2468,20 +2468,23 @@ class TestFSEC004FSEC005Behavioral(unittest.TestCase):
 
         orig_new_doc = frappe.new_doc
         orig_sql = frappe.db.sql
-        commit_called = []
+        commit_calls = []
+        attempt_docs = []
         try:
             def flex_new_doc(dt, *a, **k):
                 d = MagicMock()
                 d.doctype = dt
                 if dt == "Fresko Evidence":
                     d.insert = MagicMock(side_effect=frappe.UniqueValidationError("Fresko Evidence", "EV-NEW", "dup"))
+                elif dt == "Fresko Evidence Attempt":
+                    d.insert = MagicMock(side_effect=lambda *args, **kwargs: attempt_docs.append(d))
                 else:
                     d.insert = MagicMock()
                 return d
 
             frappe.new_doc = MagicMock(side_effect=flex_new_doc)
             frappe.db.sql = MagicMock(return_value=[types.SimpleNamespace(**existing_row)])
-            frappe.db.commit = MagicMock(side_effect=lambda: commit_called.append(True))
+            frappe.db.commit = MagicMock(side_effect=lambda: commit_calls.append(True))
 
             # Trigger key collision: scope fields differ
             from fresko_universe.fresko_core.services.evidence_service import IntegrityConflictError
@@ -2494,11 +2497,211 @@ class TestFSEC004FSEC005Behavioral(unittest.TestCase):
                     raw_payload={"text": "collision"},
                 )
 
-            # Assert frappe.db.commit was invoked so the attempt record persists across rollback
-            self.assertTrue(commit_called, "frappe.db.commit must be called on conflict attempt before raising")
+            # Assert frappe.db.commit was NEVER called (blanket commit removed)
+            self.assertEqual(len(commit_calls), 0, "evidence_service must NEVER blanket commit frappe.db")
+            # Attempt record must still be created
+            self.assertTrue(len(attempt_docs) > 0, "Structured attempt record must be created")
         finally:
             frappe.new_doc = orig_new_doc
             frappe.db.sql = orig_sql
+
+    def test_regression_source_bound_expectations_and_ambiguity_rejection(self):
+        """Finding 2: Ambiguous provenance matches and caller fallback must be rejected."""
+        import tempfile
+        import frappe
+        from fresko_universe.fresko_core.services.evidence_service import validate_completeness_provenance
+
+        # Ambiguous manifest: two entries match the same file name
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as tf:
+            json.dump({
+                "attachments": [
+                    {"file_name": "ambig.pdf", "expected_byte_count": 100, "expected_sha256": "hash1"},
+                    {"file_name": "ambig.pdf", "expected_byte_count": 200, "expected_sha256": "hash2"},
+                ]
+            }, tf)
+            manifest_path = tf.name
+
+        try:
+            att_row = {
+                "name": "ATT-AMBIG",
+                "file_url": "/private/files/ambig.pdf",
+                "identity_type": "provider_id",
+                "provider_attachment_id": "p_id",
+                "logical_attachment_key": "log_ambig",
+                "provenance_type": "OFFLINE_IMPORT_MANIFEST",
+                "provenance_ref": manifest_path,
+                "expected_byte_count": 100,
+                "expected_sha256": "hash1",
+            }
+            parent_row = {"name": "EV-AMBIG", "message_payload_sha256": "h"}
+            ok, reason, _, _ = validate_completeness_provenance(att_row, parent_row)
+            self.assertFalse(ok)
+            self.assertIn("ambiguous", reason.lower())
+
+            # Manifest without declared expected hash rejects caller fallback
+            with open(manifest_path, "w", encoding="utf-8") as tf2:
+                json.dump({
+                    "attachments": [
+                        {"file_name": "ambig.pdf", "expected_byte_count": 100}
+                    ]
+                }, tf2)
+
+            att_row["expected_sha256"] = "caller_invented_hash"
+            ok2, reason2, _, _ = validate_completeness_provenance(att_row, parent_row)
+            self.assertFalse(ok2)
+            self.assertIn("caller fallback is disallowed", reason2.lower())
+        finally:
+            if os.path.exists(manifest_path):
+                os.remove(manifest_path)
+
+    def test_regression_replay_content_checked_at_same_url(self):
+        """Finding 3: Replay checks actual file content on disk even when URL is unchanged."""
+        from fresko_universe.fresko_core.services.evidence_service import ingest_attachment
+        import frappe
+
+        parent_row = {
+            "name": "EV-1",
+            "deal": None,
+            "provider": "whatsapp-cloud",
+            "provider_account_id": "ACC",
+            "conversation_id": "CONV",
+            "provider_message_id": "MSG",
+        }
+        existing_att_row = {
+            "name": "ATT-EXISTING",
+            "file_url": "/private/files/invoice.pdf",
+            "content_sha256": "original_content_hash_12345",
+            "expected_byte_count": 10,
+            "expected_sha256": "original_content_hash_12345",
+            "capture_status": "CAPTURED",
+            "version": 1,
+            "logical_attachment_key": "log_key",
+            "provenance_type": "PROVIDER_PAYLOAD_DIGEST",
+            "provenance_ref": None,
+        }
+
+        orig_sql = frappe.db.sql
+        from fresko_universe.fresko_core.services import evidence_service
+        orig_assert_file = evidence_service.assert_file_read_permission
+        orig_get_path = evidence_service.get_validated_local_file_path
+        try:
+            evidence_service.assert_file_read_permission = MagicMock()
+            evidence_service.get_validated_local_file_path = MagicMock(return_value="mock_invoice.pdf")
+
+            def flex_sql(query, params=None, as_dict=False):
+                if "FROM `tabFresko Evidence Attachment`" in query:
+                    return [types.SimpleNamespace(**existing_att_row)]
+                if "FROM `tabFresko Evidence`" in query:
+                    return [types.SimpleNamespace(**parent_row)]
+                return []
+
+            frappe.db.sql = MagicMock(side_effect=flex_sql)
+
+            # Mock file on disk having DIFFERENT content (tampered) despite same URL
+            from unittest.mock import mock_open, patch
+            with patch("builtins.open", mock_open(read_data=b"MODIFIED_BYTES_NOT_MATCHING")):
+                with self.assertRaises(frappe.ValidationError) as ctx:
+                    ingest_attachment(
+                        evidence_name="EV-1",
+                        file_url="/private/files/invoice.pdf",
+                        identity_type="provider_id",
+                        identity_value="p_id",
+                        provenance_type="PROVIDER_PAYLOAD_DIGEST",
+                        expected_byte_count=10,
+                        expected_sha256="original_content_hash_12345",
+                    )
+            self.assertIn("supersede_attachment", str(ctx.exception).lower())
+        finally:
+            frappe.db.sql = orig_sql
+            evidence_service.assert_file_read_permission = orig_assert_file
+            evidence_service.get_validated_local_file_path = orig_get_path
+
+    def test_regression_never_claim_persisted_failure_after_write_failure(self):
+        """Finding 4: When updating status to FAILED_RETRYABLE throws, the error is NOT swallowed."""
+        from fresko_universe.fresko_core.services.evidence_service import verify_and_capture_attachment
+        import frappe
+
+        att_row = {
+            "name": "ATT-SWALLOW-TEST",
+            "evidence": "EV-1",
+            "file_url": "/private/files/test.pdf",
+            "storage_ref": "File/123",
+            "provenance_type": "PROVIDER_HEADER_CONTENT_LENGTH",
+            "provenance_ref": None,
+            "expected_byte_count": 5,
+            "expected_sha256": None,
+            "capture_status": "PENDING",
+            "readback_verified": 0,
+            "content_sha256": None,
+            "content_byte_count": 0,
+            "logical_attachment_key": "log_swallow",
+            "scoped_attachment_version_key": "ver_swallow",
+            "identity_type": "provider_id",
+            "provider_attachment_id": "prov_1",
+            "attachment_ordinal": None,
+        }
+        parent_row = {
+            "name": "EV-1",
+            "deal": None,
+            "manifest_status": "FINALIZED",
+            "expected_attachment_count": 1,
+            "verified_attachment_count": 0,
+            "overall_verification_status": "PENDING",
+            "provider": "whatsapp-cloud",
+            "provider_account_id": "ACC",
+            "conversation_id": "CONV",
+            "provider_message_id": "MSG",
+            "scoped_message_key": "key",
+            "message_payload_sha256": "pay_hash",
+        }
+
+        orig_sql = frappe.db.sql
+        orig_set_value = frappe.db.set_value
+        from fresko_universe.fresko_core.services import evidence_service
+        orig_assert_file = evidence_service.assert_file_read_permission
+        orig_get_path = evidence_service.get_validated_local_file_path
+        try:
+            evidence_service.assert_file_read_permission = MagicMock()
+            evidence_service.get_validated_local_file_path = MagicMock(return_value="mock.txt")
+
+            attempt_row = {
+                "name": "ATT-ATTEMPT",
+                "evidence": "EV-1",
+                "operation": "MESSAGE_INGEST",
+                "source_payload": json.dumps({"document": {"id": "prov_1", "file_size": 5}}),
+                "observed_byte_count": 5,
+                "observed_sha256": None,
+            }
+
+            def flex_sql(query, params=None, as_dict=False):
+                if "FROM `tabFresko Evidence Attachment`" in query:
+                    return [types.SimpleNamespace(**att_row)]
+                if "FROM `tabFresko Evidence Attempt`" in query:
+                    return [types.SimpleNamespace(**attempt_row)]
+                if "FROM `tabFresko Evidence`" in query:
+                    return [types.SimpleNamespace(**parent_row)]
+                return []
+
+            frappe.db.sql = MagicMock(side_effect=flex_sql)
+            frappe.get_doc = MagicMock(return_value=types.SimpleNamespace(**parent_row))
+
+            def throwing_set_value(dt, dn, fields, *a, **k):
+                # Always raise DB write failure
+                raise Exception("Database fatal write error: disk full")
+
+            frappe.db.set_value = MagicMock(side_effect=throwing_set_value)
+
+            from unittest.mock import mock_open, patch
+            with patch("builtins.open", mock_open(read_data=b"12345")):
+                with self.assertRaises(Exception) as ctx:
+                    verify_and_capture_attachment("ATT-SWALLOW-TEST")
+
+            self.assertIn("disk full", str(ctx.exception))
+        finally:
+            frappe.db.sql = orig_sql
+            frappe.db.set_value = orig_set_value
+            evidence_service.assert_file_read_permission = orig_assert_file
+            evidence_service.get_validated_local_file_path = orig_get_path
 
     def test_regression_db_failure_persists_failed_retryable_status(self):
         """Finding 6: When database finalization fails, stored status in DB must be updated to FAILED_RETRYABLE."""
@@ -2520,6 +2723,9 @@ class TestFSEC004FSEC005Behavioral(unittest.TestCase):
             "content_byte_count": 0,
             "logical_attachment_key": "log_f",
             "scoped_attachment_version_key": "ver_f",
+            "identity_type": "provider_id",
+            "provider_attachment_id": "prov_1",
+            "attachment_ordinal": None,
         }
         parent_row = {
             "name": "EV-1",
@@ -2550,7 +2756,7 @@ class TestFSEC004FSEC005Behavioral(unittest.TestCase):
                 "name": "ATT-ATTEMPT",
                 "evidence": "EV-1",
                 "operation": "MESSAGE_INGEST",
-                "source_payload": json.dumps({"document": {"file_size": 5}}),
+                "source_payload": json.dumps({"document": {"id": "prov_1", "file_size": 5}}),
                 "observed_byte_count": 5,
                 "observed_sha256": None,
             }

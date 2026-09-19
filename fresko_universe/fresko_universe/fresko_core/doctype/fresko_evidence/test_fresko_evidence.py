@@ -118,8 +118,8 @@ class TestFreskoEvidence(FrappeTestCase):
         att, _ = ingest_attachment(
             evidence_name=ev.name,
             file_url=file_url,
-            identity_type="ordinal",
-            identity_value=0,
+            identity_type="provider_id",
+            identity_value="att_untrusted_bench",
             provenance_type="UNTRUSTED_CALLER",
             expected_byte_count=len(sample_bytes),
         )
@@ -266,7 +266,7 @@ class TestFreskoEvidence(FrappeTestCase):
         manifest_file = frappe.get_site_path("private", "files", "bench_manifest.json")
         sample_bytes = b"Manifest verified bytes 123"
         sample_hash = hashlib.sha256(sample_bytes).hexdigest()
-        file_name = "manifest_doc.pdf"
+        file_name = "manifest_doc.txt"
         file_path = frappe.get_site_path("private", "files", file_name)
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         with open(file_path, "wb") as f:
@@ -295,7 +295,7 @@ class TestFreskoEvidence(FrappeTestCase):
         # Unbound file not in manifest must fail verification
         att_unbound, _ = ingest_attachment(
             evidence_name=ev.name,
-            file_url="/private/files/unbound.pdf",
+            file_url="/private/files/unbound.txt",
             identity_type="provider_id",
             identity_value="unbound_id",
             provenance_type="OFFLINE_IMPORT_MANIFEST",
@@ -328,7 +328,7 @@ class TestFreskoEvidence(FrappeTestCase):
             prevent_captured_file_modification,
         )
         sample_bytes_1 = b"Original receipt bytes"
-        file_name_1 = "bench_old_receipt.pdf"
+        file_name_1 = "bench_old_receipt.txt"
         file_path_1 = frappe.get_site_path("private", "files", file_name_1)
         os.makedirs(os.path.dirname(file_path_1), exist_ok=True)
         with open(file_path_1, "wb") as f:
@@ -369,7 +369,7 @@ class TestFreskoEvidence(FrappeTestCase):
 
         # Supersede attachment 1
         sample_bytes_2 = b"Corrected receipt bytes"
-        file_name_2 = "bench_new_receipt.pdf"
+        file_name_2 = "bench_new_receipt.txt"
         file_path_2 = frappe.get_site_path("private", "files", file_name_2)
         with open(file_path_2, "wb") as f:
             f.write(sample_bytes_2)
@@ -391,7 +391,7 @@ class TestFreskoEvidence(FrappeTestCase):
         with self.assertRaises(frappe.PermissionError):
             prevent_captured_file_deletion(fdoc1)
 
-        fdoc1.file_url = "/private/files/hacked.pdf"
+        fdoc1.file_url = "/private/files/hacked.txt"
         with self.assertRaises(frappe.PermissionError):
             prevent_captured_file_modification(fdoc1)
 
@@ -433,11 +433,11 @@ class TestFreskoEvidence(FrappeTestCase):
         )
 
         sample_bytes = b"File content for replay test"
-        file_path = frappe.get_site_path("private", "files", "f4_file.pdf")
+        file_path = frappe.get_site_path("private", "files", "f4_file.txt")
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         with open(file_path, "wb") as f:
             f.write(sample_bytes)
-        file_url = "/private/files/f4_file.pdf"
+        file_url = "/private/files/f4_file.txt"
 
         att, outcome = ingest_attachment(
             evidence_name=ev.name,
@@ -519,6 +519,239 @@ class TestFreskoEvidence(FrappeTestCase):
         )
         self.assertTrue(len(attempts) > 0, "Conflict audit attempt must survive transaction rollback")
 
+    def test_transaction_boundary_unrelated_caller_changes_not_committed(self):
+        """Finding 1: Proves structured conflict attempt is persisted on an isolated connection,
+        while unrelated caller changes in frappe.db are NOT committed when caller rolls back."""
+        # 1. Caller makes an uncommitted modification to an existing record
+        user_doc = frappe.get_doc("User", "Administrator")
+        original_interest = user_doc.interest or ""
+        test_interest = f"uncommitted_test_{frappe.generate_hash(length=6)}"
+        frappe.db.set_value("User", "Administrator", "interest", test_interest, update_modified=False)
+
+        # 2. Ingest message evidence that triggers a conflict
+        ev1, _ = ingest_message_evidence(
+            provider="whatsapp-cloud",
+            provider_account_id="ACC_BENCH",
+            conversation_id="CONV_BENCH",
+            provider_message_id="MSG_TX_BOUNDARY",
+            raw_payload={"text": "Original message"},
+        )
+
+        # Replay with conflicting payload -> CONFLICT_PAYLOAD_MISMATCH
+        ev_conf, outcome = ingest_message_evidence(
+            provider="whatsapp-cloud",
+            provider_account_id="ACC_BENCH",
+            conversation_id="CONV_BENCH",
+            provider_message_id="MSG_TX_BOUNDARY",
+            raw_payload={"text": "Conflicting payload"},
+        )
+        self.assertEqual(outcome, "CONFLICT_PAYLOAD_MISMATCH")
+
+        # 3. Caller rolls back their transaction
+        frappe.db.rollback()
+
+        # 4. Prove unrelated caller modification was rolled back (NOT committed)
+        fresh_user = frappe.get_doc("User", "Administrator")
+        self.assertEqual(fresh_user.interest, original_interest, "Unrelated caller change must NOT be committed on conflict")
+
+        # 5. Prove the conflict attempt record survived the caller rollback
+        attempts = frappe.db.sql(
+            """
+            SELECT name, outcome, reason
+            FROM `tabFresko Evidence Attempt`
+            WHERE evidence = %s AND outcome = 'CONFLICT_PAYLOAD_MISMATCH'
+            """,
+            (ev1.name,),
+            as_dict=True,
+        )
+        self.assertTrue(len(attempts) > 0, "Conflict attempt record must survive caller rollback")
+
+    def test_source_bound_expectations_and_ambiguity_rejection(self):
+        """Finding 2: Ambiguous provenance matches and caller fallback must be rejected."""
+        import json
+        manifest_file = frappe.get_site_path("private", "files", "bench_ambig_manifest.json")
+        sample_bytes = b"Ambiguity test bytes"
+        with open(manifest_file, "w", encoding="utf-8") as mf:
+            json.dump({
+                "attachments": [
+                    {"file_name": "ambig_bench.txt", "expected_byte_count": 20, "expected_sha256": "hash_1"},
+                    {"file_name": "ambig_bench.txt", "expected_byte_count": 25, "expected_sha256": "hash_2"},
+                ]
+            }, mf)
+
+        ev, _ = ingest_message_evidence(
+            provider="whatsapp-cloud",
+            provider_account_id="ACC_BENCH",
+            conversation_id="CONV_BENCH",
+            provider_message_id="MSG_BENCH_AMBIG",
+            manifest_status="FINALIZED",
+            expected_attachment_count=1,
+        )
+
+        file_path = frappe.get_site_path("private", "files", "ambig_bench.txt")
+        with open(file_path, "wb") as f:
+            f.write(sample_bytes)
+
+        att, _ = ingest_attachment(
+            evidence_name=ev.name,
+            file_url="/private/files/ambig_bench.txt",
+            identity_type="provider_id",
+            identity_value="ambig_id",
+            provenance_type="OFFLINE_IMPORT_MANIFEST",
+            provenance_ref=manifest_file,
+            expected_byte_count=20,
+            expected_sha256="hash_1",
+        )
+
+        res = verify_and_capture_attachment(att.name)
+        self.assertFalse(res.success)
+        self.assertEqual(res.status, "PENDING")
+        self.assertIn("ambiguous", res.reason.lower())
+
+    def test_replay_content_checked_at_same_url(self):
+        """Finding 3: Replay compares actual disk bytes even when file_url is unchanged."""
+        ev, _ = ingest_message_evidence(
+            provider="whatsapp-cloud",
+            provider_account_id="ACC_BENCH",
+            conversation_id="CONV_BENCH",
+            provider_message_id="MSG_BENCH_REPLAY_DISK",
+            raw_payload={
+                "document": {
+                    "file_size": 36,
+                    "filename": "bench_replay_disk.txt",
+                }
+            },
+            manifest_status="FINALIZED",
+            expected_attachment_count=1,
+        )
+
+        orig_bytes = b"Original receipt bytes before replay"
+        file_name = "bench_replay_disk.txt"
+        file_path = frappe.get_site_path("private", "files", file_name)
+        with open(file_path, "wb") as f:
+            f.write(orig_bytes)
+        file_url = f"/private/files/{file_name}"
+
+        att, outcome = ingest_attachment(
+            evidence_name=ev.name,
+            file_url=file_url,
+            identity_type="provider_id",
+            identity_value="att_replay_disk_id",
+            provenance_type="PROVIDER_HEADER_CONTENT_LENGTH",
+            expected_byte_count=len(orig_bytes),
+        )
+        self.assertEqual(outcome, "SUCCESS_NEW")
+
+        # Capture the original attachment
+        res = verify_and_capture_attachment(att.name)
+        self.assertTrue(res.success)
+        self.assertEqual(res.status, "CAPTURED")
+
+        # Now tamper the file on disk at the SAME file_url
+        tampered_bytes = b"Tampered receipt bytes at same url!"
+        with open(file_path, "wb") as f:
+            f.write(tampered_bytes)
+
+        # Replay ingest with same file_url: must detect altered disk bytes and reject
+        with self.assertRaises(frappe.ValidationError):
+            ingest_attachment(
+                evidence_name=ev.name,
+                file_url=file_url,
+                identity_type="provider_id",
+                identity_value="att_replay_disk_id",
+                provenance_type="PROVIDER_HEADER_CONTENT_LENGTH",
+                expected_byte_count=len(orig_bytes),
+            )
+
+    def test_unswallowed_write_failure_never_claims_persisted(self):
+        """Finding 4: When persisting failure status fails, the write error is re-raised."""
+        sample_bytes = b"Write failure test"
+        file_name = "bench_write_fail.txt"
+        file_path = frappe.get_site_path("private", "files", file_name)
+        with open(file_path, "wb") as f:
+            f.write(sample_bytes)
+        file_url = f"/private/files/{file_name}"
+
+        ev, _ = ingest_message_evidence(
+            provider="whatsapp-cloud",
+            provider_account_id="ACC_BENCH",
+            conversation_id="CONV_BENCH",
+            provider_message_id="MSG_BENCH_WRITE_FAIL",
+            raw_payload={"document": {"id": "wf_id", "file_size": len(sample_bytes)}},
+            manifest_status="FINALIZED",
+            expected_attachment_count=1,
+        )
+        att, _ = ingest_attachment(
+            evidence_name=ev.name,
+            file_url=file_url,
+            identity_type="provider_id",
+            identity_value="wf_id",
+            provenance_type="PROVIDER_HEADER_CONTENT_LENGTH",
+            expected_byte_count=len(sample_bytes),
+        )
+
+        orig_set_value = frappe.db.set_value
+        try:
+            def failing_set_value(dt, dn, fields, *a, **k):
+                raise Exception("Simulated DB fatal connection drop")
+
+            frappe.db.set_value = failing_set_value
+            with self.assertRaises(Exception) as ctx:
+                verify_and_capture_attachment(att.name)
+            self.assertIn("connection drop", str(ctx.exception))
+        finally:
+            frappe.db.set_value = orig_set_value
+
+    def test_genuine_two_connection_mariadb_concurrency(self):
+        """Genuine two-connection MariaDB concurrency:
+        Connection 1 holds an exclusive row lock on parent Evidence;
+        Connection 2 attempting to lock the same row times out / blocks as required by InnoDB lock hierarchy."""
+        import pymysql
+
+        conf = getattr(frappe, "conf", None)
+        if not conf or not getattr(conf, "db_name", None):
+            self.skipTest("MariaDB configuration not available")
+
+        ev, _ = ingest_message_evidence(
+            provider="whatsapp-cloud",
+            provider_account_id="ACC_BENCH",
+            conversation_id="CONV_BENCH",
+            provider_message_id="MSG_CONCURRENCY_TEST",
+        )
+        frappe.db.commit()
+
+        # Connection 1 locks the row FOR UPDATE
+        frappe.db.sql("SELECT name FROM `tabFresko Evidence` WHERE name = %s FOR UPDATE", (ev.name,))
+
+        # Connection 2 (separate connection) attempts to acquire row lock with short timeout
+        db_host = getattr(conf, "db_host", "127.0.0.1") or "127.0.0.1"
+        db_port = int(getattr(conf, "db_port", 3306) or 3306)
+        db_socket = getattr(conf, "db_socket", None)
+        conn2_kwargs = {
+            "user": conf.db_name,
+            "password": conf.db_password,
+            "database": conf.db_name,
+            "charset": "utf8mb4",
+            "autocommit": False,
+        }
+        if db_socket and os.path.exists(db_socket):
+            conn2_kwargs["unix_socket"] = db_socket
+        else:
+            conn2_kwargs["host"] = db_host
+            conn2_kwargs["port"] = db_port
+
+        conn2 = pymysql.connect(**conn2_kwargs)
+        try:
+            with conn2.cursor() as cur2:
+                cur2.execute("SET innodb_lock_wait_timeout = 1")
+                # Attempt to lock the same row held by Connection 1 -> should fail with lock wait timeout (1205)
+                with self.assertRaises((pymysql.OperationalError, pymysql.InternalError)) as ctx:
+                    cur2.execute("SELECT name FROM `tabFresko Evidence` WHERE name = %s FOR UPDATE", (ev.name,))
+                self.assertIn("1205", str(ctx.exception))
+        finally:
+            conn2.close()
+            frappe.db.commit()
+
     def test_parent_aggregation_mariadb_current_read(self):
         """Finding 7: Parent aggregation child query must use current-read locking (LOCK IN SHARE MODE)."""
         import inspect
@@ -554,8 +787,8 @@ class TestFreskoEvidence(FrappeTestCase):
         att = frappe.get_doc({
             "doctype": "Fresko Evidence Attachment",
             "evidence": ev.name,
-            "file": "/private/files/legacy.pdf",
-            "file_url": "/private/files/legacy.pdf",
+            "file": "/private/files/legacy.txt",
+            "file_url": "/private/files/legacy.txt",
             "identity_type": "ordinal",
             "attachment_ordinal": 0,
             "logical_attachment_key": "legacy_key",
@@ -571,3 +804,56 @@ class TestFreskoEvidence(FrappeTestCase):
         # Cannot aggregate to COMPLETE because manifest is UNKNOWN and attachment is unverified
         agg_status = aggregate_parent_evidence_status(ev.name)
         self.assertEqual(agg_status, "PENDING")
+
+    def test_baseline_schema_upgrade_and_migration_rerun(self):
+        """Actual baseline-schema upgrade plus migration rerun:
+        ensures schema synchronization and patch execution are cleanly idempotent,
+        and legacy unverified records remain untouched."""
+        from frappe.model.sync import sync_all
+        from frappe.modules.patch_handler import run_all
+
+        # 1. Create a historical record with legacy unverified hash
+        legacy_ev = frappe.get_doc({
+            "doctype": "Fresko Evidence",
+            "evidence_type": "WhatsApp Message",
+            "provider": "whatsapp-cloud",
+            "overall_verification_status": "PENDING",
+            "manifest_status": "UNKNOWN",
+        })
+        legacy_ev.insert(ignore_permissions=True)
+
+        legacy_att = frappe.get_doc({
+            "doctype": "Fresko Evidence Attachment",
+            "evidence": legacy_ev.name,
+            "file": "/private/files/legacy_rerun.txt",
+            "file_url": "/private/files/legacy_rerun.txt",
+            "identity_type": "ordinal",
+            "attachment_ordinal": 0,
+            "logical_attachment_key": "legacy_key_rerun",
+            "version": 1,
+            "scoped_attachment_version_key": "legacy_ver_rerun_1",
+            "capture_status": "PENDING",
+            "hash_algorithm": HASH_ALGORITHM_LEGACY_UNVERIFIED,
+            "provenance_type": "MISSING_PROVENANCE",
+            "is_current_version": 1,
+        })
+        legacy_att.insert(ignore_permissions=True)
+        frappe.db.commit()
+
+        # 2. Execute schema sync (upgrade path)
+        sync_all(test_mode=True)
+        run_all()
+
+        # 3. Rerun migration (idempotence verification)
+        sync_all(test_mode=True)
+        run_all()
+
+        # 4. Verify historical legacy records are intact
+        legacy_att.reload()
+        self.assertEqual(legacy_att.hash_algorithm, HASH_ALGORITHM_LEGACY_UNVERIFIED)
+        self.assertEqual(legacy_att.capture_status, "PENDING")
+        self.assertEqual(legacy_att.is_current_version, 1)
+
+        legacy_ev.reload()
+        self.assertEqual(legacy_ev.overall_verification_status, "PENDING")
+        self.assertEqual(legacy_ev.manifest_status, "UNKNOWN")

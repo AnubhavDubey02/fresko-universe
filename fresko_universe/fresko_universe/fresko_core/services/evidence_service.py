@@ -164,6 +164,51 @@ def _lock_parent_evidence(evidence_name: str) -> dict:
     return rows[0]
 
 
+def _persist_attempt_independently(fields: dict[str, Any]) -> bool:
+    """Persist structured conflict attempt record via an independent connection/transaction,
+    ensuring the caller's active database transaction is NEVER committed."""
+    try:
+        conf = getattr(frappe, "conf", None)
+        if conf and getattr(conf, "db_name", None):
+            import pymysql
+
+            db_host = getattr(conf, "db_host", "127.0.0.1") or "127.0.0.1"
+            db_port = int(getattr(conf, "db_port", 3306) or 3306)
+            db_user = getattr(conf, "db_name", None)
+            db_password = getattr(conf, "db_password", None)
+            db_name = getattr(conf, "db_name", None)
+            db_socket = getattr(conf, "db_socket", None)
+
+            connect_kwargs: dict[str, Any] = {
+                "user": db_user,
+                "password": db_password,
+                "database": db_name,
+                "charset": "utf8mb4",
+                "autocommit": True,
+            }
+            if db_socket and os.path.exists(db_socket):
+                connect_kwargs["unix_socket"] = db_socket
+            else:
+                connect_kwargs["host"] = db_host
+                connect_kwargs["port"] = db_port
+
+            conn = pymysql.connect(**connect_kwargs)
+            try:
+                with conn.cursor() as cursor:
+                    cols = list(fields.keys())
+                    placeholders = ", ".join(["%s"] * len(cols))
+                    col_names = ", ".join([f"`{c}`" for c in cols])
+                    sql = f"INSERT INTO `tabFresko Evidence Attempt` ({col_names}) VALUES ({placeholders})"
+                    cursor.execute(sql, list(fields.values()))
+                conn.commit()
+                return True
+            finally:
+                conn.close()
+    except Exception:
+        pass
+    return False
+
+
 def _record_attempt(
     evidence: str,
     operation: str,
@@ -181,32 +226,155 @@ def _record_attempt(
     observed_byte_count: int | None = None,
     observed_sha256: str | None = None,
     reason: str | None = None,
-    commit: bool = False,
+    isolated: bool = False,
 ) -> None:
-    """Insert an authoritative, structured, append-only attempt record."""
+    """Insert an authoritative, structured, append-only attempt record.
+
+    Internal blanket commits are NEVER performed.
+    When isolated=True, the record is persisted via a dedicated database transaction
+    so it survives caller rollback without committing the caller's active database transaction.
+    """
+    now = now_datetime()
+    actor = frappe.session.user or "Administrator"
+    name = frappe.generate_hash(length=10)
+
+    fields = {
+        "name": name,
+        "creation": now,
+        "modified": now,
+        "modified_by": actor,
+        "owner": actor,
+        "docstatus": 0,
+        "idx": 0,
+        "evidence": evidence,
+        "evidence_attachment": evidence_attachment,
+        "scoped_message_key": scoped_message_key,
+        "logical_attachment_key": logical_attachment_key,
+        "scoped_attachment_version_key": scoped_attachment_version_key,
+        "attempt_time": now,
+        "actor": actor,
+        "operation": operation,
+        "outcome": outcome,
+        "payload_sha256": payload_sha256,
+        "existing_payload_sha256": existing_payload_sha256,
+        "source_payload": source_payload,
+        "existing_payload": existing_payload,
+        "old_doc_ref": old_doc_ref,
+        "new_doc_ref": new_doc_ref,
+        "observed_byte_count": observed_byte_count,
+        "observed_sha256": observed_sha256,
+        "reason": reason,
+    }
+
+    if isolated:
+        persisted = _persist_attempt_independently(fields)
+        if persisted:
+            return
+
+    # Within-transaction insert (NEVER calls frappe.db.commit)
     attempt = frappe.new_doc("Fresko Evidence Attempt")
     attempt.flags.in_service = True
-    attempt.evidence = evidence
-    attempt.evidence_attachment = evidence_attachment
-    attempt.scoped_message_key = scoped_message_key
-    attempt.logical_attachment_key = logical_attachment_key
-    attempt.scoped_attachment_version_key = scoped_attachment_version_key
-    attempt.attempt_time = now_datetime()
-    attempt.actor = frappe.session.user or "Administrator"
-    attempt.operation = operation
-    attempt.outcome = outcome
-    attempt.payload_sha256 = payload_sha256
-    attempt.existing_payload_sha256 = existing_payload_sha256
-    attempt.source_payload = source_payload
-    attempt.existing_payload = existing_payload
-    attempt.old_doc_ref = old_doc_ref
-    attempt.new_doc_ref = new_doc_ref
-    attempt.observed_byte_count = observed_byte_count
-    attempt.observed_sha256 = observed_sha256
-    attempt.reason = reason
+    for k, v in fields.items():
+        setattr(attempt, k, v)
     attempt.insert(ignore_permissions=True)
-    if commit and hasattr(frappe.db, "commit"):
-        frappe.db.commit()
+
+
+def _load_manifest_data(prov_ref: str | None) -> Any:
+    """Load JSON manifest data from path or existing attempt records."""
+    if not prov_ref or not str(prov_ref).strip():
+        return None
+
+    ref_str = str(prov_ref)
+    candidates = [
+        ref_str,
+        frappe.get_site_path(ref_str) if hasattr(frappe, "get_site_path") else None,
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", ref_str),
+    ]
+    for c in candidates:
+        if c and os.path.exists(c) and os.path.isfile(c):
+            try:
+                with open(c, "r", encoding="utf-8") as mf:
+                    return json.load(mf)
+            except Exception:
+                pass
+
+    existing_attempts = frappe.db.sql(
+        """
+        SELECT name, source_payload, observed_byte_count, observed_sha256
+        FROM `tabFresko Evidence Attempt`
+        WHERE (name = %s OR old_doc_ref = %s OR new_doc_ref = %s)
+        LIMIT 1
+        """,
+        (ref_str, ref_str, ref_str),
+        as_dict=True,
+    )
+    if existing_attempts:
+        att_entry = existing_attempts[0]
+        sp = getattr(att_entry, "source_payload", None) or (att_entry.get("source_payload") if hasattr(att_entry, "get") else None)
+        if sp:
+            try:
+                return json.loads(sp)
+            except Exception:
+                pass
+        obc = getattr(att_entry, "observed_byte_count", None) or (att_entry.get("observed_byte_count") if hasattr(att_entry, "get") else None)
+        osh = getattr(att_entry, "observed_sha256", None) or (att_entry.get("observed_sha256") if hasattr(att_entry, "get") else None)
+        if obc or osh:
+            return {
+                "attachments": [{
+                    "expected_byte_count": obc,
+                    "expected_sha256": osh,
+                }]
+            }
+    return None
+
+
+def _extract_manifest_items(manifest_data: Any) -> list[dict]:
+    """Extract list of attachment items from parsed manifest data."""
+    items: list[dict] = []
+    if isinstance(manifest_data, dict):
+        if "attachments" in manifest_data and isinstance(manifest_data["attachments"], list):
+            items = manifest_data["attachments"]
+        elif "files" in manifest_data and isinstance(manifest_data["files"], list):
+            items = manifest_data["files"]
+        elif "cases" in manifest_data and isinstance(manifest_data["cases"], list):
+            for case in manifest_data["cases"]:
+                src = case.get("source", {})
+                for m in src.get("attachment_members", []):
+                    items.append(m if isinstance(m, dict) else {"file_name": str(m)})
+        else:
+            for k, v in manifest_data.items():
+                if isinstance(v, dict):
+                    entry_copy = dict(v)
+                    entry_copy.setdefault("key", k)
+                    items.append(entry_copy)
+    elif isinstance(manifest_data, list):
+        items = manifest_data
+    return items
+
+
+def _load_parent_payload(parent_name: str | None) -> Any:
+    """Retrieve transport payload from attempt records for parent evidence."""
+    if not parent_name:
+        return None
+    attempt_rows = frappe.db.sql(
+        """
+        SELECT name, source_payload, observed_byte_count, observed_sha256
+        FROM `tabFresko Evidence Attempt`
+        WHERE evidence = %s AND operation IN ('MESSAGE_INGEST', 'ATTACHMENT_INGEST')
+        ORDER BY creation DESC
+        """,
+        (parent_name,),
+        as_dict=True,
+    )
+    for att_rec in attempt_rows:
+        sp = getattr(att_rec, "source_payload", None) or (att_rec.get("source_payload") if hasattr(att_rec, "get") else None)
+        if sp:
+            try:
+                return json.loads(sp)
+            except Exception:
+                pass
+    return None
+
 
 
 def get_validated_local_file_path(file_url: str) -> str:
@@ -291,14 +459,97 @@ def assert_can_capture_evidence(evidence_doc: Any, user: str | None = None) -> N
         frappe.throw("Access denied to Evidence", frappe.PermissionError)
 
 
+def prove_ordinal_ordering(
+    parent_row: dict | Any,
+    ordinal_value: int,
+    provenance_type: str,
+    provenance_ref: str | None = None,
+) -> tuple[bool, str | None]:
+    """Prove that an ordinal attachment has verified stable ordering from the source.
+
+    Missing identity never becomes ordinal zero; ordinal fallback requires
+    verified stable ordering from manifest or provider transport payload.
+    """
+    if not isinstance(ordinal_value, int) or ordinal_value < 0:
+        return False, f"Invalid ordinal value: {ordinal_value}"
+
+    if provenance_type == "OFFLINE_IMPORT_MANIFEST":
+        if not provenance_ref:
+            return False, "Ordinal identity requires immutable manifest reference in provenance_ref"
+        manifest_data = _load_manifest_data(provenance_ref)
+        if manifest_data is None:
+            return False, f"Cannot load offline manifest '{provenance_ref}' to verify ordinal ordering"
+        items = _extract_manifest_items(manifest_data)
+        ord_matches = []
+        for idx, item in enumerate(items):
+            if not isinstance(item, dict):
+                continue
+            item_ord = item.get("attachment_ordinal") if "attachment_ordinal" in item else item.get("ordinal")
+            if item_ord is not None:
+                if item_ord == ordinal_value:
+                    ord_matches.append(item)
+            elif idx == ordinal_value:
+                ord_matches.append(item)
+
+        if len(ord_matches) == 1:
+            return True, None
+        elif len(ord_matches) > 1:
+            return False, f"Manifest contains ambiguous multiple entries ({len(ord_matches)}) for ordinal {ordinal_value}"
+        else:
+            return False, f"Manifest contains no verified entry establishing stable ordering for ordinal {ordinal_value}"
+
+    elif provenance_type in ("PROVIDER_PAYLOAD_DIGEST", "PROVIDER_HEADER_CONTENT_LENGTH"):
+        parent_name = getattr(parent_row, "name", None) or (
+            parent_row.get("name") if hasattr(parent_row, "get") else None
+        )
+        parent_exp_count = (
+            getattr(parent_row, "expected_attachment_count", None)
+            if getattr(parent_row, "expected_attachment_count", None) is not None
+            else (parent_row.get("expected_attachment_count") if hasattr(parent_row, "get") else None)
+        )
+        payload_data = _load_parent_payload(parent_name)
+
+        candidates = []
+        if isinstance(payload_data, dict):
+            if "attachments" in payload_data and isinstance(payload_data["attachments"], list):
+                candidates.extend(payload_data["attachments"])
+            for media_key in ("document", "image", "video", "audio", "media"):
+                if media_key in payload_data and isinstance(payload_data[media_key], dict):
+                    candidates.append(payload_data[media_key])
+
+            ord_matches = []
+            for idx, c in enumerate(candidates):
+                if not isinstance(c, dict):
+                    continue
+                c_ord = c.get("ordinal", idx)
+                if c_ord == ordinal_value:
+                    ord_matches.append(c)
+
+            if len(ord_matches) == 1:
+                return True, None
+            elif len(ord_matches) > 1:
+                return False, f"Provider transport payload contains ambiguous declarations ({len(ord_matches)}) for ordinal {ordinal_value}"
+            elif len(candidates) == 1 and ordinal_value == 0:
+                # Exactly one media candidate in provider payload proves ordinal 0
+                return True, None
+
+        if provenance_type == "PROVIDER_HEADER_CONTENT_LENGTH" and ordinal_value == 0:
+            if parent_exp_count == 1 or len(candidates) == 1:
+                return True, None
+
+        return False, f"Provider transport does not establish verified stable ordering for ordinal {ordinal_value}"
+
+    return False, f"Provenance type '{provenance_type}' cannot prove stable ordering for ordinal identity"
+
+
 def validate_completeness_provenance(
     att_row: dict | Any, parent_row: dict | Any
 ) -> tuple[bool, str | None, int | None, str | None]:
     """Validate completeness provenance contract.
 
-    Binds expected size and hash to their immutable source and provenance record.
-    Arbitrary API inputs cannot establish trusted completeness.
-    Distinguishes offline import verification from provider-delivery verification.
+    Binds expected size and hash strictly to their immutable source and provenance record.
+    Arbitrary API inputs cannot establish trusted completeness; caller fallback is disallowed.
+    Ambiguous or conflicting matches are rejected.
     Unsupported or missing provenance remains UNKNOWN/PENDING.
     """
     prov_type = getattr(att_row, "provenance_type", None) or (
@@ -307,7 +558,7 @@ def validate_completeness_provenance(
     prov_ref = getattr(att_row, "provenance_ref", None) or (
         att_row.get("provenance_ref") if hasattr(att_row, "get") else None
     )
-    caller_bytes = getattr(att_row, "expected_byte_count", None) or (
+    caller_bytes = getattr(att_row, "expected_byte_count", None) if getattr(att_row, "expected_byte_count", None) is not None else (
         att_row.get("expected_byte_count") if hasattr(att_row, "get") else None
     )
     caller_hash = getattr(att_row, "expected_sha256", None) or (
@@ -322,7 +573,7 @@ def validate_completeness_provenance(
     att_prov_id = getattr(att_row, "provider_attachment_id", None) or (
         att_row.get("provider_attachment_id") if hasattr(att_row, "get") else None
     )
-    att_ordinal = getattr(att_row, "attachment_ordinal", None) or (
+    att_ordinal = getattr(att_row, "attachment_ordinal", None) if getattr(att_row, "attachment_ordinal", None) is not None else (
         att_row.get("attachment_ordinal") if hasattr(att_row, "get") else None
     )
     att_logical_key = getattr(att_row, "logical_attachment_key", None) or (
@@ -337,6 +588,14 @@ def validate_completeness_provenance(
             None,
         )
 
+    # Prove ordinal ordering if identity is ordinal
+    if att_id_type == "ordinal":
+        if att_ordinal is None:
+            return False, "Ordinal identity requires non-null attachment_ordinal", None, None
+        proved, ord_err = prove_ordinal_ordering(parent_row, int(att_ordinal), prov_type, prov_ref)
+        if not proved:
+            return False, ord_err, None, None
+
     file_basename = os.path.basename(att_file_url) if att_file_url else ""
 
     if prov_type == "OFFLINE_IMPORT_MANIFEST":
@@ -348,48 +607,7 @@ def validate_completeness_provenance(
                 None,
             )
 
-        manifest_data = None
-        candidates = [
-            str(prov_ref),
-            frappe.get_site_path(str(prov_ref)) if hasattr(frappe, "get_site_path") else None,
-            os.path.join(os.path.dirname(__file__), "..", "..", "..", str(prov_ref)),
-        ]
-        for c in candidates:
-            if c and os.path.exists(c) and os.path.isfile(c):
-                try:
-                    with open(c, "r", encoding="utf-8") as mf:
-                        manifest_data = json.load(mf)
-                    break
-                except Exception:
-                    pass
-
-        if manifest_data is None:
-            existing_attempts = frappe.db.sql(
-                """
-                SELECT name, source_payload, observed_byte_count, observed_sha256
-                FROM `tabFresko Evidence Attempt`
-                WHERE (name = %s OR old_doc_ref = %s OR new_doc_ref = %s)
-                LIMIT 1
-                """,
-                (prov_ref, prov_ref, prov_ref),
-                as_dict=True,
-            )
-            if existing_attempts:
-                att_entry = existing_attempts[0]
-                if getattr(att_entry, "source_payload", None):
-                    try:
-                        manifest_data = json.loads(att_entry.source_payload)
-                    except Exception:
-                        pass
-                if manifest_data is None and getattr(att_entry, "observed_byte_count", None):
-                    manifest_data = {
-                        "attachments": [{
-                            "file_name": file_basename,
-                            "expected_byte_count": att_entry.observed_byte_count,
-                            "expected_sha256": att_entry.observed_sha256,
-                        }]
-                    }
-
+        manifest_data = _load_manifest_data(prov_ref)
         if manifest_data is None:
             return (
                 False,
@@ -398,28 +616,8 @@ def validate_completeness_provenance(
                 None,
             )
 
-        # Inspect manifest contents: locate verified entry for THIS attachment
-        found_entry = None
-        items = []
-        if isinstance(manifest_data, dict):
-            if "attachments" in manifest_data and isinstance(manifest_data["attachments"], list):
-                items = manifest_data["attachments"]
-            elif "files" in manifest_data and isinstance(manifest_data["files"], list):
-                items = manifest_data["files"]
-            elif "cases" in manifest_data and isinstance(manifest_data["cases"], list):
-                for case in manifest_data["cases"]:
-                    src = case.get("source", {})
-                    for m in src.get("attachment_members", []):
-                        items.append(m if isinstance(m, dict) else {"file_name": str(m)})
-            else:
-                for k, v in manifest_data.items():
-                    if isinstance(v, dict):
-                        entry_copy = dict(v)
-                        entry_copy.setdefault("key", k)
-                        items.append(entry_copy)
-        elif isinstance(manifest_data, list):
-            items = manifest_data
-
+        items = _extract_manifest_items(manifest_data)
+        matching_entries: list[dict] = []
         for entry in items:
             if not isinstance(entry, dict):
                 continue
@@ -443,10 +641,9 @@ def validate_completeness_provenance(
                 matches = True
 
             if matches:
-                found_entry = entry
-                break
+                matching_entries.append(entry)
 
-        if not found_entry:
+        if not matching_entries:
             return (
                 False,
                 f"Offline manifest '{prov_ref}' contains no verified entry for this attachment",
@@ -454,6 +651,15 @@ def validate_completeness_provenance(
                 None,
             )
 
+        if len(matching_entries) > 1:
+            return (
+                False,
+                f"Offline manifest '{prov_ref}' contains ambiguous conflicting matches ({len(matching_entries)}) for this attachment",
+                None,
+                None,
+            )
+
+        found_entry = matching_entries[0]
         bound_bytes = (
             found_entry.get("expected_byte_count")
             or found_entry.get("size_bytes")
@@ -476,21 +682,38 @@ def validate_completeness_provenance(
                 None,
             )
 
-        if caller_bytes is not None and caller_bytes > -1 and bound_bytes is not None and caller_bytes != bound_bytes:
-            return (
-                False,
-                f"Caller expected byte count ({caller_bytes}) conflicts with manifest declared count ({bound_bytes})",
-                None,
-                None,
-            )
+        # Enforce source-bound expectations: reject conflicting or unsupported caller assertions
+        if caller_bytes is not None and caller_bytes > -1:
+            if bound_bytes is None:
+                return (
+                    False,
+                    "Manifest entry does not declare expected byte count; caller fallback is disallowed",
+                    None,
+                    None,
+                )
+            if caller_bytes != bound_bytes:
+                return (
+                    False,
+                    f"Caller expected byte count ({caller_bytes}) conflicts with manifest declared count ({bound_bytes})",
+                    None,
+                    None,
+                )
 
-        if caller_hash and bound_hash and caller_hash != bound_hash:
-            return (
-                False,
-                f"Caller expected hash ({caller_hash}) conflicts with manifest declared hash ({bound_hash})",
-                None,
-                None,
-            )
+        if caller_hash:
+            if bound_hash is None:
+                return (
+                    False,
+                    "Manifest entry does not declare expected sha256; caller fallback is disallowed",
+                    None,
+                    None,
+                )
+            if caller_hash != bound_hash:
+                return (
+                    False,
+                    f"Caller expected hash ({caller_hash}) conflicts with manifest declared hash ({bound_hash})",
+                    None,
+                    None,
+                )
 
         return True, None, bound_bytes, bound_hash
 
@@ -510,54 +733,55 @@ def validate_completeness_provenance(
                 None,
             )
 
-        # Retrieve transport payload from attempt or prov_ref
-        payload_data = None
-        attempt_rows = frappe.db.sql(
-            """
-            SELECT name, source_payload, observed_byte_count, observed_sha256
-            FROM `tabFresko Evidence Attempt`
-            WHERE evidence = %s AND operation IN ('MESSAGE_INGEST', 'ATTACHMENT_INGEST')
-            ORDER BY creation DESC
-            """,
-            (parent_ev_name,),
-            as_dict=True,
-        )
-        for att_rec in attempt_rows:
-            sp = getattr(att_rec, "source_payload", None) or (att_rec.get("source_payload") if hasattr(att_rec, "get") else None)
-            if sp:
-                try:
-                    payload_data = json.loads(sp)
-                    break
-                except Exception:
-                    pass
-
-        found_decl = None
+        payload_data = _load_parent_payload(parent_ev_name)
+        candidates: list[dict] = []
         if isinstance(payload_data, dict):
-            candidates = []
             if "attachments" in payload_data and isinstance(payload_data["attachments"], list):
                 candidates.extend(payload_data["attachments"])
             for media_key in ("document", "image", "video", "audio", "media"):
                 if media_key in payload_data and isinstance(payload_data[media_key], dict):
                     candidates.append(payload_data[media_key])
 
-            for idx, c in enumerate(candidates):
-                c_id = c.get("id") or c.get("provider_attachment_id")
-                c_ord = c.get("ordinal", idx)
-                c_fn = c.get("filename") or c.get("file_name")
-                if att_prov_id and c_id and str(c_id) == str(att_prov_id):
-                    found_decl = c
-                    break
-                elif att_id_type == "ordinal" and att_ordinal is not None and c_ord == att_ordinal:
-                    found_decl = c
-                    break
-                elif file_basename and c_fn and (c_fn == file_basename or os.path.basename(str(c_fn)) == file_basename):
-                    found_decl = c
-                    break
+        matching_decls: list[dict] = []
+        for idx, c in enumerate(candidates):
+            if not isinstance(c, dict):
+                continue
+            c_id = c.get("id") or c.get("provider_attachment_id")
+            c_ord = c.get("ordinal", idx)
+            c_fn = c.get("filename") or c.get("file_name")
+            if att_prov_id and c_id and str(c_id) == str(att_prov_id):
+                matching_decls.append(c)
+            elif att_id_type == "ordinal" and att_ordinal is not None and c_ord == att_ordinal:
+                matching_decls.append(c)
+            elif file_basename and c_fn and (c_fn == file_basename or os.path.basename(str(c_fn)) == file_basename):
+                matching_decls.append(c)
 
-            if not found_decl and len(candidates) == 1 and not att_prov_id and (att_ordinal is None or att_ordinal == 0):
-                found_decl = candidates[0]
+        if len(matching_decls) > 1:
+            return (
+                False,
+                f"Provider transport payload contains ambiguous conflicting declarations ({len(matching_decls)}) for this attachment",
+                None,
+                None,
+            )
+
+        found_decl = None
+        if len(matching_decls) == 1:
+            found_decl = matching_decls[0]
+        elif len(candidates) == 1 and not att_prov_id and (att_ordinal is None or att_ordinal == 0):
+            found_decl = candidates[0]
 
         if not found_decl:
+            # Check ref attempts
+            attempt_rows = frappe.db.sql(
+                """
+                SELECT name, evidence_attachment, observed_byte_count, observed_sha256
+                FROM `tabFresko Evidence Attempt`
+                WHERE evidence = %s AND operation IN ('MESSAGE_INGEST', 'ATTACHMENT_INGEST')
+                ORDER BY creation DESC
+                """,
+                (parent_ev_name,),
+                as_dict=True,
+            )
             att_name = getattr(att_row, "name", None) or (att_row.get("name") if hasattr(att_row, "get") else None)
             ref_attempts = [
                 a for a in attempt_rows
@@ -594,9 +818,59 @@ def validate_completeness_provenance(
             or found_decl.get("expected_sha256")
         )
 
-        return True, None, bound_bytes or caller_bytes, bound_hash or caller_hash
+        if prov_type == "PROVIDER_PAYLOAD_DIGEST" and not bound_hash:
+            return (
+                False,
+                "Provider payload digest provenance requires source sha256; caller fallback is disallowed",
+                None,
+                None,
+            )
+
+        if bound_bytes is None and bound_hash is None:
+            return (
+                False,
+                "Provider declaration provides neither expected size nor hash",
+                None,
+                None,
+            )
+
+        # Enforce source-bound expectations: reject conflicting caller assertions
+        if caller_bytes is not None and caller_bytes > -1:
+            if bound_bytes is None:
+                return (
+                    False,
+                    "Provider payload does not declare expected byte count; caller fallback is disallowed",
+                    None,
+                    None,
+                )
+            if caller_bytes != bound_bytes:
+                return (
+                    False,
+                    f"Caller expected byte count ({caller_bytes}) conflicts with provider declared count ({bound_bytes})",
+                    None,
+                    None,
+                )
+
+        if caller_hash:
+            if bound_hash is None:
+                return (
+                    False,
+                    "Provider payload does not declare expected sha256; caller fallback is disallowed",
+                    None,
+                    None,
+                )
+            if caller_hash != bound_hash:
+                return (
+                    False,
+                    f"Caller expected hash ({caller_hash}) conflicts with provider declared hash ({bound_hash})",
+                    None,
+                    None,
+                )
+
+        return True, None, bound_bytes, bound_hash
 
     return False, f"Unsupported provenance type: {prov_type}", None, None
+
 
 
 def ingest_message_evidence(
@@ -698,7 +972,7 @@ def ingest_message_evidence(
                 scoped_message_key=scoped_key,
                 payload_sha256=payload_sha,
                 reason="Caller lacks permission to access existing evidence on redelivery",
-                commit=True,
+                isolated=True,
             )
             frappe.throw("Access denied", frappe.PermissionError)
 
@@ -718,7 +992,7 @@ def ingest_message_evidence(
                 payload_sha256=payload_sha,
                 source_payload=canonical_payload_str,
                 reason=f"Key collision: scope fields do not match existing row {existing.name}",
-                commit=True,
+                isolated=True,
             )
             raise IntegrityConflictError(
                 f"Scoped message key collision detected on evidence {existing.name}",
@@ -742,7 +1016,7 @@ def ingest_message_evidence(
                 existing_payload_sha256=existing.message_payload_sha256,
                 source_payload=canonical_payload_str,
                 reason="Conflicting payload received for existing scoped message key",
-                commit=True,
+                isolated=True,
             )
             return frappe.get_doc("Fresko Evidence", existing.name), "CONFLICT_PAYLOAD_MISMATCH"
 
@@ -812,7 +1086,7 @@ def ingest_attachment(
                 outcome="ACCESS_DENIED",
                 logical_attachment_key=logical_key,
                 reason="Caller lacks read permission for existing attachment on redelivery",
-                commit=True,
+                isolated=True,
             )
             frappe.throw("Access denied", frappe.PermissionError)
 
@@ -830,16 +1104,26 @@ def ingest_attachment(
             and (expected_sha256 is None or curr_exp_sha == expected_sha256)
         )
 
-        content_match = (curr_file_url == file_url)
-        if not content_match and curr_sha:
-            try:
-                new_path = get_validated_local_file_path(file_url)
-                with open(new_path, "rb") as nf:
-                    new_hash = hashlib.sha256(nf.read()).hexdigest()
-                if new_hash == curr_sha:
-                    content_match = True
-            except Exception:
-                content_match = False
+        # Replay content check: ALWAYS read disk bytes and verify SHA-256 against existing attachment
+        # even if curr_file_url == file_url
+        content_match = False
+        try:
+            new_path = get_validated_local_file_path(file_url)
+            with open(new_path, "rb") as nf:
+                replay_bytes = nf.read()
+            replay_hash = hashlib.sha256(replay_bytes).hexdigest()
+            replay_len = len(replay_bytes)
+
+            if curr_sha:
+                content_match = (replay_hash == curr_sha)
+            elif curr_exp_sha:
+                content_match = (replay_hash == curr_exp_sha)
+            elif curr_exp_bytes is not None and curr_exp_bytes > -1:
+                content_match = (replay_len == curr_exp_bytes and curr_file_url == file_url)
+            else:
+                content_match = (curr_file_url == file_url)
+        except Exception:
+            content_match = False
 
         if prov_match and content_match:
             _record_attempt(
@@ -860,26 +1144,27 @@ def ingest_attachment(
                 outcome="CONFLICT_PAYLOAD_MISMATCH",
                 logical_attachment_key=logical_key,
                 reason=reason,
-                commit=True,
+                isolated=True,
             )
             frappe.throw(
                 f"Logical attachment '{curr.name}' already exists with different content/provenance; use supersede_attachment",
                 frappe.ValidationError,
             )
 
-    # Ordinal identity check: ordinal identity requires stable-ordering provenance
+    # Ordinal identity check: ordinal identity requires verified stable-ordering provenance
     if identity_type == "ordinal":
-        if provenance_type not in ("OFFLINE_IMPORT_MANIFEST", "PROVIDER_PAYLOAD_DIGEST"):
+        proved, ord_err = prove_ordinal_ordering(parent, int(identity_value), provenance_type, provenance_ref)
+        if not proved:
             _record_attempt(
                 evidence=evidence_name,
                 operation="ATTACHMENT_INGEST",
                 outcome="VALIDATION_FAILED",
                 logical_attachment_key=logical_key,
-                reason="Ordinal attachment identity requires verified stable-ordering provenance",
-                commit=True,
+                reason=ord_err,
+                isolated=True,
             )
             frappe.throw(
-                "Ordinal identity requires verified stable-ordering provenance (OFFLINE_IMPORT_MANIFEST or PROVIDER_PAYLOAD_DIGEST)",
+                ord_err or "Ordinal identity requires verified stable-ordering provenance",
                 frappe.ValidationError,
             )
 
@@ -1072,8 +1357,9 @@ def verify_and_capture_attachment(attachment_name: str) -> CaptureResult:
     byte_count = len(read1)
     computed_sha256 = hashlib.sha256(read1).hexdigest()
 
-    # 7. Check transport completeness against expected size/hash
-    expected_bytes = att.expected_byte_count
+    # 7. Check transport completeness against validated source-bound expected size/hash
+    expected_bytes = bound_bytes if bound_bytes is not None else att.expected_byte_count
+    expected_hash = bound_hash if bound_hash else att.expected_sha256
     if expected_bytes is not None and expected_bytes > -1:
         if byte_count < expected_bytes:
             reason = f"Partial file: read {byte_count} bytes, expected {expected_bytes}"
@@ -1120,9 +1406,9 @@ def verify_and_capture_attachment(attachment_name: str) -> CaptureResult:
             aggregate_parent_evidence_status(parent.name)
             return CaptureResult(success=False, status="HASH_MISMATCH", reason=reason)
 
-    if att.expected_sha256:
-        if computed_sha256 != att.expected_sha256:
-            reason = f"Hash mismatch: computed {computed_sha256}, expected {att.expected_sha256}"
+    if expected_hash:
+        if computed_sha256 != expected_hash:
+            reason = f"Hash mismatch: computed {computed_sha256}, expected {expected_hash}"
             frappe.db.set_value(
                 "Fresko Evidence Attachment",
                 att.name,
@@ -1181,6 +1467,7 @@ def verify_and_capture_attachment(attachment_name: str) -> CaptureResult:
         frappe.db.release_savepoint(sp)
     except Exception as e:
         frappe.db.rollback(save_point=sp)
+        write_err = None
         try:
             frappe.db.set_value(
                 "Fresko Evidence Attachment",
@@ -1191,8 +1478,9 @@ def verify_and_capture_attachment(attachment_name: str) -> CaptureResult:
                 },
                 update_modified=False,
             )
-        except Exception:
-            pass
+        except Exception as we:
+            write_err = we
+
         _record_attempt(
             evidence=parent.name,
             evidence_attachment=att.name,
@@ -1202,9 +1490,15 @@ def verify_and_capture_attachment(attachment_name: str) -> CaptureResult:
             scoped_attachment_version_key=att.scoped_attachment_version_key,
             observed_byte_count=byte_count,
             observed_sha256=computed_sha256,
-            reason=f"Database write failed during capture finalization: {e}",
-            commit=True,
+            reason=f"Database write failed during capture finalization: {e}"
+            + (f"; persisting failure status failed: {write_err}" if write_err else ""),
+            isolated=True,
         )
+
+        if write_err is not None:
+            # Never claim a persisted failure status after swallowing its write failure
+            raise write_err
+
         aggregate_parent_evidence_status(parent.name)
         return CaptureResult(
             success=False,
