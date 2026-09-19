@@ -333,15 +333,16 @@ class TestFreskoEvidence(FrappeTestCase):
         os.makedirs(os.path.dirname(file_path_1), exist_ok=True)
         with open(file_path_1, "wb") as f:
             f.write(sample_bytes_1)
-        file_url_1 = f"/private/files/{file_name_1}"
 
         fdoc1 = frappe.get_doc({
             "doctype": "File",
             "file_name": file_name_1,
-            "file_url": file_url_1,
+            "file_url": f"/private/files/{file_name_1}",
             "is_private": 1,
         })
         fdoc1.insert(ignore_permissions=True)
+        # Frappe may rename the file (appending content-hash suffix); use actual post-insert URL
+        actual_file_url_1 = fdoc1.file_url
 
         ev, _ = ingest_message_evidence(
             provider="whatsapp-cloud",
@@ -359,7 +360,7 @@ class TestFreskoEvidence(FrappeTestCase):
         )
         att1, _ = ingest_attachment(
             evidence_name=ev.name,
-            file_url=file_url_1,
+            file_url=actual_file_url_1,
             identity_type="ordinal",
             identity_value=0,
             provenance_type="PROVIDER_HEADER_CONTENT_LENGTH",
@@ -373,11 +374,19 @@ class TestFreskoEvidence(FrappeTestCase):
         file_path_2 = frappe.get_site_path("private", "files", file_name_2)
         with open(file_path_2, "wb") as f:
             f.write(sample_bytes_2)
-        file_url_2 = f"/private/files/{file_name_2}"
+
+        fdoc2 = frappe.get_doc({
+            "doctype": "File",
+            "file_name": file_name_2,
+            "file_url": f"/private/files/{file_name_2}",
+            "is_private": 1,
+        })
+        fdoc2.insert(ignore_permissions=True)
+        actual_file_url_2 = fdoc2.file_url
 
         att2 = supersede_attachment(
             attachment_name=att1.name,
-            new_file_url=file_url_2,
+            new_file_url=actual_file_url_2,
             reason="Corrected receipt with official stamp",
             provenance_type="PROVIDER_HEADER_CONTENT_LENGTH",
             expected_byte_count=len(sample_bytes_2),
