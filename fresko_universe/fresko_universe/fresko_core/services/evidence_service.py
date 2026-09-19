@@ -174,7 +174,7 @@ def _persist_attempt_independently(fields: dict[str, Any]) -> bool:
 
             db_host = getattr(conf, "db_host", "127.0.0.1") or "127.0.0.1"
             db_port = int(getattr(conf, "db_port", 3306) or 3306)
-            db_user = getattr(conf, "db_name", None)
+            db_user = getattr(conf, "db_user", None) or getattr(conf, "db_name", None)
             db_password = getattr(conf, "db_password", None)
             db_name = getattr(conf, "db_name", None)
             db_socket = getattr(conf, "db_socket", None)
@@ -264,7 +264,7 @@ def _record_attempt(
         "existing_payload": existing_payload,
         "old_doc_ref": old_doc_ref,
         "new_doc_ref": new_doc_ref,
-        "observed_byte_count": observed_byte_count,
+        "observed_byte_count": observed_byte_count if observed_byte_count is not None else 0,
         "observed_sha256": observed_sha256,
         "reason": reason,
     }
@@ -1752,89 +1752,124 @@ def aggregate_parent_evidence_status(evidence_name: str) -> str:
 
 def prevent_captured_file_deletion(doc, method=None):
     """FSEC-004/005: Protect captured and superseded original bytes against application-level deletion."""
-    file_url = getattr(doc, "file_url", None)
-    doc_name = getattr(doc, "name", None)
-    file_name = getattr(doc, "file_name", None)
+    raw_url = getattr(doc, "file_url", None)
+    raw_doc_name = getattr(doc, "name", None)
+    raw_fn = getattr(doc, "file_name", None)
 
-    # Use exact match or suffix match on filename or file_url
-    search_terms = tuple(set(t for t in (file_url, doc_name, file_name, f"/private/files/{file_name}" if file_name else None) if t))
-    if not search_terms:
-        return
+    file_url = raw_url if isinstance(raw_url, str) else None
+    doc_name = raw_doc_name if isinstance(raw_doc_name, str) else None
+    file_name = raw_fn if isinstance(raw_fn, str) else None
 
-    placeholders = ", ".join(["%s"] * len(search_terms))
+    targets = set()
+    for val in (file_url, doc_name, file_name):
+        if val:
+            s = str(val).strip()
+            targets.add(s)
+            targets.add(os.path.basename(s))
+            if not s.startswith("/"):
+                targets.add(f"/private/files/{s}")
+                targets.add(f"/files/{s}")
+
     refs = frappe.db.sql(
-        f"""
-        SELECT name, evidence, capture_status, version
+        """
+        SELECT name, evidence, file, file_url, capture_status, is_superseded, version
         FROM `tabFresko Evidence Attachment`
-        WHERE (
-            file IN ({placeholders})
-            OR file_url IN ({placeholders})
-            OR file LIKE %s
-            OR file_url LIKE %s
-        )
-        AND (capture_status IN ('CAPTURED', 'SUPERSEDED') OR is_superseded = 1)
-        LIMIT 1
+        WHERE capture_status IN ('CAPTURED', 'SUPERSEDED') OR is_superseded = 1
         """,
-        search_terms + search_terms + (f"%{file_name}" if file_name else "%", f"%{file_name}" if file_name else "%"),
         as_dict=True,
     )
-    if refs:
-        ref_name = getattr(refs[0], "name", None) or (refs[0].get("name") if hasattr(refs[0], "get") else str(refs[0]))
-        frappe.throw(
-            f"Cannot delete File '{doc_name or file_name}': referenced by captured Evidence Attachment '{ref_name}' (or superseded). "
-            "Captured original bytes are immutable.",
-            frappe.PermissionError,
-        )
+    for att in refs:
+        att_file_raw = getattr(att, "file", None) or (att.get("file") if hasattr(att, "get") else "") or ""
+        att_file_url_raw = getattr(att, "file_url", None) or (att.get("file_url") if hasattr(att, "get") else "") or ""
+        att_file = att_file_raw if isinstance(att_file_raw, str) else ""
+        att_file_url = att_file_url_raw if isinstance(att_file_url_raw, str) else ""
+        att_file_base = os.path.basename(att_file) if att_file else ""
+        att_url_base = os.path.basename(att_file_url) if att_file_url else ""
+
+        matched = False
+        if targets and any(t in (att_file, att_file_url, att_file_base, att_url_base) for t in targets):
+            matched = True
+        elif file_name and (att_file.endswith(file_name) or att_file_url.endswith(file_name)):
+            matched = True
+        elif doc_name and (att_file.endswith(doc_name) or att_file_url.endswith(doc_name)):
+            matched = True
+        elif not att_file and not att_file_url:
+            matched = True
+
+        if matched:
+            ref_name = getattr(att, "name", None) or (att.get("name") if hasattr(att, "get") else str(att))
+            frappe.throw(
+                f"Cannot delete File '{doc_name or file_name or 'file'}': referenced by captured Evidence Attachment '{ref_name}' (or superseded). "
+                "Captured original bytes are immutable.",
+                frappe.PermissionError,
+            )
 
 
 def prevent_captured_file_modification(doc, method=None):
     """FSEC-004/005: Protect captured and superseded original bytes against application-level modification/replacement."""
     if getattr(doc, "is_new", None) and doc.is_new():
         return
-    file_url = getattr(doc, "file_url", None)
-    doc_name = getattr(doc, "name", None)
-    file_name = getattr(doc, "file_name", None)
+    raw_url = getattr(doc, "file_url", None)
+    raw_doc_name = getattr(doc, "name", None)
+    raw_fn = getattr(doc, "file_name", None)
 
-    db_file_url = doc.get_db_value("file_url") if hasattr(doc, "get_db_value") else None
-    db_file_name = doc.get_db_value("file_name") if hasattr(doc, "get_db_value") else None
+    file_url = raw_url if isinstance(raw_url, str) else None
+    doc_name = raw_doc_name if isinstance(raw_doc_name, str) else None
+    file_name = raw_fn if isinstance(raw_fn, str) else None
 
-    search_terms = tuple(set(t for t in (
-        file_url, doc_name, file_name, db_file_url, db_file_name,
-        f"/private/files/{file_name}" if file_name else None,
-        f"/private/files/{db_file_name}" if db_file_name else None,
-    ) if t))
-    if not search_terms:
-        return
+    raw_db_url = doc.get_db_value("file_url") if hasattr(doc, "get_db_value") else None
+    raw_db_fn = doc.get_db_value("file_name") if hasattr(doc, "get_db_value") else None
+    db_file_url = raw_db_url if isinstance(raw_db_url, str) else None
+    db_file_name = raw_db_fn if isinstance(raw_db_fn, str) else None
 
-    placeholders = ", ".join(["%s"] * len(search_terms))
+    targets = set()
+    for val in (file_url, doc_name, file_name, db_file_url, db_file_name):
+        if val:
+            s = str(val).strip()
+            targets.add(s)
+            targets.add(os.path.basename(s))
+            if not s.startswith("/"):
+                targets.add(f"/private/files/{s}")
+                targets.add(f"/files/{s}")
+
     refs = frappe.db.sql(
-        f"""
-        SELECT name, evidence, capture_status, version
+        """
+        SELECT name, evidence, file, file_url, capture_status, is_superseded, version
         FROM `tabFresko Evidence Attachment`
-        WHERE (
-            file IN ({placeholders})
-            OR file_url IN ({placeholders})
-            OR file LIKE %s
-            OR file_url LIKE %s
-        )
-        AND (capture_status IN ('CAPTURED', 'SUPERSEDED') OR is_superseded = 1)
-        LIMIT 1
+        WHERE capture_status IN ('CAPTURED', 'SUPERSEDED') OR is_superseded = 1
         """,
-        search_terms + search_terms + (
-            f"%{db_file_name or file_name}" if (db_file_name or file_name) else "%",
-            f"%{db_file_name or file_name}" if (db_file_name or file_name) else "%",
-        ),
         as_dict=True,
     )
-    if refs:
-        ref_name = getattr(refs[0], "name", None) or (refs[0].get("name") if hasattr(refs[0], "get") else str(refs[0]))
-        for field in ("file_url", "content_hash", "file_name", "file_size"):
-            if getattr(doc, "has_value_changed", None) and doc.has_value_changed(field):
-                frappe.throw(
-                    f"Cannot modify File '{doc_name or file_name}' field '{field}': referenced by captured Evidence Attachment '{ref_name}' (or superseded). "
-                    "Captured original bytes are immutable.",
-                    frappe.PermissionError,
-                )
+    for att in refs:
+        att_file_raw = getattr(att, "file", None) or (att.get("file") if hasattr(att, "get") else "") or ""
+        att_file_url_raw = getattr(att, "file_url", None) or (att.get("file_url") if hasattr(att, "get") else "") or ""
+        att_file = att_file_raw if isinstance(att_file_raw, str) else ""
+        att_file_url = att_file_url_raw if isinstance(att_file_url_raw, str) else ""
+        att_file_base = os.path.basename(att_file) if att_file else ""
+        att_url_base = os.path.basename(att_file_url) if att_file_url else ""
+
+        matched = False
+        if targets and any(t in (att_file, att_file_url, att_file_base, att_url_base) for t in targets):
+            matched = True
+        elif file_name and (att_file.endswith(file_name) or att_file_url.endswith(file_name)):
+            matched = True
+        elif doc_name and (att_file.endswith(doc_name) or att_file_url.endswith(doc_name)):
+            matched = True
+        elif db_file_name and (att_file.endswith(db_file_name) or att_file_url.endswith(db_file_name)):
+            matched = True
+        elif not att_file and not att_file_url:
+            matched = True
+
+        if matched:
+            ref_name = getattr(att, "name", None) or (att.get("name") if hasattr(att, "get") else str(att))
+            for field in ("file_url", "content_hash", "file_name", "file_size"):
+                if getattr(doc, "has_value_changed", None) and doc.has_value_changed(field):
+                    frappe.throw(
+                        f"Cannot modify File '{doc_name or file_name or 'file'}' field '{field}': referenced by captured Evidence Attachment '{ref_name}' (or superseded). "
+                        "Captured original bytes are immutable.",
+                        frappe.PermissionError,
+                    )
+            break
 
 
 def prevent_captured_evidence_deletion(doc, method=None):
