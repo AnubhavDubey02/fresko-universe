@@ -80,6 +80,7 @@ from fresko_universe.constants import (  # noqa: E402
     ATS_ACTIVE_STATUSES,
     COMMERCIAL_LOCK_STATUSES,
     DEAL_TRANSITIONS,
+    EVIDENCE_ACTOR_UNKNOWN,
     EXCEPTION_TYPES,
     MATERIAL_REVISION_FIELDS,
     OVERSELL_OVERRIDE_ROLES,
@@ -2467,6 +2468,92 @@ class TestFSEC004FSEC005Behavioral(unittest.TestCase):
             )
         finally:
             frappe.db.sql = orig_sql
+
+    def test_unauthenticated_actor_must_not_be_recorded_as_administrator(self):
+        """F2-003: an unknown actor must not be fabricated as Administrator.
+
+        _record_attempt uses `actor = frappe.session.user or "Administrator"` and
+        writes that value to actor, owner and modified_by. With no authenticated
+        session — a background webhook worker or scheduled job — an UNKNOWN actor
+        silently becomes Administrator, fabricating audit provenance.
+        """
+        import frappe
+        from fresko_universe.fresko_core.services import evidence_service
+
+        captured = {}
+
+        orig_persist = evidence_service._persist_attempt_independently
+        orig_user = frappe.session.user
+        try:
+            def capture(fields):
+                captured.update(fields)
+                return True
+
+            evidence_service._persist_attempt_independently = capture
+            frappe.session.user = None
+
+            evidence_service._record_attempt(
+                evidence="EV-NOACTOR",
+                operation="MESSAGE_INGEST",
+                outcome="SUCCESS_NEW",
+                isolated=True,
+            )
+        finally:
+            evidence_service._persist_attempt_independently = orig_persist
+            frappe.session.user = orig_user
+
+        print(
+            "\nF2-003 unauthenticated_actor:\n"
+            f"actor={captured.get('actor')!r}\n"
+            f"owner={captured.get('owner')!r}\n"
+            f"modified_by={captured.get('modified_by')!r}\n"
+        )
+
+        self.assertNotEqual(
+            captured.get("actor"),
+            "Administrator",
+            "F2-003: an unknown actor was fabricated as Administrator in the audit trail",
+        )
+        self.assertEqual(
+            captured.get("actor"),
+            EVIDENCE_ACTOR_UNKNOWN,
+            "an unestablished actor must be recorded as UNKNOWN",
+        )
+        # owner/modified_by are ORM bookkeeping and must stay a real User link,
+        # so they legitimately remain concrete. `actor` is the audit claim.
+        self.assertEqual(captured.get("owner"), "Administrator")
+        self.assertEqual(captured.get("modified_by"), "Administrator")
+
+    def test_authenticated_actor_is_recorded_verbatim(self):
+        """F2-003 counterpart: a real session actor must be recorded unchanged."""
+        import frappe
+        from fresko_universe.fresko_core.services import evidence_service
+
+        captured = {}
+
+        orig_persist = evidence_service._persist_attempt_independently
+        orig_user = frappe.session.user
+        try:
+            def capture(fields):
+                captured.update(fields)
+                return True
+
+            evidence_service._persist_attempt_independently = capture
+            frappe.session.user = "salesperson@example.com"
+
+            evidence_service._record_attempt(
+                evidence="EV-ACTOR",
+                operation="MESSAGE_INGEST",
+                outcome="SUCCESS_NEW",
+                isolated=True,
+            )
+        finally:
+            evidence_service._persist_attempt_independently = orig_persist
+            frappe.session.user = orig_user
+
+        self.assertEqual(captured.get("actor"), "salesperson@example.com")
+        self.assertEqual(captured.get("owner"), "salesperson@example.com")
+        self.assertNotEqual(captured.get("actor"), EVIDENCE_ACTOR_UNKNOWN)
 
     def test_regression_superseded_file_protection_and_verification_rejection(self):
         """Finding 2: Files backing SUPERSEDED attachments must remain protected; superseded attachments cannot be verified."""

@@ -11,6 +11,7 @@ import frappe
 from frappe.utils import now_datetime
 
 from fresko_universe.constants import (
+    EVIDENCE_ACTOR_UNKNOWN,
     EVIDENCE_ATTEMPT_OPERATIONS,
     EVIDENCE_ATTEMPT_OUTCOMES,
     HASH_ALGORITHM_SHA256_V1,
@@ -250,15 +251,22 @@ def _record_attempt(
     Callers that require durable audit MUST inspect the return value.
     """
     now = now_datetime()
-    actor = frappe.session.user or "Administrator"
+    # F2-003: never fabricate an actor. If no session actor can be established
+    # (background worker, scheduled job), the audit claim is genuinely UNKNOWN.
+    # owner/modified_by are Frappe ORM bookkeeping and must remain a real User
+    # link, so they keep a concrete value — `actor` is the authoritative
+    # provenance field and is the one that must stay truthful.
+    session_user = getattr(getattr(frappe, "session", None), "user", None)
+    actor = session_user or EVIDENCE_ACTOR_UNKNOWN
+    orm_user = session_user or "Administrator"
     name = frappe.generate_hash(length=10)
 
     fields = {
         "name": name,
         "creation": now,
         "modified": now,
-        "modified_by": actor,
-        "owner": actor,
+        "modified_by": orm_user,
+        "owner": orm_user,
         "docstatus": 0,
         "idx": 0,
         "evidence": evidence,

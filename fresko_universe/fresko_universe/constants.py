@@ -243,6 +243,12 @@ EVIDENCE_ATTEMPT_DURABILITY_STATES = [
     "UNKNOWN",
 ]
 
+# F2-003: an actor that cannot be established is UNKNOWN, never a real identity.
+# Used for the `actor` audit claim on Fresko Evidence Attempt. owner/modified_by
+# are ORM bookkeeping (Link -> User) and must stay a real user; `actor` is the
+# authoritative provenance field.
+EVIDENCE_ACTOR_UNKNOWN = "UNKNOWN"
+
 SCOPED_MESSAGE_KEY_VERSION = "fresko-message-v1"
 SCOPED_ATTACHMENT_LOGICAL_VERSION = "fresko-attachment-logical-v1"
 SCOPED_ATTACHMENT_VERSION = "fresko-attachment-version-v1"
