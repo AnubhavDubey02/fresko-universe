@@ -840,6 +840,7 @@ class TestFreskoEvidence(FrappeTestCase):
             "provenance_type": "MISSING_PROVENANCE",
             "is_current_version": 1,
         })
+        legacy_att.flags.in_service = True
         legacy_att.insert(ignore_permissions=True)
         frappe.db.commit()
 

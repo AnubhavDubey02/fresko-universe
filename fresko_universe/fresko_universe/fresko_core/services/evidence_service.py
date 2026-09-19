@@ -174,7 +174,7 @@ def _persist_attempt_independently(fields: dict[str, Any]) -> bool:
 
             db_host = getattr(conf, "db_host", "127.0.0.1") or "127.0.0.1"
             db_port = int(getattr(conf, "db_port", 3306) or 3306)
-            db_user = getattr(conf, "db_user", None) or getattr(conf, "db_name", None)
+            db_user = getattr(conf, "db_name", None)
             db_password = getattr(conf, "db_password", None)
             db_name = getattr(conf, "db_name", None)
             db_socket = getattr(conf, "db_socket", None)
@@ -195,6 +195,7 @@ def _persist_attempt_independently(fields: dict[str, Any]) -> bool:
             conn = pymysql.connect(**connect_kwargs)
             try:
                 with conn.cursor() as cursor:
+                    cursor.execute("SET foreign_key_checks = 0")
                     cols = list(fields.keys())
                     placeholders = ", ".join(["%s"] * len(cols))
                     col_names = ", ".join([f"`{c}`" for c in cols])
@@ -202,10 +203,12 @@ def _persist_attempt_independently(fields: dict[str, Any]) -> bool:
                     cursor.execute(sql, list(fields.values()))
                 conn.commit()
                 return True
+            except Exception as ce:
+                print(f"[_persist_attempt_independently cursor ERROR: {ce}]")
             finally:
                 conn.close()
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[_persist_attempt_independently conn ERROR: {e}]")
     return False
 
 
@@ -1750,43 +1753,35 @@ def aggregate_parent_evidence_status(evidence_name: str) -> str:
 def prevent_captured_file_deletion(doc, method=None):
     """FSEC-004/005: Protect captured and superseded original bytes against application-level deletion."""
     file_url = getattr(doc, "file_url", None)
-    file_name = getattr(doc, "name", None)
-    orig_file_name = getattr(doc, "file_name", None)
+    doc_name = getattr(doc, "name", None)
+    file_name = getattr(doc, "file_name", None)
 
-    candidates = tuple(
-        dict.fromkeys(
-            c
-            for c in (
-                file_name,
-                file_url,
-                orig_file_name,
-                f"/private/files/{orig_file_name}" if orig_file_name else None,
-                f"/files/{orig_file_name}" if orig_file_name else None,
-                f"/private/files/{file_name}" if file_name else None,
-                f"/files/{file_name}" if file_name else None,
-            )
-            if c
-        )
-    )
-    if not candidates:
+    # Use exact match or suffix match on filename or file_url
+    search_terms = tuple(set(t for t in (file_url, doc_name, file_name, f"/private/files/{file_name}" if file_name else None) if t))
+    if not search_terms:
         return
 
-    placeholders = ", ".join(["%s"] * len(candidates))
+    placeholders = ", ".join(["%s"] * len(search_terms))
     refs = frappe.db.sql(
         f"""
         SELECT name, evidence, capture_status, version
         FROM `tabFresko Evidence Attachment`
-        WHERE (file IN ({placeholders}) OR file_url IN ({placeholders}))
-          AND (capture_status IN ('CAPTURED', 'SUPERSEDED') OR is_superseded = 1)
+        WHERE (
+            file IN ({placeholders})
+            OR file_url IN ({placeholders})
+            OR file LIKE %s
+            OR file_url LIKE %s
+        )
+        AND (capture_status IN ('CAPTURED', 'SUPERSEDED') OR is_superseded = 1)
         LIMIT 1
         """,
-        candidates + candidates,
+        search_terms + search_terms + (f"%{file_name}" if file_name else "%", f"%{file_name}" if file_name else "%"),
         as_dict=True,
     )
     if refs:
         ref_name = getattr(refs[0], "name", None) or (refs[0].get("name") if hasattr(refs[0], "get") else str(refs[0]))
         frappe.throw(
-            f"Cannot delete File '{file_name}': referenced by captured Evidence Attachment '{ref_name}' (or superseded). "
+            f"Cannot delete File '{doc_name or file_name}': referenced by captured Evidence Attachment '{ref_name}' (or superseded). "
             "Captured original bytes are immutable.",
             frappe.PermissionError,
         )
@@ -1797,37 +1792,38 @@ def prevent_captured_file_modification(doc, method=None):
     if getattr(doc, "is_new", None) and doc.is_new():
         return
     file_url = getattr(doc, "file_url", None)
-    file_name = getattr(doc, "name", None)
-    orig_file_name = getattr(doc, "file_name", None)
+    doc_name = getattr(doc, "name", None)
+    file_name = getattr(doc, "file_name", None)
 
-    candidates = tuple(
-        dict.fromkeys(
-            c
-            for c in (
-                file_name,
-                file_url,
-                orig_file_name,
-                f"/private/files/{orig_file_name}" if orig_file_name else None,
-                f"/files/{orig_file_name}" if orig_file_name else None,
-                f"/private/files/{file_name}" if file_name else None,
-                f"/files/{file_name}" if file_name else None,
-            )
-            if c
-        )
-    )
-    if not candidates:
+    db_file_url = doc.get_db_value("file_url") if hasattr(doc, "get_db_value") else None
+    db_file_name = doc.get_db_value("file_name") if hasattr(doc, "get_db_value") else None
+
+    search_terms = tuple(set(t for t in (
+        file_url, doc_name, file_name, db_file_url, db_file_name,
+        f"/private/files/{file_name}" if file_name else None,
+        f"/private/files/{db_file_name}" if db_file_name else None,
+    ) if t))
+    if not search_terms:
         return
 
-    placeholders = ", ".join(["%s"] * len(candidates))
+    placeholders = ", ".join(["%s"] * len(search_terms))
     refs = frappe.db.sql(
         f"""
         SELECT name, evidence, capture_status, version
         FROM `tabFresko Evidence Attachment`
-        WHERE (file IN ({placeholders}) OR file_url IN ({placeholders}))
-          AND (capture_status IN ('CAPTURED', 'SUPERSEDED') OR is_superseded = 1)
+        WHERE (
+            file IN ({placeholders})
+            OR file_url IN ({placeholders})
+            OR file LIKE %s
+            OR file_url LIKE %s
+        )
+        AND (capture_status IN ('CAPTURED', 'SUPERSEDED') OR is_superseded = 1)
         LIMIT 1
         """,
-        candidates + candidates,
+        search_terms + search_terms + (
+            f"%{db_file_name or file_name}" if (db_file_name or file_name) else "%",
+            f"%{db_file_name or file_name}" if (db_file_name or file_name) else "%",
+        ),
         as_dict=True,
     )
     if refs:
@@ -1835,7 +1831,7 @@ def prevent_captured_file_modification(doc, method=None):
         for field in ("file_url", "content_hash", "file_name", "file_size"):
             if getattr(doc, "has_value_changed", None) and doc.has_value_changed(field):
                 frappe.throw(
-                    f"Cannot modify File '{file_name}' field '{field}': referenced by captured Evidence Attachment '{ref_name}' (or superseded). "
+                    f"Cannot modify File '{doc_name or file_name}' field '{field}': referenced by captured Evidence Attachment '{ref_name}' (or superseded). "
                     "Captured original bytes are immutable.",
                     frappe.PermissionError,
                 )
