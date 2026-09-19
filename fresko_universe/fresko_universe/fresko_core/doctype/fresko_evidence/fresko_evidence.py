@@ -62,6 +62,16 @@ class FreskoEvidence(Document):
                         "Cannot initialize Evidence with COMPLETE or CONFLICT verification status",
                         frappe.PermissionError,
                     )
+                # Source-reported provenance is established only by the ingress
+                # service, from what the provider actually reported. A caller
+                # supplying it would be fabricating provenance.
+                for f in ("source_sender_id", "source_sent_at", "received_at"):
+                    if self.get(f):
+                        frappe.throw(
+                            f"Cannot supply source-reported provenance field '{f}'; "
+                            "server ingress service required",
+                            frappe.PermissionError,
+                        )
             return
 
         # Direct Desk/API changes to operational aggregation/identity fields are blocked
@@ -72,6 +82,9 @@ class FreskoEvidence(Document):
                 "manifest_status",
                 "scoped_message_key",
                 "message_payload_sha256",
+                "source_sender_id",
+                "source_sent_at",
+                "received_at",
             ):
                 if self.has_value_changed(f):
                     frappe.throw(
@@ -91,6 +104,11 @@ class FreskoEvidence(Document):
             "conversation_id",
             "provider_message_id",
             "message_payload_sha256",
+            # Source-reported provenance is immutable once established, even in
+            # service: a later delivery cannot rewrite what the source reported.
+            "source_sender_id",
+            "source_sent_at",
+            "received_at",
         )
         for f in immutable_fields:
             if self.has_value_changed(f) and self.get_db_value(f):

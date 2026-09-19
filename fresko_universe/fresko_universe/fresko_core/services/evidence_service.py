@@ -915,6 +915,29 @@ def validate_completeness_provenance(
 
 
 
+def _same_reported_value(existing_value: Any, incoming_value: Any) -> bool:
+    """Compare two source-reported provenance values tolerantly.
+
+    Datetimes may arrive as strings from a caller and as datetime objects from
+    the database, so compare those as instants. Anything else compares as text.
+    Used only to detect disagreement; it never rewrites either value.
+    """
+    if existing_value is None or incoming_value is None:
+        return existing_value == incoming_value
+
+    try:
+        from frappe.utils import get_datetime
+
+        left = get_datetime(existing_value)
+        right = get_datetime(incoming_value)
+        if left is not None and right is not None:
+            return left == right
+    except Exception:
+        pass
+
+    return str(existing_value).strip() == str(incoming_value).strip()
+
+
 def ingest_message_evidence(
     provider: str | None = None,
     provider_account_id: str | None = None,
@@ -926,12 +949,23 @@ def ingest_message_evidence(
     notes: str | None = None,
     manifest_status: str = "UNKNOWN",
     expected_attachment_count: int = -1,
+    source_sender_id: str | None = None,
+    source_sent_at: Any = None,
+    received_at: Any = None,
 ) -> tuple[Any, str]:
     """Service method for idempotent message evidence creation.
 
     Uses savepoint-isolated insert to catch UniqueValidationError on scoped_message_key.
     Performs locking read, collision checks, payload conflict preservation,
     and inherited permission checks.
+
+    source_sender_id / source_sent_at / received_at are source-reported
+    provenance and are stored exactly as supplied. They are never defaulted: if
+    the provider reports no sender or send time, or the ingress time cannot be
+    established, they stay NULL. now(), creation, webhook-handler time and
+    worker time are all invalid substitutes. Once established they are
+    immutable, and a redelivery reporting different provenance under the same
+    canonical message identity is a conflict, not an overwrite.
     """
     canonical_payload_str, payload_sha = canonicalize_payload(raw_payload)
     scoped_key = compute_scoped_message_key(
@@ -950,6 +984,10 @@ def ingest_message_evidence(
     doc.provider_message_id = provider_message_id
     doc.scoped_message_key = scoped_key
     doc.message_payload_sha256 = payload_sha
+    # Stored exactly as reported. Explicitly not defaulted — absent stays NULL.
+    doc.source_sender_id = source_sender_id
+    doc.source_sent_at = source_sent_at
+    doc.received_at = received_at
     doc.manifest_status = manifest_status
     doc.expected_attachment_count = expected_attachment_count
     doc.verified_attachment_count = 0
@@ -992,7 +1030,8 @@ def ingest_message_evidence(
             """
             SELECT name, deal, provider, provider_account_id, conversation_id,
                    provider_message_id, scoped_message_key, message_payload_sha256,
-                   overall_verification_status
+                   overall_verification_status,
+                   source_sender_id, source_sent_at, received_at
             FROM `tabFresko Evidence`
             WHERE scoped_message_key = %s
             FOR UPDATE
@@ -1039,6 +1078,55 @@ def ingest_message_evidence(
             raise IntegrityConflictError(
                 f"Scoped message key collision detected on evidence {existing.name}",
             )
+
+        # 2b. Source-reported provenance conflict check.
+        #
+        # Redelivery NEVER writes provenance. If the stored value was already
+        # established and the redelivery reports something different, that is a
+        # conflict, not an overwrite — the body may even be byte-identical while
+        # the source disagrees about who sent it or when.
+        #
+        # Deliberate limit: when the stored value is NULL, provenance was never
+        # established and is left NULL rather than being filled from a later
+        # delivery. Filling it would let a second delivery inject provenance the
+        # first never had. Not treated as a conflict, because unknown and
+        # disagreeing are different things.
+        incoming_provenance = {
+            "source_sender_id": source_sender_id,
+            "source_sent_at": source_sent_at,
+            "received_at": received_at,
+        }
+        for prov_field, incoming_value in incoming_provenance.items():
+            stored_value = existing.get(prov_field) if hasattr(existing, "get") else getattr(existing, prov_field, None)
+            if stored_value is None or incoming_value is None:
+                continue
+            if _same_reported_value(stored_value, incoming_value):
+                continue
+
+            reason = (
+                f"Redelivery reports {prov_field}={incoming_value!r} but evidence "
+                f"{existing.name} already established {stored_value!r} under the same "
+                "canonical message identity"
+            )
+            durability = _record_attempt(
+                evidence=existing.name,
+                operation="MESSAGE_INGEST",
+                outcome="CONFLICT_PROVENANCE_MISMATCH",
+                scoped_message_key=scoped_key,
+                payload_sha256=payload_sha,
+                existing_payload_sha256=existing.message_payload_sha256,
+                source_payload=canonical_payload_str,
+                reason=reason,
+                isolated=True,
+            )
+            # F2-001 precedent: a conflict that cannot be durably recorded must
+            # not be reported as handled.
+            if durability != "COMMITTED_INDEPENDENT":
+                raise IntegrityConflictError(
+                    f"{reason}; additionally the conflict could not be durably "
+                    f"recorded (durability_state={durability})"
+                )
+            raise IntegrityConflictError(reason)
 
         # 3. Payload conflict check
         if existing.message_payload_sha256 and existing.message_payload_sha256 != payload_sha:

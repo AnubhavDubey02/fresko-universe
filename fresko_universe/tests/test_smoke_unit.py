@@ -2555,6 +2555,99 @@ class TestFSEC004FSEC005Behavioral(unittest.TestCase):
         self.assertEqual(captured.get("owner"), "salesperson@example.com")
         self.assertNotEqual(captured.get("actor"), EVIDENCE_ACTOR_UNKNOWN)
 
+    def test_source_provenance_fields_have_no_defaults(self):
+        """Source-reported provenance must be unfabricatable by migration.
+
+        A default or reqd flag on these fields would let a schema sync populate
+        legacy rows with something the source never reported. Absent must stay
+        NULL, so the schema must declare no default and no reqd.
+        """
+        import json as _json
+        import os as _os
+
+        schema_path = _os.path.join(
+            _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+            "fresko_universe",
+            "fresko_core",
+            "doctype",
+            "fresko_evidence",
+            "fresko_evidence.json",
+        )
+        with open(schema_path, "r", encoding="utf-8") as fh:
+            schema = _json.load(fh)
+
+        fields = {f["fieldname"]: f for f in schema["fields"]}
+
+        for name, expected_type in (
+            ("source_sender_id", "Data"),
+            ("source_sent_at", "Datetime"),
+            ("received_at", "Datetime"),
+        ):
+            self.assertIn(name, fields, f"{name} must exist on Fresko Evidence")
+            field = fields[name]
+            self.assertEqual(field["fieldtype"], expected_type)
+            self.assertNotIn(
+                "default",
+                field,
+                f"{name} must declare no default; absent provenance stays NULL",
+            )
+            self.assertFalse(
+                field.get("reqd", 0),
+                f"{name} must not be reqd; the source may legitimately not establish it",
+            )
+            self.assertTrue(
+                field.get("read_only", 0),
+                f"{name} must be read_only so Desk cannot edit it directly",
+            )
+
+    def test_provenance_conflict_outcome_declared_in_schema_and_constants(self):
+        """CONFLICT_PROVENANCE_MISMATCH must exist in both constants and the doctype.
+
+        A provenance disagreement is not a payload disagreement; recording it as
+        CONFLICT_PAYLOAD_MISMATCH would itself be an untruthful audit label.
+        """
+        import json as _json
+        import os as _os
+
+        from fresko_universe.constants import EVIDENCE_ATTEMPT_OUTCOMES
+
+        self.assertIn("CONFLICT_PROVENANCE_MISMATCH", EVIDENCE_ATTEMPT_OUTCOMES)
+
+        schema_path = _os.path.join(
+            _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+            "fresko_universe",
+            "fresko_core",
+            "doctype",
+            "fresko_evidence_attempt",
+            "fresko_evidence_attempt.json",
+        )
+        with open(schema_path, "r", encoding="utf-8") as fh:
+            schema = _json.load(fh)
+
+        outcome_field = [f for f in schema["fields"] if f["fieldname"] == "outcome"][0]
+        options = outcome_field["options"].split("\n")
+
+        self.assertIn("CONFLICT_PROVENANCE_MISMATCH", options)
+        # Constants and schema must not drift apart.
+        self.assertEqual(sorted(options), sorted(EVIDENCE_ATTEMPT_OUTCOMES))
+
+    def test_same_reported_value_compares_instants_not_text(self):
+        """Provenance comparison must not raise a false conflict on format alone."""
+        from fresko_universe.fresko_core.services.evidence_service import (
+            _same_reported_value,
+        )
+
+        # Same instant expressed differently must NOT be a conflict.
+        self.assertTrue(_same_reported_value("2026-09-19 10:30:00", "2026-09-19 10:30:00"))
+        # Genuinely different instants must be a conflict.
+        self.assertFalse(_same_reported_value("2026-09-19 10:30:00", "2026-09-19 10:31:00"))
+        # Plain identifiers compare as text, tolerant of surrounding whitespace.
+        self.assertTrue(_same_reported_value("wa_sender_1", " wa_sender_1 "))
+        self.assertFalse(_same_reported_value("wa_sender_1", "wa_sender_2"))
+        # NULL handling: unknown is not a disagreement with unknown.
+        self.assertTrue(_same_reported_value(None, None))
+        self.assertFalse(_same_reported_value("wa_sender_1", None))
+
     def test_regression_superseded_file_protection_and_verification_rejection(self):
         """Finding 2: Files backing SUPERSEDED attachments must remain protected; superseded attachments cannot be verified."""
         import os

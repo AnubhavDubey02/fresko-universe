@@ -216,6 +216,12 @@ EVIDENCE_ATTEMPT_OUTCOMES = [
     "SUCCESS_IDEMPOTENT_REDELIVERY",
     "CONFLICT_PAYLOAD_MISMATCH",
     "CONFLICT_KEY_COLLISION",
+    # Source-reported provenance (sender / sent time) differs from what was
+    # already established under the same canonical message identity. Distinct
+    # from a payload mismatch: the body may be identical while the source
+    # provenance disagrees, and labelling it as a payload conflict would itself
+    # be untruthful.
+    "CONFLICT_PROVENANCE_MISMATCH",
     "VERIFICATION_SUCCESS",
     "VERIFICATION_HASH_MISMATCH",
     "VERIFICATION_PARTIAL_BYTES",
