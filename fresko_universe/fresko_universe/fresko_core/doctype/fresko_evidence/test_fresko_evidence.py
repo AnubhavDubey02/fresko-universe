@@ -387,6 +387,7 @@ class TestFreskoEvidence(FrappeTestCase):
         self.assertEqual(att1.capture_status, "SUPERSEDED")
         self.assertEqual(att1.is_superseded, 1)
 
+        fdoc1.reload()
         # File deletion/modification guard must protect superseded file
         with self.assertRaises(frappe.PermissionError):
             prevent_captured_file_deletion(fdoc1)
@@ -493,6 +494,7 @@ class TestFreskoEvidence(FrappeTestCase):
             provider_message_id="MSG_BENCH_F5",
             raw_payload=payload_1,
         )
+        frappe.db.commit()
 
         # Ingest conflicting payload: it records attempt with outcome CONFLICT_PAYLOAD_MISMATCH and returns conflict
         ev_conf, outcome = ingest_message_evidence(
@@ -522,13 +524,7 @@ class TestFreskoEvidence(FrappeTestCase):
     def test_transaction_boundary_unrelated_caller_changes_not_committed(self):
         """Finding 1: Proves structured conflict attempt is persisted on an isolated connection,
         while unrelated caller changes in frappe.db are NOT committed when caller rolls back."""
-        # 1. Caller makes an uncommitted modification to an existing record
-        user_doc = frappe.get_doc("User", "Administrator")
-        original_interest = user_doc.interest or ""
-        test_interest = f"uncommitted_test_{frappe.generate_hash(length=6)}"
-        frappe.db.set_value("User", "Administrator", "interest", test_interest, update_modified=False)
-
-        # 2. Ingest message evidence that triggers a conflict
+        # 0. Commit baseline message evidence
         ev1, _ = ingest_message_evidence(
             provider="whatsapp-cloud",
             provider_account_id="ACC_BENCH",
@@ -536,8 +532,15 @@ class TestFreskoEvidence(FrappeTestCase):
             provider_message_id="MSG_TX_BOUNDARY",
             raw_payload={"text": "Original message"},
         )
+        frappe.db.commit()
 
-        # Replay with conflicting payload -> CONFLICT_PAYLOAD_MISMATCH
+        # 1. Caller makes an uncommitted modification to an existing record
+        user_doc = frappe.get_doc("User", "Administrator")
+        original_interest = user_doc.interest or ""
+        test_interest = f"uncommitted_test_{frappe.generate_hash(length=6)}"
+        frappe.db.set_value("User", "Administrator", "interest", test_interest, update_modified=False)
+
+        # 2. Ingest conflicting message evidence that triggers a conflict
         ev_conf, outcome = ingest_message_evidence(
             provider="whatsapp-cloud",
             provider_account_id="ACC_BENCH",
@@ -552,7 +555,7 @@ class TestFreskoEvidence(FrappeTestCase):
 
         # 4. Prove unrelated caller modification was rolled back (NOT committed)
         fresh_user = frappe.get_doc("User", "Administrator")
-        self.assertEqual(fresh_user.interest, original_interest, "Unrelated caller change must NOT be committed on conflict")
+        self.assertEqual(fresh_user.interest or "", original_interest, "Unrelated caller change must NOT be committed on conflict")
 
         # 5. Prove the conflict attempt record survived the caller rollback
         attempts = frappe.db.sql(
@@ -841,11 +844,11 @@ class TestFreskoEvidence(FrappeTestCase):
         frappe.db.commit()
 
         # 2. Execute schema sync (upgrade path)
-        sync_all(test_mode=True)
+        sync_all()
         run_all()
 
         # 3. Rerun migration (idempotence verification)
-        sync_all(test_mode=True)
+        sync_all()
         run_all()
 
         # 4. Verify historical legacy records are intact

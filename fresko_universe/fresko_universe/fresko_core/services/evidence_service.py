@@ -174,7 +174,7 @@ def _persist_attempt_independently(fields: dict[str, Any]) -> bool:
 
             db_host = getattr(conf, "db_host", "127.0.0.1") or "127.0.0.1"
             db_port = int(getattr(conf, "db_port", 3306) or 3306)
-            db_user = getattr(conf, "db_name", None)
+            db_user = getattr(conf, "db_user", None) or getattr(conf, "db_name", None)
             db_password = getattr(conf, "db_password", None)
             db_name = getattr(conf, "db_name", None)
             db_socket = getattr(conf, "db_socket", None)
@@ -1751,16 +1751,36 @@ def prevent_captured_file_deletion(doc, method=None):
     """FSEC-004/005: Protect captured and superseded original bytes against application-level deletion."""
     file_url = getattr(doc, "file_url", None)
     file_name = getattr(doc, "name", None)
+    orig_file_name = getattr(doc, "file_name", None)
 
+    candidates = tuple(
+        dict.fromkeys(
+            c
+            for c in (
+                file_name,
+                file_url,
+                orig_file_name,
+                f"/private/files/{orig_file_name}" if orig_file_name else None,
+                f"/files/{orig_file_name}" if orig_file_name else None,
+                f"/private/files/{file_name}" if file_name else None,
+                f"/files/{file_name}" if file_name else None,
+            )
+            if c
+        )
+    )
+    if not candidates:
+        return
+
+    placeholders = ", ".join(["%s"] * len(candidates))
     refs = frappe.db.sql(
-        """
+        f"""
         SELECT name, evidence, capture_status, version
         FROM `tabFresko Evidence Attachment`
-        WHERE (file = %s OR file_url = %s OR file = %s OR file_url = %s)
+        WHERE (file IN ({placeholders}) OR file_url IN ({placeholders}))
           AND (capture_status IN ('CAPTURED', 'SUPERSEDED') OR is_superseded = 1)
         LIMIT 1
         """,
-        (file_name, file_name, file_url, file_url),
+        candidates + candidates,
         as_dict=True,
     )
     if refs:
@@ -1778,16 +1798,36 @@ def prevent_captured_file_modification(doc, method=None):
         return
     file_url = getattr(doc, "file_url", None)
     file_name = getattr(doc, "name", None)
+    orig_file_name = getattr(doc, "file_name", None)
 
+    candidates = tuple(
+        dict.fromkeys(
+            c
+            for c in (
+                file_name,
+                file_url,
+                orig_file_name,
+                f"/private/files/{orig_file_name}" if orig_file_name else None,
+                f"/files/{orig_file_name}" if orig_file_name else None,
+                f"/private/files/{file_name}" if file_name else None,
+                f"/files/{file_name}" if file_name else None,
+            )
+            if c
+        )
+    )
+    if not candidates:
+        return
+
+    placeholders = ", ".join(["%s"] * len(candidates))
     refs = frappe.db.sql(
-        """
+        f"""
         SELECT name, evidence, capture_status, version
         FROM `tabFresko Evidence Attachment`
-        WHERE (file = %s OR file_url = %s OR file = %s OR file_url = %s)
+        WHERE (file IN ({placeholders}) OR file_url IN ({placeholders}))
           AND (capture_status IN ('CAPTURED', 'SUPERSEDED') OR is_superseded = 1)
         LIMIT 1
         """,
-        (file_name, file_name, file_url, file_url),
+        candidates + candidates,
         as_dict=True,
     )
     if refs:
