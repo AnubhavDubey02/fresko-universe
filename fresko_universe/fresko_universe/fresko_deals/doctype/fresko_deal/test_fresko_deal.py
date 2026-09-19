@@ -10,6 +10,7 @@ import threading
 from queue import Queue
 
 import frappe
+from frappe.model.document import Document
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import flt, today
 
@@ -922,3 +923,452 @@ class TestFreskoDeal(FrappeTestCase):
             frappe.db.count("Fresko Exception", {"deal": d2.name}),
             before_ex,
         )
+
+    def test_apply_revision_atomicity_boundary_a_fail_after_deal_save(self):
+        """Boundary A: failure after Deal save but before Revision Applied save.
+
+        Proves that if an exception is raised when saving Revision as Applied
+        (after Deal has already saved the new commercial value in the transaction),
+        a subsequent rollback fully restores original Deal rate, Revision remains
+        Pending, and Approval remains unconsumed in the database.
+        Subsequent retry succeeds once, and replay is rejected.
+        """
+        deal = _make_deal(self.container, rate=20, alias="AtomRevA")
+        deals_api.apply_rate_rules(deal.name)
+        deal.reload()
+        self.assertEqual(flt(deal.approved_rate), 20.0)
+
+        ev = _make_evidence(deal)
+        rev = deals_api.request_revision(
+            deal.name,
+            "approved_rate",
+            "17",
+            reason="atomicity test boundary A",
+            supporting_evidence=ev.name,
+        )
+        rev_name = rev["revision"]
+        apr = _make_revision_approval(deal, rev_name, reason="approval boundary A")
+        frappe.db.commit()
+
+        def cleanup_committed_rows():
+            frappe.set_user("Administrator")
+            frappe.db.rollback()
+            frappe.db.delete("Fresko Approval", {"deal": deal.name})
+            frappe.db.delete("Fresko Revision", {"parent_name": deal.name})
+            frappe.db.delete("Fresko Evidence", {"deal": deal.name})
+            frappe.db.delete("Fresko Exception", {"deal": deal.name})
+            frappe.db.delete("Fresko Deal", {"name": deal.name})
+            frappe.db.commit()
+
+        self.addCleanup(cleanup_committed_rows)
+
+        real_doc_save = Document.save
+
+        def save_with_fault_a(doc_self, *args, **kwargs):
+            if (
+                getattr(doc_self, "doctype", None) == "Fresko Revision"
+                and getattr(doc_self, "name", None) == rev_name
+                and getattr(doc_self, "status", None) == "Applied"
+            ):
+                raise RuntimeError("FAULT_AFTER_DEAL_SAVE")
+            return real_doc_save(doc_self, *args, **kwargs)
+
+        Document.save = save_with_fault_a
+        try:
+            with self.assertRaises(RuntimeError) as ctx:
+                deals_api.apply_revision(rev_name, approval_name=apr.name)
+            self.assertIn("FAULT_AFTER_DEAL_SAVE", str(ctx.exception))
+        finally:
+            Document.save = real_doc_save
+            frappe.db.rollback()
+
+        if hasattr(frappe.local, "document_cache") and frappe.local.document_cache:
+            frappe.local.document_cache.clear()
+
+        deal_rate = flt(frappe.db.get_value("Fresko Deal", deal.name, "approved_rate"))
+        rev_status = frappe.db.get_value("Fresko Revision", rev_name, "status")
+        approval_consumed = int(frappe.db.get_value("Fresko Approval", apr.name, "consumed") or 0)
+
+        print(
+            f"\nATOMICITY after_deal_save after_rollback:\n"
+            f"deal_rate={deal_rate}\n"
+            f"revision_status={rev_status}\n"
+            f"approval_consumed={approval_consumed}\n"
+        )
+
+        self.assertEqual(deal_rate, 20.0)
+        self.assertEqual(rev_status, "Pending")
+        self.assertEqual(approval_consumed, 0)
+
+        # Retry exact same logical operation
+        retry_res = deals_api.apply_revision(rev_name, approval_name=apr.name)
+        self.assertEqual(retry_res["status"], "Applied")
+
+        deal_rate_after = flt(frappe.db.get_value("Fresko Deal", deal.name, "approved_rate"))
+        rev_status_after = frappe.db.get_value("Fresko Revision", rev_name, "status")
+        approval_consumed_after = int(frappe.db.get_value("Fresko Approval", apr.name, "consumed") or 0)
+
+        print(
+            f"ATOMICITY after_deal_save after_retry:\n"
+            f"deal_rate={deal_rate_after}\n"
+            f"revision_status={rev_status_after}\n"
+            f"approval_consumed={approval_consumed_after}\n"
+        )
+
+        self.assertEqual(deal_rate_after, 17.0)
+        self.assertEqual(rev_status_after, "Applied")
+        self.assertEqual(approval_consumed_after, 1)
+
+        # Subsequent replay must be rejected
+        with self.assertRaises((frappe.ValidationError, frappe.PermissionError)):
+            deals_api.apply_revision(rev_name, approval_name=apr.name)
+
+        self.assertEqual(
+            flt(frappe.db.get_value("Fresko Deal", deal.name, "approved_rate")),
+            17.0,
+        )
+        self.assertEqual(
+            frappe.db.get_value("Fresko Revision", rev_name, "status"),
+            "Applied",
+        )
+        self.assertEqual(
+            int(frappe.db.get_value("Fresko Approval", apr.name, "consumed") or 0),
+            1,
+        )
+        self.assertEqual(
+            frappe.db.count("Fresko Revision", {"parent_name": deal.name, "status": "Applied"}),
+            1,
+        )
+
+    def test_apply_revision_atomicity_boundary_b_fail_before_approval_consumption(self):
+        """Boundary B: failure after Revision Applied save but before Approval consumption.
+
+        Proves that if Deal and Revision have both been updated in the transaction,
+        but failure occurs immediately before Approval is marked consumed, rollback
+        restores original Deal rate, leaves Revision Pending, and Approval unconsumed.
+        Subsequent retry succeeds once, and replay is rejected.
+        """
+        deal = _make_deal(self.container, rate=20, alias="AtomRevB")
+        deals_api.apply_rate_rules(deal.name)
+        deal.reload()
+        self.assertEqual(flt(deal.approved_rate), 20.0)
+
+        ev = _make_evidence(deal)
+        rev = deals_api.request_revision(
+            deal.name,
+            "approved_rate",
+            "16",
+            reason="atomicity test boundary B",
+            supporting_evidence=ev.name,
+        )
+        rev_name = rev["revision"]
+        apr = _make_revision_approval(deal, rev_name, reason="approval boundary B")
+        frappe.db.commit()
+
+        def cleanup_committed_rows():
+            frappe.set_user("Administrator")
+            frappe.db.rollback()
+            frappe.db.delete("Fresko Approval", {"deal": deal.name})
+            frappe.db.delete("Fresko Revision", {"parent_name": deal.name})
+            frappe.db.delete("Fresko Evidence", {"deal": deal.name})
+            frappe.db.delete("Fresko Exception", {"deal": deal.name})
+            frappe.db.delete("Fresko Deal", {"name": deal.name})
+            frappe.db.commit()
+
+        self.addCleanup(cleanup_committed_rows)
+
+        real_mark_consumed = deals_api._mark_approval_consumed
+
+        def fail_before_consume(approval_doc):
+            if getattr(approval_doc, "name", None) == apr.name:
+                raise RuntimeError("FAULT_BEFORE_APPROVAL_CONSUMPTION")
+            return real_mark_consumed(approval_doc)
+
+        deals_api._mark_approval_consumed = fail_before_consume
+        try:
+            with self.assertRaises(RuntimeError) as ctx:
+                deals_api.apply_revision(rev_name, approval_name=apr.name)
+            self.assertIn("FAULT_BEFORE_APPROVAL_CONSUMPTION", str(ctx.exception))
+        finally:
+            deals_api._mark_approval_consumed = real_mark_consumed
+            frappe.db.rollback()
+
+        if hasattr(frappe.local, "document_cache") and frappe.local.document_cache:
+            frappe.local.document_cache.clear()
+
+        deal_rate = flt(frappe.db.get_value("Fresko Deal", deal.name, "approved_rate"))
+        rev_status = frappe.db.get_value("Fresko Revision", rev_name, "status")
+        approval_consumed = int(frappe.db.get_value("Fresko Approval", apr.name, "consumed") or 0)
+
+        print(
+            f"\nATOMICITY after_revision_save after_rollback:\n"
+            f"deal_rate={deal_rate}\n"
+            f"revision_status={rev_status}\n"
+            f"approval_consumed={approval_consumed}\n"
+        )
+
+        self.assertEqual(deal_rate, 20.0)
+        self.assertEqual(rev_status, "Pending")
+        self.assertEqual(approval_consumed, 0)
+
+        # Retry exact same logical operation
+        retry_res = deals_api.apply_revision(rev_name, approval_name=apr.name)
+        self.assertEqual(retry_res["status"], "Applied")
+
+        deal_rate_after = flt(frappe.db.get_value("Fresko Deal", deal.name, "approved_rate"))
+        rev_status_after = frappe.db.get_value("Fresko Revision", rev_name, "status")
+        approval_consumed_after = int(frappe.db.get_value("Fresko Approval", apr.name, "consumed") or 0)
+
+        print(
+            f"ATOMICITY after_revision_save after_retry:\n"
+            f"deal_rate={deal_rate_after}\n"
+            f"revision_status={rev_status_after}\n"
+            f"approval_consumed={approval_consumed_after}\n"
+        )
+
+        self.assertEqual(deal_rate_after, 16.0)
+        self.assertEqual(rev_status_after, "Applied")
+        self.assertEqual(approval_consumed_after, 1)
+
+        # Subsequent replay must be rejected
+        with self.assertRaises((frappe.ValidationError, frappe.PermissionError)):
+            deals_api.apply_revision(rev_name, approval_name=apr.name)
+
+        self.assertEqual(
+            flt(frappe.db.get_value("Fresko Deal", deal.name, "approved_rate")),
+            16.0,
+        )
+        self.assertEqual(
+            frappe.db.get_value("Fresko Revision", rev_name, "status"),
+            "Applied",
+        )
+        self.assertEqual(
+            int(frappe.db.get_value("Fresko Approval", apr.name, "consumed") or 0),
+            1,
+        )
+        self.assertEqual(
+            frappe.db.count("Fresko Revision", {"parent_name": deal.name, "status": "Applied"}),
+            1,
+        )
+
+    def test_apply_revision_atomicity_boundary_c_fail_after_approval_consumption_before_commit(self):
+        """Boundary C: failure after Approval consumption but before final commit.
+
+        Proves that even after Approval consumed is marked in the database transaction,
+        if failure occurs before frappe.db.commit(), rollback restores original Deal rate,
+        leaves Revision Pending, and unconsumes the Approval in the database.
+        Subsequent retry succeeds once, and replay is rejected.
+        """
+        deal = _make_deal(self.container, rate=20, alias="AtomRevC")
+        deals_api.apply_rate_rules(deal.name)
+        deal.reload()
+        self.assertEqual(flt(deal.approved_rate), 20.0)
+
+        ev = _make_evidence(deal)
+        rev = deals_api.request_revision(
+            deal.name,
+            "approved_rate",
+            "15",
+            reason="atomicity test boundary C",
+            supporting_evidence=ev.name,
+        )
+        rev_name = rev["revision"]
+        apr = _make_revision_approval(deal, rev_name, reason="approval boundary C")
+        frappe.db.commit()
+
+        def cleanup_committed_rows():
+            frappe.set_user("Administrator")
+            frappe.db.rollback()
+            frappe.db.delete("Fresko Approval", {"deal": deal.name})
+            frappe.db.delete("Fresko Revision", {"parent_name": deal.name})
+            frappe.db.delete("Fresko Evidence", {"deal": deal.name})
+            frappe.db.delete("Fresko Exception", {"deal": deal.name})
+            frappe.db.delete("Fresko Deal", {"name": deal.name})
+            frappe.db.commit()
+
+        self.addCleanup(cleanup_committed_rows)
+
+        real_mark_consumed = deals_api._mark_approval_consumed
+
+        def consume_then_fail(approval_doc):
+            real_mark_consumed(approval_doc)
+            if getattr(approval_doc, "name", None) == apr.name:
+                raise RuntimeError("FAULT_AFTER_APPROVAL_CONSUMPTION_BEFORE_COMMIT")
+
+        deals_api._mark_approval_consumed = consume_then_fail
+        try:
+            with self.assertRaises(RuntimeError) as ctx:
+                deals_api.apply_revision(rev_name, approval_name=apr.name)
+            self.assertIn("FAULT_AFTER_APPROVAL_CONSUMPTION_BEFORE_COMMIT", str(ctx.exception))
+        finally:
+            deals_api._mark_approval_consumed = real_mark_consumed
+            frappe.db.rollback()
+
+        if hasattr(frappe.local, "document_cache") and frappe.local.document_cache:
+            frappe.local.document_cache.clear()
+
+        deal_rate = flt(frappe.db.get_value("Fresko Deal", deal.name, "approved_rate"))
+        rev_status = frappe.db.get_value("Fresko Revision", rev_name, "status")
+        approval_consumed = int(frappe.db.get_value("Fresko Approval", apr.name, "consumed") or 0)
+
+        print(
+            f"\nATOMICITY after_approval_consumption after_rollback:\n"
+            f"deal_rate={deal_rate}\n"
+            f"revision_status={rev_status}\n"
+            f"approval_consumed={approval_consumed}\n"
+        )
+
+        self.assertEqual(deal_rate, 20.0)
+        self.assertEqual(rev_status, "Pending")
+        self.assertEqual(approval_consumed, 0)
+
+        # Retry exact same logical operation
+        retry_res = deals_api.apply_revision(rev_name, approval_name=apr.name)
+        self.assertEqual(retry_res["status"], "Applied")
+
+        deal_rate_after = flt(frappe.db.get_value("Fresko Deal", deal.name, "approved_rate"))
+        rev_status_after = frappe.db.get_value("Fresko Revision", rev_name, "status")
+        approval_consumed_after = int(frappe.db.get_value("Fresko Approval", apr.name, "consumed") or 0)
+
+        print(
+            f"ATOMICITY after_approval_consumption after_retry:\n"
+            f"deal_rate={deal_rate_after}\n"
+            f"revision_status={rev_status_after}\n"
+            f"approval_consumed={approval_consumed_after}\n"
+        )
+
+        self.assertEqual(deal_rate_after, 15.0)
+        self.assertEqual(rev_status_after, "Applied")
+        self.assertEqual(approval_consumed_after, 1)
+
+        # Subsequent replay must be rejected
+        with self.assertRaises((frappe.ValidationError, frappe.PermissionError)):
+            deals_api.apply_revision(rev_name, approval_name=apr.name)
+
+        self.assertEqual(
+            flt(frappe.db.get_value("Fresko Deal", deal.name, "approved_rate")),
+            15.0,
+        )
+        self.assertEqual(
+            frappe.db.get_value("Fresko Revision", rev_name, "status"),
+            "Applied",
+        )
+        self.assertEqual(
+            int(frappe.db.get_value("Fresko Approval", apr.name, "consumed") or 0),
+            1,
+        )
+        self.assertEqual(
+            frappe.db.count("Fresko Revision", {"parent_name": deal.name, "status": "Applied"}),
+            1,
+        )
+
+    def test_apply_revision_atomicity_boundary_commit_raises_before_db_commit(self):
+        """Optional Boundary D: commit raises before DB commit executes.
+
+        Models: Python exception raised BEFORE the DB commit executes.
+        Note: AMBIGUOUS COMMIT ACKNOWLEDGEMENT: NOT MODELED (loss of acknowledgment
+        after successful DB commit is a distinct distributed failure mode).
+        Proves that if an exception occurs at the commit boundary before the database
+        has committed, rollback preserves original truthful state and allows clean retry.
+        """
+        deal = _make_deal(self.container, rate=20, alias="AtomRevD")
+        deals_api.apply_rate_rules(deal.name)
+        deal.reload()
+        self.assertEqual(flt(deal.approved_rate), 20.0)
+
+        ev = _make_evidence(deal)
+        rev = deals_api.request_revision(
+            deal.name,
+            "approved_rate",
+            "14",
+            reason="atomicity test boundary D commit failure",
+            supporting_evidence=ev.name,
+        )
+        rev_name = rev["revision"]
+        apr = _make_revision_approval(deal, rev_name, reason="approval boundary D")
+        frappe.db.commit()
+
+        def cleanup_committed_rows():
+            frappe.set_user("Administrator")
+            frappe.db.rollback()
+            frappe.db.delete("Fresko Approval", {"deal": deal.name})
+            frappe.db.delete("Fresko Revision", {"parent_name": deal.name})
+            frappe.db.delete("Fresko Evidence", {"deal": deal.name})
+            frappe.db.delete("Fresko Exception", {"deal": deal.name})
+            frappe.db.delete("Fresko Deal", {"name": deal.name})
+            frappe.db.commit()
+
+        self.addCleanup(cleanup_committed_rows)
+
+        real_commit = frappe.db.commit
+
+        def fail_commit(*args, **kwargs):
+            raise RuntimeError("FAULT_BEFORE_DB_COMMIT_EXECUTION")
+
+        frappe.db.commit = fail_commit
+        try:
+            with self.assertRaises(RuntimeError) as ctx:
+                deals_api.apply_revision(rev_name, approval_name=apr.name)
+            self.assertIn("FAULT_BEFORE_DB_COMMIT_EXECUTION", str(ctx.exception))
+        finally:
+            frappe.db.commit = real_commit
+            frappe.db.rollback()
+
+        if hasattr(frappe.local, "document_cache") and frappe.local.document_cache:
+            frappe.local.document_cache.clear()
+
+        deal_rate = flt(frappe.db.get_value("Fresko Deal", deal.name, "approved_rate"))
+        rev_status = frappe.db.get_value("Fresko Revision", rev_name, "status")
+        approval_consumed = int(frappe.db.get_value("Fresko Approval", apr.name, "consumed") or 0)
+
+        print(
+            f"\nATOMICITY commit_raises_before_db_commit after_rollback:\n"
+            f"deal_rate={deal_rate}\n"
+            f"revision_status={rev_status}\n"
+            f"approval_consumed={approval_consumed}\n"
+        )
+
+        self.assertEqual(deal_rate, 20.0)
+        self.assertEqual(rev_status, "Pending")
+        self.assertEqual(approval_consumed, 0)
+
+        # Retry exact same logical operation
+        retry_res = deals_api.apply_revision(rev_name, approval_name=apr.name)
+        self.assertEqual(retry_res["status"], "Applied")
+
+        deal_rate_after = flt(frappe.db.get_value("Fresko Deal", deal.name, "approved_rate"))
+        rev_status_after = frappe.db.get_value("Fresko Revision", rev_name, "status")
+        approval_consumed_after = int(frappe.db.get_value("Fresko Approval", apr.name, "consumed") or 0)
+
+        print(
+            f"ATOMICITY commit_raises_before_db_commit after_retry:\n"
+            f"deal_rate={deal_rate_after}\n"
+            f"revision_status={rev_status_after}\n"
+            f"approval_consumed={approval_consumed_after}\n"
+        )
+
+        self.assertEqual(deal_rate_after, 14.0)
+        self.assertEqual(rev_status_after, "Applied")
+        self.assertEqual(approval_consumed_after, 1)
+
+        # Subsequent replay must be rejected
+        with self.assertRaises((frappe.ValidationError, frappe.PermissionError)):
+            deals_api.apply_revision(rev_name, approval_name=apr.name)
+
+        self.assertEqual(
+            flt(frappe.db.get_value("Fresko Deal", deal.name, "approved_rate")),
+            14.0,
+        )
+        self.assertEqual(
+            frappe.db.get_value("Fresko Revision", rev_name, "status"),
+            "Applied",
+        )
+        self.assertEqual(
+            int(frappe.db.get_value("Fresko Approval", apr.name, "consumed") or 0),
+            1,
+        )
+        self.assertEqual(
+            frappe.db.count("Fresko Revision", {"parent_name": deal.name, "status": "Applied"}),
+            1,
+        )
+
