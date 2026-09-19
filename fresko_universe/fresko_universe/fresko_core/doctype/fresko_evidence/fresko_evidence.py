@@ -11,7 +11,10 @@ class FreskoEvidence(Document):
     """Message and operational evidence container.
 
     Enforces immutability of identity, payload, and verified integrity fields.
-    Does not hash path or URL strings into content_sha256 (resolving FSEC-004).
+    Does not hash path or URL strings into content_sha256 — content hashes are
+    computed from actual file bytes. This is one repair contributing to FSEC-004;
+    it does not close it. FSEC-004 remains OPEN as a Phase 2 entry gate (see
+    docs/security/SECURITY_FINDINGS.md).
     """
 
     def before_insert(self):
