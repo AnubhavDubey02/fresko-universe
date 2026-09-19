@@ -958,6 +958,8 @@ class TestFreskoDeal(FrappeTestCase):
             frappe.db.delete("Fresko Evidence", {"deal": deal.name})
             frappe.db.delete("Fresko Exception", {"deal": deal.name})
             frappe.db.delete("Fresko Deal", {"name": deal.name})
+            frappe.db.delete("Fresko Container Lot", {"parent": self.container.name})
+            frappe.db.delete("Fresko Container", {"name": self.container.name})
             frappe.db.commit()
 
         self.addCleanup(cleanup_committed_rows)
@@ -1073,6 +1075,8 @@ class TestFreskoDeal(FrappeTestCase):
             frappe.db.delete("Fresko Evidence", {"deal": deal.name})
             frappe.db.delete("Fresko Exception", {"deal": deal.name})
             frappe.db.delete("Fresko Deal", {"name": deal.name})
+            frappe.db.delete("Fresko Container Lot", {"parent": self.container.name})
+            frappe.db.delete("Fresko Container", {"name": self.container.name})
             frappe.db.commit()
 
         self.addCleanup(cleanup_committed_rows)
@@ -1184,6 +1188,8 @@ class TestFreskoDeal(FrappeTestCase):
             frappe.db.delete("Fresko Evidence", {"deal": deal.name})
             frappe.db.delete("Fresko Exception", {"deal": deal.name})
             frappe.db.delete("Fresko Deal", {"name": deal.name})
+            frappe.db.delete("Fresko Container Lot", {"parent": self.container.name})
+            frappe.db.delete("Fresko Container", {"name": self.container.name})
             frappe.db.commit()
 
         self.addCleanup(cleanup_committed_rows)
@@ -1296,6 +1302,8 @@ class TestFreskoDeal(FrappeTestCase):
             frappe.db.delete("Fresko Evidence", {"deal": deal.name})
             frappe.db.delete("Fresko Exception", {"deal": deal.name})
             frappe.db.delete("Fresko Deal", {"name": deal.name})
+            frappe.db.delete("Fresko Container Lot", {"parent": self.container.name})
+            frappe.db.delete("Fresko Container", {"name": self.container.name})
             frappe.db.commit()
 
         self.addCleanup(cleanup_committed_rows)
