@@ -62,7 +62,7 @@ class FreskoEvidence(Document):
             return
 
         # Direct Desk/API changes to operational aggregation/identity fields are blocked
-        if not getattr(self.flags, "in_service", False):
+        if not getattr(getattr(self, "flags", None), "in_service", False):
             for f in (
                 "overall_verification_status",
                 "verified_attachment_count",
@@ -95,3 +95,8 @@ class FreskoEvidence(Document):
                     f"Evidence field '{f}' is immutable once set",
                     title="Evidence Immutable",
                 )
+
+    def on_trash(self):
+        from fresko_universe.fresko_core.services.evidence_service import prevent_captured_evidence_deletion
+
+        prevent_captured_evidence_deletion(self)

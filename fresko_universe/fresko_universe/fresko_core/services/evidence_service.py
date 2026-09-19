@@ -19,7 +19,13 @@ from fresko_universe.constants import (
     SCOPED_MESSAGE_KEY_VERSION,
     TRUSTED_PROVENANCE_TYPES,
 )
-from fresko_universe.permissions import current_roles, evidence_has_permission, is_system_manager, ROLE_APPROVER
+from fresko_universe import permissions
+from fresko_universe.permissions import (
+    ROLE_APPROVER,
+    current_roles,
+    evidence_has_permission,
+    is_system_manager,
+)
 
 
 class IntegrityConflictError(frappe.ValidationError):
@@ -255,14 +261,134 @@ def assert_file_read_permission(file_name_or_url: str, user: str | None = None) 
 def assert_can_capture_evidence(evidence_doc: Any, user: str | None = None) -> None:
     """Ensure user has Approver or System Manager role and read access to Evidence."""
     user = user or frappe.session.user
-    roles = current_roles(user)
-    if user != "Administrator" and not is_system_manager(roles) and ROLE_APPROVER not in roles:
+    roles = permissions.current_roles(user)
+    if user != "Administrator" and not permissions.is_system_manager(roles) and permissions.ROLE_APPROVER not in roles:
         frappe.throw(
             "Evidence capture requires Fresko Approver or System Manager role",
             frappe.PermissionError,
         )
-    if not evidence_has_permission(evidence_doc, "read", user=user):
+    if not permissions.evidence_has_permission(evidence_doc, "read", user=user):
         frappe.throw("Access denied to Evidence", frappe.PermissionError)
+
+
+def validate_completeness_provenance(
+    att_row: dict | Any, parent_row: dict | Any
+) -> tuple[bool, str | None, int | None, str | None]:
+    """Validate completeness provenance contract.
+
+    Binds expected size and hash to their immutable source and provenance record.
+    Arbitrary API inputs cannot establish trusted completeness.
+    Distinguishes offline import verification from provider-delivery verification.
+    Unsupported or missing provenance remains UNKNOWN/PENDING.
+    """
+    prov_type = getattr(att_row, "provenance_type", None) or (
+        att_row.get("provenance_type") if hasattr(att_row, "get") else None
+    )
+    prov_ref = getattr(att_row, "provenance_ref", None) or (
+        att_row.get("provenance_ref") if hasattr(att_row, "get") else None
+    )
+    expected_bytes = getattr(att_row, "expected_byte_count", None) or (
+        att_row.get("expected_byte_count") if hasattr(att_row, "get") else None
+    )
+    expected_hash = getattr(att_row, "expected_sha256", None) or (
+        att_row.get("expected_sha256") if hasattr(att_row, "get") else None
+    )
+
+    if not prov_type or prov_type not in TRUSTED_PROVENANCE_TYPES:
+        return (
+            False,
+            f"Provenance '{prov_type}' is unverified or untrusted; cannot establish completeness",
+            None,
+            None,
+        )
+
+    if prov_type == "OFFLINE_IMPORT_MANIFEST":
+        # Offline import verification: must bind to an immutable manifest file or record
+        if not prov_ref or not str(prov_ref).strip():
+            return (
+                False,
+                "Offline import provenance requires an immutable manifest reference in provenance_ref",
+                None,
+                None,
+            )
+
+        manifest_found = False
+        candidates = [
+            str(prov_ref),
+            frappe.get_site_path(str(prov_ref)) if hasattr(frappe, "get_site_path") else None,
+            os.path.join(os.path.dirname(__file__), "..", "..", "..", str(prov_ref)),
+        ]
+        for c in candidates:
+            if c and os.path.exists(c) and os.path.isfile(c):
+                try:
+                    with open(c, "r", encoding="utf-8") as mf:
+                        json.load(mf)
+                    manifest_found = True
+                    break
+                except Exception:
+                    pass
+
+        if not manifest_found:
+            existing_attempts = frappe.db.sql(
+                """
+                SELECT name FROM `tabFresko Evidence Attempt`
+                WHERE (name = %s OR old_doc_ref = %s OR new_doc_ref = %s)
+                LIMIT 1
+                """,
+                (prov_ref, prov_ref, prov_ref),
+                as_dict=True,
+            )
+            if existing_attempts:
+                manifest_found = True
+
+        if not manifest_found:
+            return (
+                False,
+                f"Offline import manifest '{prov_ref}' could not be verified or located",
+                None,
+                None,
+            )
+
+        return True, None, expected_bytes, expected_hash
+
+    elif prov_type in ("PROVIDER_PAYLOAD_DIGEST", "PROVIDER_HEADER_CONTENT_LENGTH"):
+        # Provider-delivery verification: must be bound to immutable parent transport payload or attempt
+        parent_hash = getattr(parent_row, "message_payload_sha256", None) or (
+            parent_row.get("message_payload_sha256") if hasattr(parent_row, "get") else None
+        )
+        parent_ev_name = getattr(parent_row, "name", None) or (
+            parent_row.get("name") if hasattr(parent_row, "get") else None
+        )
+
+        if not parent_hash and not prov_ref:
+            return (
+                False,
+                "Provider delivery provenance lacks bound parent payload or ingest attempt reference",
+                None,
+                None,
+            )
+
+        if prov_ref:
+            att_attempts = frappe.db.sql(
+                """
+                SELECT name FROM `tabFresko Evidence Attempt`
+                WHERE name = %s AND evidence = %s
+                LIMIT 1
+                """,
+                (prov_ref, parent_ev_name),
+                as_dict=True,
+            )
+            if not att_attempts:
+                return (
+                    False,
+                    f"Provider delivery provenance reference '{prov_ref}' does not match any attempt for evidence '{parent_ev_name}'",
+                    None,
+                    None,
+                )
+
+        return True, None, expected_bytes, expected_hash
+
+    return False, f"Unsupported provenance type: {prov_type}", None, None
 
 
 def ingest_message_evidence(
@@ -355,7 +481,19 @@ def ingest_message_evidence(
 
         existing = existing_rows[0]
 
-        # 1. Collision check: all 4 original scope fields must match exactly
+        # 1. Permission check FIRST: never expose existing record merely because key matches
+        if not permissions.evidence_has_permission(existing.name, "read", user=frappe.session.user):
+            _record_attempt(
+                evidence=existing.name,
+                operation="MESSAGE_INGEST",
+                outcome="ACCESS_DENIED",
+                scoped_message_key=scoped_key,
+                payload_sha256=payload_sha,
+                reason="Caller lacks permission to access existing evidence on redelivery",
+            )
+            frappe.throw("Access denied", frappe.PermissionError)
+
+        # 2. Collision check: all 4 original scope fields must match exactly
         scope_matches = (
             existing.provider == provider
             and existing.provider_account_id == provider_account_id
@@ -376,7 +514,7 @@ def ingest_message_evidence(
                 f"Scoped message key collision detected on evidence {existing.name}",
             )
 
-        # 2. Payload conflict check
+        # 3. Payload conflict check
         if existing.message_payload_sha256 and existing.message_payload_sha256 != payload_sha:
             frappe.db.set_value(
                 "Fresko Evidence",
@@ -396,18 +534,6 @@ def ingest_message_evidence(
                 reason="Conflicting payload received for existing scoped message key",
             )
             return frappe.get_doc("Fresko Evidence", existing.name), "CONFLICT_PAYLOAD_MISMATCH"
-
-        # 3. Permission check: never expose existing record merely because key matches
-        if not evidence_has_permission(existing.name, "read", user=frappe.session.user):
-            _record_attempt(
-                evidence=existing.name,
-                operation="MESSAGE_INGEST",
-                outcome="ACCESS_DENIED",
-                scoped_message_key=scoped_key,
-                payload_sha256=payload_sha,
-                reason="Caller lacks permission to access existing evidence on redelivery",
-            )
-            frappe.throw("Access denied", frappe.PermissionError)
 
         # 4. Idempotent redelivery
         _record_attempt(
@@ -438,7 +564,7 @@ def ingest_attachment(
     parent = _lock_parent_evidence(evidence_name)
 
     # Permission check on parent and file
-    if not evidence_has_permission(evidence_name, "write", user=frappe.session.user):
+    if not permissions.evidence_has_permission(evidence_name, "write", user=frappe.session.user):
         frappe.throw("Access denied to create attachment for Evidence", frappe.PermissionError)
     assert_file_read_permission(file_url)
 
@@ -465,6 +591,18 @@ def ingest_attachment(
 
     if existing_att:
         curr = existing_att[0]
+        # Permission check: caller must have read permission on parent to access existing attachment
+        if not permissions.evidence_has_permission(evidence_name, "read", user=frappe.session.user):
+            _record_attempt(
+                evidence=evidence_name,
+                evidence_attachment=curr.name,
+                operation="ATTACHMENT_INGEST",
+                outcome="ACCESS_DENIED",
+                logical_attachment_key=logical_key,
+                reason="Caller lacks read permission for existing attachment on redelivery",
+            )
+            frappe.throw("Access denied", frappe.PermissionError)
+
         if curr.file_url == file_url:
             _record_attempt(
                 evidence=evidence_name,
@@ -546,7 +684,23 @@ def verify_and_capture_attachment(attachment_name: str) -> CaptureResult:
     - Trusted completeness provenance validation.
     - Compare-and-set idempotency on repeated verification.
     """
-    # 1. Fetch attachment and lock parent Evidence first
+    # 1. Look up parent Evidence first and acquire parent-first lock FOR UPDATE
+    parent_evidence_rows = frappe.db.sql(
+        "SELECT evidence FROM `tabFresko Evidence Attachment` WHERE name = %s",
+        (attachment_name,),
+        as_dict=True,
+    )
+    if not parent_evidence_rows:
+        frappe.throw(f"Attachment '{attachment_name}' not found", frappe.DoesNotExistError)
+
+    parent_name = (
+        parent_evidence_rows[0].evidence
+        if hasattr(parent_evidence_rows[0], "evidence")
+        else parent_evidence_rows[0].get("evidence")
+    )
+    parent = _lock_parent_evidence(parent_name)
+
+    # 2. Lock child attachment row second
     att_rows = frappe.db.sql(
         """
         SELECT name, evidence, file_url, storage_ref, provenance_type, provenance_ref,
@@ -564,7 +718,6 @@ def verify_and_capture_attachment(attachment_name: str) -> CaptureResult:
         frappe.throw(f"Attachment '{attachment_name}' not found", frappe.DoesNotExistError)
 
     att = att_rows[0]
-    parent = _lock_parent_evidence(att.evidence)
 
     # 2. Authority and access check
     parent_doc = frappe.get_doc("Fresko Evidence", parent.name)
@@ -582,20 +735,17 @@ def verify_and_capture_attachment(attachment_name: str) -> CaptureResult:
         )
 
     # 4. Check completeness provenance contract
-    if att.provenance_type not in TRUSTED_PROVENANCE_TYPES:
-        reason = (
-            f"Provenance '{att.provenance_type}' is unverified or untrusted; "
-            "matching disk reads do not prove transport completeness"
-        )
+    is_trusted, prov_reason, bound_bytes, bound_hash = validate_completeness_provenance(att, parent)
+    if not is_trusted:
         _record_attempt(
             evidence=parent.name,
             evidence_attachment=att.name,
             operation="ATTACHMENT_VERIFY",
             outcome="VERIFICATION_FAILURE_PERMANENT",
             logical_attachment_key=att.logical_attachment_key,
-            reason=reason,
+            reason=prov_reason,
         )
-        return CaptureResult(success=False, status="PENDING", reason=reason)
+        return CaptureResult(success=False, status="PENDING", reason=prov_reason)
 
     # 5. Transition to VERIFYING
     frappe.db.set_value(
@@ -744,20 +894,42 @@ def verify_and_capture_attachment(attachment_name: str) -> CaptureResult:
         aggregate_parent_evidence_status(parent.name)
         return CaptureResult(success=False, status="FAILED_RETRYABLE", reason=reason)
 
-    # 8. All verification invariants passed -> mark CAPTURED atomically
-    frappe.db.set_value(
-        "Fresko Evidence Attachment",
-        att.name,
-        {
-            "content_byte_count": byte_count,
-            "content_sha256": computed_sha256,
-            "hash_algorithm": HASH_ALGORITHM_SHA256_V1,
-            "capture_status": "CAPTURED",
-            "readback_verified": 1,
-            "failure_reason": None,
-        },
-        update_modified=False,
-    )
+    # 8. All verification invariants passed -> mark CAPTURED atomically with savepoint isolation
+    sp = "sp_att_cap_" + frappe.generate_hash(length=8)
+    frappe.db.savepoint(sp)
+    try:
+        frappe.db.set_value(
+            "Fresko Evidence Attachment",
+            att.name,
+            {
+                "content_byte_count": byte_count,
+                "content_sha256": computed_sha256,
+                "hash_algorithm": HASH_ALGORITHM_SHA256_V1,
+                "capture_status": "CAPTURED",
+                "readback_verified": 1,
+                "failure_reason": None,
+            },
+            update_modified=False,
+        )
+        frappe.db.release_savepoint(sp)
+    except Exception as e:
+        frappe.db.rollback(save_point=sp)
+        _record_attempt(
+            evidence=parent.name,
+            evidence_attachment=att.name,
+            operation="ATTACHMENT_VERIFY",
+            outcome="FAILED_DB_WRITE",
+            logical_attachment_key=att.logical_attachment_key,
+            scoped_attachment_version_key=att.scoped_attachment_version_key,
+            observed_byte_count=byte_count,
+            observed_sha256=computed_sha256,
+            reason=f"Database write failed during capture finalization: {e}",
+        )
+        return CaptureResult(
+            success=False,
+            status="FAILED_RETRYABLE",
+            reason=f"Database write failed: {e}",
+        )
 
     _record_attempt(
         evidence=parent.name,
@@ -796,7 +968,23 @@ def supersede_attachment(
     if not reason or not str(reason).strip():
         frappe.throw("A justification reason is mandatory for corrections", frappe.ValidationError)
 
-    # Parent-first lock
+    # Parent-first lock: look up parent Evidence first and acquire parent-first lock FOR UPDATE
+    parent_evidence_rows = frappe.db.sql(
+        "SELECT evidence FROM `tabFresko Evidence Attachment` WHERE name = %s",
+        (attachment_name,),
+        as_dict=True,
+    )
+    if not parent_evidence_rows:
+        frappe.throw(f"Attachment '{attachment_name}' not found", frappe.DoesNotExistError)
+
+    parent_name = (
+        parent_evidence_rows[0].evidence
+        if hasattr(parent_evidence_rows[0], "evidence")
+        else parent_evidence_rows[0].get("evidence")
+    )
+    parent = _lock_parent_evidence(parent_name)
+
+    # Lock child attachment row second
     att_rows = frappe.db.sql(
         """
         SELECT name, evidence, provider, provider_account_id, conversation_id,
@@ -814,7 +1002,6 @@ def supersede_attachment(
         frappe.throw(f"Attachment '{attachment_name}' not found", frappe.DoesNotExistError)
 
     old_att = att_rows[0]
-    parent = _lock_parent_evidence(old_att.evidence)
 
     # Permission check: Approver or System Manager only
     parent_doc = frappe.get_doc("Fresko Evidence", parent.name)
@@ -919,16 +1106,20 @@ def aggregate_parent_evidence_status(evidence_name: str) -> str:
         return "CONFLICT"
 
     has_failing = any(
-        a.capture_status in ("PARTIAL", "HASH_MISMATCH", "FAILED_PERMANENT") for a in attachments
+        getattr(a, "capture_status", None) in ("PARTIAL", "HASH_MISMATCH", "FAILED_PERMANENT")
+        for a in attachments
     )
 
-    manifest_status = parent.manifest_status or "UNKNOWN"
-    expected_count = parent.expected_attachment_count
+    manifest_status = getattr(parent, "manifest_status", None) or "UNKNOWN"
+    expected_count = getattr(parent, "expected_attachment_count", None)
     if expected_count is None:
         expected_count = -1
 
     captured_count = sum(
-        1 for a in attachments if a.capture_status == "CAPTURED" and a.readback_verified == 1
+        1
+        for a in attachments
+        if getattr(a, "capture_status", None) == "CAPTURED"
+        and getattr(a, "readback_verified", 0) == 1
     )
 
     frappe.db.set_value(
@@ -978,3 +1169,78 @@ def aggregate_parent_evidence_status(evidence_name: str) -> str:
         update_modified=False,
     )
     return new_status
+
+
+def prevent_captured_file_deletion(doc, method=None):
+    """FSEC-004/005: Protect captured original bytes against application-level deletion."""
+    file_url = getattr(doc, "file_url", None)
+    file_name = getattr(doc, "name", None)
+
+    refs = frappe.db.sql(
+        """
+        SELECT name, evidence, capture_status, version
+        FROM `tabFresko Evidence Attachment`
+        WHERE (file = %s OR file_url = %s OR file = %s OR file_url = %s)
+          AND capture_status = 'CAPTURED'
+        LIMIT 1
+        """,
+        (file_name, file_name, file_url, file_url),
+        as_dict=True,
+    )
+    if refs:
+        ref_name = getattr(refs[0], "name", None) or (refs[0].get("name") if hasattr(refs[0], "get") else str(refs[0]))
+        frappe.throw(
+            f"Cannot delete File '{file_name}': referenced by captured Evidence Attachment '{ref_name}'. "
+            "Captured original bytes are immutable.",
+            frappe.PermissionError,
+        )
+
+
+def prevent_captured_file_modification(doc, method=None):
+    """FSEC-004/005: Protect captured original bytes against application-level modification/replacement."""
+    if getattr(doc, "is_new", None) and doc.is_new():
+        return
+    file_url = getattr(doc, "file_url", None)
+    file_name = getattr(doc, "name", None)
+
+    refs = frappe.db.sql(
+        """
+        SELECT name, evidence, capture_status, version
+        FROM `tabFresko Evidence Attachment`
+        WHERE (file = %s OR file_url = %s OR file = %s OR file_url = %s)
+          AND capture_status = 'CAPTURED'
+        LIMIT 1
+        """,
+        (file_name, file_name, file_url, file_url),
+        as_dict=True,
+    )
+    if refs:
+        ref_name = getattr(refs[0], "name", None) or (refs[0].get("name") if hasattr(refs[0], "get") else str(refs[0]))
+        for field in ("file_url", "content_hash", "file_name", "file_size"):
+            if getattr(doc, "has_value_changed", None) and doc.has_value_changed(field):
+                frappe.throw(
+                    f"Cannot modify File '{file_name}' field '{field}': referenced by captured Evidence Attachment '{ref_name}'. "
+                    "Captured original bytes are immutable.",
+                    frappe.PermissionError,
+                )
+
+
+def prevent_captured_evidence_deletion(doc, method=None):
+    """Protect captured or scoped Fresko Evidence from deletion."""
+    status = getattr(doc, "overall_verification_status", None)
+    scoped_key = getattr(doc, "scoped_message_key", None)
+    if status in ("COMPLETE", "PARTIAL") or scoped_key:
+        frappe.throw(
+            "Captured or scoped Fresko Evidence records cannot be deleted",
+            frappe.PermissionError,
+        )
+    att_count = (
+        frappe.db.count("Fresko Evidence Attachment", {"evidence": doc.name})
+        if hasattr(frappe.db, "count")
+        else len(frappe.db.sql("SELECT name FROM `tabFresko Evidence Attachment` WHERE evidence=%s", (doc.name,)))
+    )
+    if att_count > 0:
+        frappe.throw(
+            "Fresko Evidence with existing attachments cannot be deleted",
+            frappe.PermissionError,
+        )

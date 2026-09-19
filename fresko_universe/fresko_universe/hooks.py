@@ -45,4 +45,15 @@ has_permission = {
     "Fresko Evidence Attempt": "fresko_universe.permissions.evidence_attempt_has_permission",
 }
 
+# FSEC-004 / FSEC-005 — Protect captured original files and evidence records
+doc_events = {
+    "File": {
+        "on_trash": "fresko_universe.fresko_core.services.evidence_service.prevent_captured_file_deletion",
+        "before_save": "fresko_universe.fresko_core.services.evidence_service.prevent_captured_file_modification",
+    },
+    "Fresko Evidence": {
+        "on_trash": "fresko_universe.fresko_core.services.evidence_service.prevent_captured_evidence_deletion",
+    },
+}
+
 
