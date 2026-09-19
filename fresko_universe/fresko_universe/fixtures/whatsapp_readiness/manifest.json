@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "purpose": "Phase 2 readiness testing only; no live ingestion authorization",
+  "archive": {
+    "drive_id": "1JYTZvKROdcy2tRMbbgfiRaVb7qZ4drxS",
+    "filename": "WhatsApp Chat - FRESKO UNIVERSAL BACKEND TEAM.zip",
+    "size_bytes": 61882654,
+    "sha256": "d2ea3162c657b90dcf346b18609f883e27eb6a9640ab8cc7fc47772b602c2b02",
+    "entry_count": 139,
+    "transcript_member": "_chat.txt",
+    "transcript_date_range": [
+      "2026-09-02",
+      "2026-09-18"
+    ],
+    "observed_message_records": 308,
+    "observed_attachment_references": 138
+  },
+  "extraction": {
+    "drive_method": "google_drive_fetch(download_raw_file=true, include_base64=false)",
+    "download_target": "temporary file outside Git",
+    "integrity_check": "unzip -t",
+    "transcript_command": "unzip -p ARCHIVE _chat.txt",
+    "reviewed_on": "2026-09-18",
+    "full_archive_committed": false
+  },
+  "fixture_files": [
+    "cases.json"
+  ]
+}

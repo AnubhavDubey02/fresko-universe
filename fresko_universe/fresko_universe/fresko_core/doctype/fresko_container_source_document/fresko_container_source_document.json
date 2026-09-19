@@ -1,0 +1,41 @@
+{
+ "doctype": "DocType",
+ "name": "Fresko Container Source Document",
+ "module": "Fresko Core",
+ "istable": 1,
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "fields": [
+  {
+   "fieldname": "document_type",
+   "fieldtype": "Select",
+   "label": "Document Type",
+   "reqd": 1,
+   "options": "Bill of Lading\nPacking List\nInvoice\nGatepass\nOther",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "attachment",
+   "fieldtype": "Attach",
+   "label": "Attachment"
+  },
+  {
+   "fieldname": "reference",
+   "fieldtype": "Data",
+   "label": "External Reference",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "content_hash",
+   "fieldtype": "Data",
+   "label": "Content Hash",
+   "read_only": 1
+  },
+  {
+   "fieldname": "notes",
+   "fieldtype": "Small Text",
+   "label": "Notes"
+  }
+ ],
+ "permissions": []
+}

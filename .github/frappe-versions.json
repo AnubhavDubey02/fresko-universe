@@ -1,0 +1,24 @@
+{
+  "pinned_at": "2026-09-15",
+  "source": "gh api repos/frappe/{frappe,erpnext}/commits/version-15 (tip at pin time matched release tags)",
+  "frappe": {
+    "repo": "https://github.com/frappe/frappe",
+    "branch": "version-15",
+    "tag": "v15.120.1",
+    "sha": "9f8ae9cd25b6735be345da6cc12e9f5a96050c68",
+    "commit_date": "2026-09-08T17:08:18Z",
+    "commit_message": "chore(release): Bumped to Version 15.120.1"
+  },
+  "erpnext": {
+    "repo": "https://github.com/frappe/erpnext",
+    "branch": "version-15",
+    "tag": "v15.121.2",
+    "sha": "df8b7f9648c2ec4da12db8c4022edc8dd1018c6b",
+    "commit_date": "2026-09-09T09:24:59Z",
+    "commit_message": "chore(release): Bumped to Version 15.121.2"
+  },
+  "python": "3.11",
+  "node": "18",
+  "mariadb": "10.6",
+  "notes": "Gate 2: PR CI must install these exact SHAs, migrate, and run fresko_universe tests. Do not float to branch tips without updating this file."
+}
