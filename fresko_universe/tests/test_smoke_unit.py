@@ -2389,6 +2389,85 @@ class TestFSEC004FSEC005Behavioral(unittest.TestCase):
             if os.path.exists(manifest_path):
                 os.remove(manifest_path)
 
+    def test_manifest_must_not_be_fabricated_from_observed_values(self):
+        """F2-002: a manifest must never be synthesised from observed bytes/hash.
+
+        _load_manifest_data() falls back to an attempt row when the manifest file
+        cannot be read. If source_payload will not parse, it builds
+        {"attachments": [{"expected_byte_count": observed, "expected_sha256":
+        observed}]} — fabricating the authoritative source out of values that
+        were computed from the actual file. Verifying actual against expected
+        then proves nothing, yet the attachment is accepted under the trusted
+        OFFLINE_IMPORT_MANIFEST provenance type.
+
+        observed_* is written only on ATTACHMENT_VERIFY attempts, and this query
+        has no operation filter, so such a row can be selected here.
+        """
+        import frappe
+        from fresko_universe.fresko_core.services.evidence_service import (
+            validate_completeness_provenance,
+        )
+
+        observed_bytes = 4242
+        observed_hash = "observed_hash_computed_from_actual_bytes"
+
+        verify_attempt = {
+            "name": "ATTEMPT-VERIFY-1",
+            "source_payload": None,
+            "observed_byte_count": observed_bytes,
+            "observed_sha256": observed_hash,
+        }
+
+        orig_sql = frappe.db.sql
+        try:
+            frappe.db.sql = MagicMock(
+                return_value=[types.SimpleNamespace(**verify_attempt)]
+            )
+
+            att_row = {
+                "name": "ATT-CIRCULAR",
+                "file_url": "/private/files/whatever.pdf",
+                "identity_type": "ordinal",
+                "attachment_ordinal": 0,
+                "logical_attachment_key": "log_circular",
+                "provenance_type": "OFFLINE_IMPORT_MANIFEST",
+                # Points at an attempt row, not a readable manifest file.
+                "provenance_ref": "ATTEMPT-VERIFY-1",
+                "expected_byte_count": -1,
+                "expected_sha256": None,
+            }
+            parent_row = {"name": "EV-CIRC", "message_payload_sha256": "parent_hash"}
+
+            trusted, reason, bound_bytes, bound_hash = validate_completeness_provenance(
+                att_row, parent_row
+            )
+
+            print(
+                "\nF2-002 manifest_fabrication_from_observed:\n"
+                f"trusted={trusted}\n"
+                f"reason={reason}\n"
+                f"bound_bytes={bound_bytes} (observed was {observed_bytes})\n"
+                f"bound_hash={bound_hash} (observed was {observed_hash})\n"
+            )
+
+            self.assertFalse(
+                trusted,
+                "F2-002: expected values were derived from observed values, so "
+                "verification would be circular and must not be trusted",
+            )
+            self.assertNotEqual(
+                bound_bytes,
+                observed_bytes,
+                "expected byte count must not be the observed byte count",
+            )
+            self.assertNotEqual(
+                bound_hash,
+                observed_hash,
+                "expected hash must not be the observed hash",
+            )
+        finally:
+            frappe.db.sql = orig_sql
+
     def test_regression_superseded_file_protection_and_verification_rejection(self):
         """Finding 2: Files backing SUPERSEDED attachments must remain protected; superseded attachments cannot be verified."""
         import os
