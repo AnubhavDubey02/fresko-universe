@@ -1630,17 +1630,88 @@ class TestFSEC004FSEC005Behavioral(unittest.TestCase):
             existing_doc = MagicMock(name="EV-EXISTING", overall_verification_status="CONFLICT")
             frappe.get_doc = MagicMock(return_value=existing_doc)
 
-            doc, outcome = ingest_message_evidence(
-                provider="whatsapp-cloud",
-                provider_account_id="ACC_1",
-                conversation_id="CONV_1",
-                provider_message_id="MSG_1",
-                raw_payload={"text": "Different conflicting message content"},
-            )
+            # F2-001: this test asserts conflict *outcome* semantics, which now
+            # require the conflict to have been durably recorded. Make that
+            # precondition explicit instead of relying on it accidentally.
+            from fresko_universe.fresko_core.services import evidence_service
+
+            orig_persist = evidence_service._persist_attempt_independently
+            evidence_service._persist_attempt_independently = lambda fields: True
+            try:
+                doc, outcome = ingest_message_evidence(
+                    provider="whatsapp-cloud",
+                    provider_account_id="ACC_1",
+                    conversation_id="CONV_1",
+                    provider_message_id="MSG_1",
+                    raw_payload={"text": "Different conflicting message content"},
+                )
+            finally:
+                evidence_service._persist_attempt_independently = orig_persist
             self.assertEqual(outcome, "CONFLICT_PAYLOAD_MISMATCH")
         finally:
             frappe.new_doc = orig_new_doc
             frappe.db.sql = orig_sql
+
+    def test_payload_conflict_fails_closed_when_audit_not_durable(self):
+        """F2-001: a payload conflict that cannot be durably recorded must raise.
+
+        Previously _record_attempt(isolated=True) silently fell back to an insert
+        in the caller's transaction and the conflict was still reported as
+        handled, so a caller rollback erased the only record of it.
+        """
+        from fresko_universe.fresko_core.services.evidence_service import (
+            IntegrityConflictError,
+            ingest_message_evidence,
+        )
+        from fresko_universe.fresko_core.services import evidence_service
+        import frappe
+
+        existing_row = {
+            "name": "EV-EXISTING",
+            "deal": None,
+            "provider": "whatsapp-cloud",
+            "provider_account_id": "ACC_1",
+            "conversation_id": "CONV_1",
+            "provider_message_id": "MSG_1",
+            "scoped_message_key": "mocked_key",
+            "message_payload_sha256": "original_payload_hash_1111",
+            "overall_verification_status": "PENDING",
+        }
+
+        orig_new_doc = frappe.new_doc
+        orig_sql = frappe.db.sql
+        orig_persist = evidence_service._persist_attempt_independently
+        try:
+            def flex_new_doc(dt, *a, **k):
+                d = MagicMock()
+                d.doctype = dt
+                if dt == "Fresko Evidence":
+                    d.insert = MagicMock(side_effect=frappe.UniqueValidationError("Fresko Evidence", "EV-NEW", "Duplicate key"))
+                else:
+                    d.insert = MagicMock()
+                return d
+
+            frappe.new_doc = MagicMock(side_effect=flex_new_doc)
+            frappe.db.sql = MagicMock(return_value=[types.SimpleNamespace(**existing_row)])
+            frappe.get_doc = MagicMock(return_value=MagicMock(name="EV-EXISTING"))
+
+            # Independent audit connection unavailable.
+            evidence_service._persist_attempt_independently = lambda fields: False
+
+            with self.assertRaises(IntegrityConflictError) as ctx:
+                ingest_message_evidence(
+                    provider="whatsapp-cloud",
+                    provider_account_id="ACC_1",
+                    conversation_id="CONV_1",
+                    provider_message_id="MSG_1",
+                    raw_payload={"text": "Different conflicting message content"},
+                )
+            self.assertIn("could not be durably recorded", str(ctx.exception))
+            self.assertIn("CALLER_TRANSACTION_BOUND", str(ctx.exception))
+        finally:
+            frappe.new_doc = orig_new_doc
+            frappe.db.sql = orig_sql
+            evidence_service._persist_attempt_independently = orig_persist
 
     def test_unauthorized_redelivery_blocked(self):
         from fresko_universe.fresko_core.services.evidence_service import ingest_message_evidence
