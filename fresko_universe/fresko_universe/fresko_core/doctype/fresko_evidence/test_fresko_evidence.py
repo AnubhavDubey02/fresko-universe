@@ -578,23 +578,13 @@ class TestFreskoEvidence(FrappeTestCase):
         )
         self.assertTrue(len(attempts) > 0, "Conflict attempt record must survive caller rollback")
 
-    def test_isolated_audit_attempt_survives_independent_connection_failure(self):
-        """F2-001: an isolated conflict attempt must stay durable even when the
-        independent audit connection is unavailable.
+    def test_conflict_records_durable_audit_with_committed_independent_state(self):
+        """F2-001 (healthy path): a recorded conflict must declare the durability it achieved.
 
-        _record_attempt(isolated=True) calls _persist_attempt_independently() and,
-        if that returns False, falls through to an insert inside the caller's own
-        transaction. That fallback is destroyed by caller rollback, so the only
-        record that a CONFLICT_PAYLOAD_MISMATCH ever happened disappears — and
-        _record_attempt returns None either way, so no caller can detect it.
-
-        This test injects the independent-connection failure, rolls the caller
-        back, and asserts the audit record is still there. It reproduces the
-        defect by failing on the final assertion.
+        When the independent audit connection works, the attempt row must be
+        stamped COMMITTED_INDEPENDENT and must survive caller rollback.
         """
-        from fresko_universe.fresko_core.services import evidence_service
-
-        msg_id = f"MSG_F2_001_{frappe.generate_hash(length=6)}"
+        msg_id = f"MSG_F2_001_OK_{frappe.generate_hash(length=6)}"
 
         ev1, _ = ingest_message_evidence(
             provider="whatsapp-cloud",
@@ -604,6 +594,79 @@ class TestFreskoEvidence(FrappeTestCase):
             raw_payload={"text": "Original payload"},
         )
         frappe.db.commit()
+
+        def cleanup_committed_rows():
+            frappe.set_user("Administrator")
+            frappe.db.rollback()
+            frappe.db.delete("Fresko Evidence Attempt", {"evidence": ev1.name})
+            frappe.db.delete("Fresko Evidence", {"name": ev1.name})
+            frappe.db.commit()
+
+        self.addCleanup(cleanup_committed_rows)
+
+        _ev_conf, outcome = ingest_message_evidence(
+            provider="whatsapp-cloud",
+            provider_account_id="ACC_BENCH",
+            conversation_id="CONV_BENCH",
+            provider_message_id=msg_id,
+            raw_payload={"text": "TAMPERED payload"},
+        )
+        self.assertEqual(outcome, "CONFLICT_PAYLOAD_MISMATCH")
+
+        frappe.db.rollback()
+
+        rows = frappe.db.sql(
+            """
+            SELECT durability_state
+            FROM `tabFresko Evidence Attempt`
+            WHERE evidence = %s AND outcome = 'CONFLICT_PAYLOAD_MISMATCH'
+            """,
+            (ev1.name,),
+            as_dict=True,
+        )
+
+        print(
+            "\nF2-001 durable_conflict_audit:\n"
+            f"rows_after_rollback={len(rows)}\n"
+            f"durability_states={[r['durability_state'] for r in rows]}\n"
+        )
+
+        self.assertEqual(len(rows), 1, "conflict attempt must survive caller rollback")
+        self.assertEqual(
+            rows[0]["durability_state"],
+            "COMMITTED_INDEPENDENT",
+            "a row that survived independent commit must say so",
+        )
+
+    def test_conflict_fails_closed_when_independent_audit_connection_fails(self):
+        """F2-001 (degraded path): an unrecordable conflict must fail closed.
+
+        Previously _record_attempt(isolated=True) fell back to an insert inside the
+        caller's transaction when the independent connection failed, returned None,
+        and let ingest_message_evidence report CONFLICT_PAYLOAD_MISMATCH as a
+        handled conflict. On caller rollback the only record of the conflict was
+        destroyed, and nothing had signalled that.
+
+        Now _record_attempt reports the durability it actually achieved, and the
+        conflict path refuses to claim a handled conflict it cannot evidence.
+        """
+        from fresko_universe.fresko_core.services import evidence_service
+
+        msg_id = f"MSG_F2_001_FAIL_{frappe.generate_hash(length=6)}"
+        original_payload = {"text": "Original payload"}
+
+        ev1, _ = ingest_message_evidence(
+            provider="whatsapp-cloud",
+            provider_account_id="ACC_BENCH",
+            conversation_id="CONV_BENCH",
+            provider_message_id=msg_id,
+            raw_payload=original_payload,
+        )
+        frappe.db.commit()
+
+        original_sha = frappe.db.get_value(
+            "Fresko Evidence", ev1.name, "message_payload_sha256"
+        )
 
         def cleanup_committed_rows():
             frappe.set_user("Administrator")
@@ -624,54 +687,62 @@ class TestFreskoEvidence(FrappeTestCase):
 
         evidence_service._persist_attempt_independently = failing_persist
         try:
-            _ev_conf, outcome = ingest_message_evidence(
-                provider="whatsapp-cloud",
-                provider_account_id="ACC_BENCH",
-                conversation_id="CONV_BENCH",
-                provider_message_id=msg_id,
-                raw_payload={"text": "TAMPERED payload"},
-            )
+            with self.assertRaises(evidence_service.IntegrityConflictError) as ctx:
+                ingest_message_evidence(
+                    provider="whatsapp-cloud",
+                    provider_account_id="ACC_BENCH",
+                    conversation_id="CONV_BENCH",
+                    provider_message_id=msg_id,
+                    raw_payload={"text": "TAMPERED payload"},
+                )
         finally:
             evidence_service._persist_attempt_independently = real_persist
 
-        # Assert the intended semantics, not merely "something happened" — an
-        # unrelated failure must not be mistaken for reproducing this defect.
-        self.assertEqual(outcome, "CONFLICT_PAYLOAD_MISMATCH")
+        # Assert the intended protection reason, not merely that something raised.
+        self.assertIn("could not be durably recorded", str(ctx.exception))
+        self.assertIn("CALLER_TRANSACTION_BOUND", str(ctx.exception))
         self.assertIn(
             "CONFLICT_PAYLOAD_MISMATCH",
             independent_attempts,
             "independent persistence must have been attempted for the conflict",
         )
 
-        rows_before = frappe.db.count(
-            "Fresko Evidence Attempt",
-            {"evidence": ev1.name, "outcome": "CONFLICT_PAYLOAD_MISMATCH"},
-        )
-        self.assertGreater(
-            rows_before,
-            0,
-            "conflict attempt must be visible inside the caller transaction before rollback",
-        )
-
         frappe.db.rollback()
 
-        rows_after = frappe.db.count(
+        durable_rows = frappe.db.count(
             "Fresko Evidence Attempt",
             {"evidence": ev1.name, "outcome": "CONFLICT_PAYLOAD_MISMATCH"},
+        )
+        persisted_sha = frappe.db.get_value(
+            "Fresko Evidence", ev1.name, "message_payload_sha256"
+        )
+        persisted_status = frappe.db.get_value(
+            "Fresko Evidence", ev1.name, "overall_verification_status"
         )
 
         print(
-            "\nF2-001 audit_durability_on_independent_failure:\n"
+            "\nF2-001 conflict_fails_closed_on_independent_failure:\n"
             f"independent_persist_attempted={independent_attempts}\n"
-            f"attempt_rows_before_rollback={rows_before}\n"
-            f"attempt_rows_after_rollback={rows_after}\n"
+            f"durable_conflict_rows_after_rollback={durable_rows}\n"
+            f"payload_sha_unchanged={persisted_sha == original_sha}\n"
+            f"overall_verification_status={persisted_status}\n"
         )
 
-        self.assertGreater(
-            rows_after,
+        # The caller-bound row is genuinely gone — that is physics, and the point
+        # is that nothing claimed otherwise and the operation did not succeed.
+        self.assertEqual(
+            durable_rows,
             0,
-            "F2-001: conflict audit attempt was lost on caller rollback because the "
-            "isolated write silently fell back into the caller's transaction",
+            "caller-bound attempt is expected to be lost; the fix is failing closed, "
+            "not pretending the row survived",
+        )
+        # The tampered payload must not have been accepted, and the CONFLICT status
+        # write must have rolled back with the caller.
+        self.assertEqual(persisted_sha, original_sha, "original payload hash must be intact")
+        self.assertNotEqual(
+            persisted_status,
+            "CONFLICT",
+            "rolled-back conflict status must not persist as a handled conflict",
         )
 
     def test_source_bound_expectations_and_ambiguity_rejection(self):

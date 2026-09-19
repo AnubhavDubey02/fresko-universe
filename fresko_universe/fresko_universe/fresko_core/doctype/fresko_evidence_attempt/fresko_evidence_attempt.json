@@ -71,6 +71,14 @@
    "read_only": 1
   },
   {
+   "fieldname": "durability_state",
+   "fieldtype": "Select",
+   "label": "Durability State",
+   "options": "COMMITTED_INDEPENDENT\nCALLER_TRANSACTION_BOUND\nUNKNOWN",
+   "default": "UNKNOWN",
+   "read_only": 1
+  },
+  {
    "fieldname": "payload_sha256",
    "fieldtype": "Data",
    "label": "Payload SHA256",

@@ -230,12 +230,24 @@ def _record_attempt(
     observed_sha256: str | None = None,
     reason: str | None = None,
     isolated: bool = False,
-) -> None:
+) -> str:
     """Insert an authoritative, structured, append-only attempt record.
 
     Internal blanket commits are NEVER performed.
     When isolated=True, the record is persisted via a dedicated database transaction
-    so it survives caller rollback without committing the caller's active database transaction.
+    so it survives caller rollback without committing the caller's active database
+    transaction.
+
+    Returns the durability_state actually achieved — never a claim stronger than
+    the truth:
+      COMMITTED_INDEPENDENT    — committed on an independent connection.
+      CALLER_TRANSACTION_BOUND — written inside the caller's transaction and
+                                 therefore lost if the caller rolls back. This is
+                                 the honest result both for isolated=False callers
+                                 and for isolated=True callers whose independent
+                                 write failed (F2-001: this case previously
+                                 degraded silently and reported nothing).
+    Callers that require durable audit MUST inspect the return value.
     """
     now = now_datetime()
     actor = frappe.session.user or "Administrator"
@@ -258,6 +270,7 @@ def _record_attempt(
         "actor": actor,
         "operation": operation,
         "outcome": outcome,
+        "durability_state": "COMMITTED_INDEPENDENT" if isolated else "CALLER_TRANSACTION_BOUND",
         "payload_sha256": payload_sha256,
         "existing_payload_sha256": existing_payload_sha256,
         "source_payload": source_payload,
@@ -270,9 +283,26 @@ def _record_attempt(
     }
 
     if isolated:
-        persisted = _persist_attempt_independently(fields)
-        if persisted:
-            return
+        if _persist_attempt_independently(fields):
+            return "COMMITTED_INDEPENDENT"
+        # The independent write failed. Do NOT silently keep claiming durability:
+        # downgrade the recorded state to the truth and make the degradation
+        # visible, then still attempt the caller-bound write so the operation is
+        # not left with no record at all.
+        fields["durability_state"] = "CALLER_TRANSACTION_BOUND"
+        try:
+            frappe.log_error(
+                title="Fresko evidence audit durability degraded",
+                message=(
+                    f"Independent persistence failed for attempt on evidence={evidence} "
+                    f"operation={operation} outcome={outcome}. The attempt row is bound to "
+                    f"the caller transaction and will be lost if the caller rolls back."
+                ),
+            )
+        except Exception:
+            # Logging must never alter control flow or mask the caller's error.
+            # The authoritative signal is the returned durability_state.
+            pass
 
     # Within-transaction insert (NEVER calls frappe.db.commit)
     attempt = frappe.new_doc("Fresko Evidence Attempt")
@@ -280,6 +310,7 @@ def _record_attempt(
     for k, v in fields.items():
         setattr(attempt, k, v)
     attempt.insert(ignore_permissions=True)
+    return fields["durability_state"]
 
 
 def _load_manifest_data(prov_ref: str | None) -> Any:
@@ -1010,7 +1041,7 @@ def ingest_message_evidence(
                 "CONFLICT",
                 update_modified=False,
             )
-            _record_attempt(
+            durability = _record_attempt(
                 evidence=existing.name,
                 operation="MESSAGE_INGEST",
                 outcome="CONFLICT_PAYLOAD_MISMATCH",
@@ -1021,6 +1052,16 @@ def ingest_message_evidence(
                 reason="Conflicting payload received for existing scoped message key",
                 isolated=True,
             )
+            # F2-001: a conflict that cannot be durably recorded must not be
+            # reported as a handled conflict. If the caller rolls back, the only
+            # evidence of the conflict disappears, so fail closed instead of
+            # returning an outcome the audit trail cannot support.
+            if durability != "COMMITTED_INDEPENDENT":
+                raise IntegrityConflictError(
+                    f"Payload conflict detected on evidence {existing.name} but the "
+                    f"conflict could not be durably recorded (durability_state="
+                    f"{durability}); refusing to report a handled conflict."
+                )
             return frappe.get_doc("Fresko Evidence", existing.name), "CONFLICT_PAYLOAD_MISMATCH"
 
         # 4. Idempotent redelivery

@@ -227,6 +227,22 @@ EVIDENCE_ATTEMPT_OUTCOMES = [
     "VALIDATION_FAILED",
 ]
 
+# F2-001 / Gate 9: audit durability is a SEPARATE dimension from business outcome.
+# An attempt row describes what the operation concluded; durability_state describes
+# how certain we are that the row itself survives. Never conflate the two.
+#   COMMITTED_INDEPENDENT    — written and committed on an independent connection;
+#                              survives caller rollback.
+#   CALLER_TRANSACTION_BOUND — written inside the caller's transaction; will be
+#                              destroyed if the caller rolls back.
+#   UNKNOWN                  — durability was never recorded (legacy rows written
+#                              before this dimension existed). Not an assertion of
+#                              either state; genuinely unknown.
+EVIDENCE_ATTEMPT_DURABILITY_STATES = [
+    "COMMITTED_INDEPENDENT",
+    "CALLER_TRANSACTION_BOUND",
+    "UNKNOWN",
+]
+
 SCOPED_MESSAGE_KEY_VERSION = "fresko-message-v1"
 SCOPED_ATTACHMENT_LOGICAL_VERSION = "fresko-attachment-logical-v1"
 SCOPED_ATTACHMENT_VERSION = "fresko-attachment-version-v1"
