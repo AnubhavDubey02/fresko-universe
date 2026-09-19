@@ -578,6 +578,102 @@ class TestFreskoEvidence(FrappeTestCase):
         )
         self.assertTrue(len(attempts) > 0, "Conflict attempt record must survive caller rollback")
 
+    def test_isolated_audit_attempt_survives_independent_connection_failure(self):
+        """F2-001: an isolated conflict attempt must stay durable even when the
+        independent audit connection is unavailable.
+
+        _record_attempt(isolated=True) calls _persist_attempt_independently() and,
+        if that returns False, falls through to an insert inside the caller's own
+        transaction. That fallback is destroyed by caller rollback, so the only
+        record that a CONFLICT_PAYLOAD_MISMATCH ever happened disappears — and
+        _record_attempt returns None either way, so no caller can detect it.
+
+        This test injects the independent-connection failure, rolls the caller
+        back, and asserts the audit record is still there. It reproduces the
+        defect by failing on the final assertion.
+        """
+        from fresko_universe.fresko_core.services import evidence_service
+
+        msg_id = f"MSG_F2_001_{frappe.generate_hash(length=6)}"
+
+        ev1, _ = ingest_message_evidence(
+            provider="whatsapp-cloud",
+            provider_account_id="ACC_BENCH",
+            conversation_id="CONV_BENCH",
+            provider_message_id=msg_id,
+            raw_payload={"text": "Original payload"},
+        )
+        frappe.db.commit()
+
+        def cleanup_committed_rows():
+            frappe.set_user("Administrator")
+            frappe.db.rollback()
+            frappe.db.delete("Fresko Evidence Attempt", {"evidence": ev1.name})
+            frappe.db.delete("Fresko Evidence", {"name": ev1.name})
+            frappe.db.commit()
+
+        self.addCleanup(cleanup_committed_rows)
+
+        # Simulate the independent audit connection being unavailable.
+        real_persist = evidence_service._persist_attempt_independently
+        independent_attempts = []
+
+        def failing_persist(fields):
+            independent_attempts.append(fields.get("outcome"))
+            return False
+
+        evidence_service._persist_attempt_independently = failing_persist
+        try:
+            _ev_conf, outcome = ingest_message_evidence(
+                provider="whatsapp-cloud",
+                provider_account_id="ACC_BENCH",
+                conversation_id="CONV_BENCH",
+                provider_message_id=msg_id,
+                raw_payload={"text": "TAMPERED payload"},
+            )
+        finally:
+            evidence_service._persist_attempt_independently = real_persist
+
+        # Assert the intended semantics, not merely "something happened" — an
+        # unrelated failure must not be mistaken for reproducing this defect.
+        self.assertEqual(outcome, "CONFLICT_PAYLOAD_MISMATCH")
+        self.assertIn(
+            "CONFLICT_PAYLOAD_MISMATCH",
+            independent_attempts,
+            "independent persistence must have been attempted for the conflict",
+        )
+
+        rows_before = frappe.db.count(
+            "Fresko Evidence Attempt",
+            {"evidence": ev1.name, "outcome": "CONFLICT_PAYLOAD_MISMATCH"},
+        )
+        self.assertGreater(
+            rows_before,
+            0,
+            "conflict attempt must be visible inside the caller transaction before rollback",
+        )
+
+        frappe.db.rollback()
+
+        rows_after = frappe.db.count(
+            "Fresko Evidence Attempt",
+            {"evidence": ev1.name, "outcome": "CONFLICT_PAYLOAD_MISMATCH"},
+        )
+
+        print(
+            "\nF2-001 audit_durability_on_independent_failure:\n"
+            f"independent_persist_attempted={independent_attempts}\n"
+            f"attempt_rows_before_rollback={rows_before}\n"
+            f"attempt_rows_after_rollback={rows_after}\n"
+        )
+
+        self.assertGreater(
+            rows_after,
+            0,
+            "F2-001: conflict audit attempt was lost on caller rollback because the "
+            "isolated write silently fell back into the caller's transaction",
+        )
+
     def test_source_bound_expectations_and_ambiguity_rejection(self):
         """Finding 2: Ambiguous provenance matches and caller fallback must be rejected."""
         import json
