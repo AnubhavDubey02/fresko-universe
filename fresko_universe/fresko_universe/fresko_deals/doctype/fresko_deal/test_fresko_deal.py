@@ -140,6 +140,44 @@ class TestFreskoDeal(FrappeTestCase):
         self.company, self.currency = _ensure_masters()
         self.container = _make_container(self.company, self.currency)
 
+    def _assert_atomicity_fixture_residue_cleared(self, deal_name, container_name):
+        """Prove committed atomicity fixtures left no rows behind after cleanup.
+
+        The atomicity boundary tests commit their setup, so the test-case
+        transaction rollback cannot undo it. Cleanup deletes those rows
+        explicitly; this queries the database afterwards so the absence of
+        residue is proven and auditable in CI output rather than assumed.
+        """
+        residue = {
+            "Fresko Deal": frappe.db.count("Fresko Deal", {"name": deal_name}),
+            "Fresko Revision": frappe.db.count(
+                "Fresko Revision", {"parent_name": deal_name}
+            ),
+            "Fresko Approval": frappe.db.count("Fresko Approval", {"deal": deal_name}),
+            "Fresko Evidence": frappe.db.count("Fresko Evidence", {"deal": deal_name}),
+            "Fresko Exception": frappe.db.count(
+                "Fresko Exception", {"deal": deal_name}
+            ),
+            "Fresko Container Lot": frappe.db.count(
+                "Fresko Container Lot", {"parent": container_name}
+            ),
+            "Fresko Container": frappe.db.count(
+                "Fresko Container", {"name": container_name}
+            ),
+        }
+
+        print(
+            "\nATOMICITY fixture_residue_after_cleanup:\n"
+            + "\n".join(f"{doctype}={count}" for doctype, count in residue.items())
+            + "\n"
+        )
+
+        self.assertEqual(
+            {doctype: count for doctype, count in residue.items() if count},
+            {},
+            f"committed atomicity fixtures left residue: {residue}",
+        )
+
     def test_deal_rejects_lot_not_on_container(self):
         with self.assertRaises(frappe.ValidationError):
             _make_deal(self.container, lot_no="NO-SUCH-LOT")
@@ -961,6 +999,7 @@ class TestFreskoDeal(FrappeTestCase):
             frappe.db.delete("Fresko Container Lot", {"parent": self.container.name})
             frappe.db.delete("Fresko Container", {"name": self.container.name})
             frappe.db.commit()
+            self._assert_atomicity_fixture_residue_cleared(deal.name, self.container.name)
 
         self.addCleanup(cleanup_committed_rows)
 
@@ -1078,6 +1117,7 @@ class TestFreskoDeal(FrappeTestCase):
             frappe.db.delete("Fresko Container Lot", {"parent": self.container.name})
             frappe.db.delete("Fresko Container", {"name": self.container.name})
             frappe.db.commit()
+            self._assert_atomicity_fixture_residue_cleared(deal.name, self.container.name)
 
         self.addCleanup(cleanup_committed_rows)
 
@@ -1191,6 +1231,7 @@ class TestFreskoDeal(FrappeTestCase):
             frappe.db.delete("Fresko Container Lot", {"parent": self.container.name})
             frappe.db.delete("Fresko Container", {"name": self.container.name})
             frappe.db.commit()
+            self._assert_atomicity_fixture_residue_cleared(deal.name, self.container.name)
 
         self.addCleanup(cleanup_committed_rows)
 
@@ -1305,6 +1346,7 @@ class TestFreskoDeal(FrappeTestCase):
             frappe.db.delete("Fresko Container Lot", {"parent": self.container.name})
             frappe.db.delete("Fresko Container", {"name": self.container.name})
             frappe.db.commit()
+            self._assert_atomicity_fixture_residue_cleared(deal.name, self.container.name)
 
         self.addCleanup(cleanup_committed_rows)
 
