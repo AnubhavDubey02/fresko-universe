@@ -3158,7 +3158,73 @@ class TestFSEC004FSEC005Behavioral(unittest.TestCase):
 
 
 
+class TestF2BoundedPersistence(unittest.TestCase):
+    def setUp(self):
+        from unittest.mock import patch
+        import frappe
+        from fresko_universe.fresko_core.services import evidence_service
+        self.svc = evidence_service
+        self.driver = types.ModuleType("pymysql")
+        for name in ("OperationalError", "InterfaceError", "IntegrityError"):
+            setattr(self.driver, name, type(name, (Exception,), {}))
+        self.cursor = MagicMock()
+        self.connection = MagicMock()
+        self.connection.cursor.return_value.__enter__.return_value = self.cursor
+        self.driver.connect = MagicMock(return_value=self.connection)
+        self.fields = {"name": "one-logical-attempt", "evidence": "EV", "outcome": "CONFLICT_KEY_COLLISION"}
+        for p in (patch.dict(sys.modules, {"pymysql": self.driver}),
+                  patch.object(frappe, "conf", types.SimpleNamespace(db_name="test", db_password="test"), create=True),
+                  patch.object(self.svc.time, "sleep"), patch.object(frappe.db, "commit")):
+            p.start()
+            self.addCleanup(p.stop)
+
+    def test_first_success_no_retry_or_caller_commit(self):
+        import frappe
+        self.assertTrue(self.svc._persist_attempt_independently(self.fields))
+        self.assertEqual(self.driver.connect.call_count, 1)
+        self.svc.time.sleep.assert_not_called()
+        frappe.db.commit.assert_not_called()
+        self.assertNotIn("foreign_key_checks", str(self.cursor.execute.call_args_list))
+
+    def test_transient_failure_one_retry(self):
+        self.driver.connect.side_effect = [self.driver.OperationalError(2003, "offline"), self.connection]
+        self.assertTrue(self.svc._persist_attempt_independently(self.fields))
+        self.assertEqual(self.driver.connect.call_count, 2)
+        self.svc.time.sleep.assert_called_once_with(0.05)
+
+    def test_all_fail_exactly_two_bounded_retries(self):
+        self.driver.connect.side_effect = self.driver.OperationalError(2003, "offline")
+        self.assertFalse(self.svc._persist_attempt_independently(self.fields))
+        self.assertEqual(self.driver.connect.call_count, 3)
+        self.assertEqual([c.args[0] for c in self.svc.time.sleep.call_args_list], [0.05, 0.1])
+        self.assertEqual(self.driver.connect.call_args.kwargs["connect_timeout"], 2)
+
+    def test_permanent_error_not_retried(self):
+        self.driver.connect.side_effect = self.driver.OperationalError(1045, "access denied")
+        self.assertFalse(self.svc._persist_attempt_independently(self.fields))
+        self.assertEqual(self.driver.connect.call_count, 1)
+
+    def test_identical_duplicate_confirmed_but_mismatch_rejected(self):
+        digest = hashlib.sha256(json.dumps(self.fields, sort_keys=True, separators=(",", ":"),
+                                          ensure_ascii=False, default=str).encode()).hexdigest()
+        def execute(sql, args=None):
+            if sql.startswith("INSERT"):
+                raise self.driver.IntegrityError(1062, "duplicate")
+        self.cursor.execute.side_effect = execute
+        self.cursor.fetchone.return_value = (digest,)
+        self.assertTrue(self.svc._persist_attempt_independently(self.fields))
+        self.assertFalse(self.svc._persist_attempt_independently({**self.fields, "outcome": "different"}))
+
+    def test_missing_parent_identifier_does_not_inherit_salesperson_access(self):
+        from unittest.mock import patch
+        import frappe
+        from fresko_universe import permissions
+        with patch.object(frappe.db, "exists", return_value=False), \
+                patch.object(permissions, "current_roles", return_value={"Fresko Salesperson"}):
+            self.assertFalse(permissions.evidence_attempt_has_permission(
+                types.SimpleNamespace(evidence="rolled-back"), "read", user="sales@example.test"))
+
+
 if __name__ == "__main__":
     unittest.main()
-
 

@@ -62,9 +62,8 @@ class FreskoEvidence(Document):
                         "Cannot initialize Evidence with COMPLETE or CONFLICT verification status",
                         frappe.PermissionError,
                     )
-                # Source-reported provenance is established only by the ingress
-                # service, from what the provider actually reported. A caller
-                # supplying it would be fabricating provenance.
+                # Sender/sent time are source provenance; received_at is the
+                # first Fresko receipt. Both require the trusted ingress service.
                 for f in ("source_sender_id", "source_sent_at", "received_at"):
                     if self.get(f):
                         frappe.throw(
@@ -93,6 +92,10 @@ class FreskoEvidence(Document):
                     )
 
         # Immutability once set
+        # Receipt belongs to the first delivery. Even historical NULL must not
+        # be replaced by the time of a later delivery, including by services.
+        if self.has_value_changed("received_at"):
+            frappe.throw("Original ingress receipt time is immutable", title="Evidence Immutable")
         immutable_fields = (
             "content_sha256",
             "message_id",

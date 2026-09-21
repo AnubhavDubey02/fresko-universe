@@ -9,17 +9,17 @@
  "fields": [
   {
    "fieldname": "evidence",
-   "fieldtype": "Link",
-   "label": "Evidence",
-   "options": "Fresko Evidence",
+   "fieldtype": "Data",
+   "label": "Evidence Identifier Snapshot",
+   "description": "Immutable identifier observed during this attempt, NOT a relational existence claim. Independent audit may survive rollback of the named entity. Resolve access against a currently existing Evidence; never create a parent for this identifier.",
    "reqd": 1,
    "read_only": 1
   },
   {
    "fieldname": "evidence_attachment",
-   "fieldtype": "Link",
-   "label": "Evidence Attachment",
-   "options": "Fresko Evidence Attachment",
+   "fieldtype": "Data",
+   "label": "Attachment Identifier Snapshot",
+   "description": "Immutable observed attachment identifier; may refer to an entity whose caller transaction rolled back. Not a relational link.",
    "read_only": 1
   },
   {
@@ -45,6 +45,20 @@
    "fieldtype": "Datetime",
    "label": "Attempt Time",
    "reqd": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "delivery_received_at",
+   "fieldtype": "Datetime",
+   "label": "Delivery Received At Ingress",
+   "description": "Receipt time of this particular delivery, explicitly supplied by ingress. NULL when unknown; independent of audit attempt_time and source_sent_at.",
+   "read_only": 1
+  },
+  {
+   "fieldname": "audit_payload_sha256",
+   "fieldtype": "Data",
+   "label": "Independent Attempt Fingerprint",
+   "description": "SHA-256 of the immutable write envelope used to confirm identical duplicate-key retries. NULL on historical or caller-bound attempts; never backfilled.",
    "read_only": 1
   },
   {

@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -166,50 +167,80 @@ def _lock_parent_evidence(evidence_name: str) -> dict:
 
 
 def _persist_attempt_independently(fields: dict[str, Any]) -> bool:
-    """Persist structured conflict attempt record via an independent connection/transaction,
-    ensuring the caller's active database transaction is NEVER committed."""
-    try:
-        conf = getattr(frappe, "conf", None)
-        if conf and getattr(conf, "db_name", None):
-            import pymysql
+    """Independent autocommit, at most 3 tries, never touching frappe.db.
 
-            db_host = getattr(conf, "db_host", "127.0.0.1") or "127.0.0.1"
-            db_port = int(getattr(conf, "db_port", 3306) or 3306)
-            db_user = getattr(conf, "db_user", None) or getattr(conf, "db_name", None)
-            db_password = getattr(conf, "db_password", None)
-            db_name = getattr(conf, "db_name", None)
-            db_socket = getattr(conf, "db_socket", None)
+    Evidence/attachment values are identifier snapshots (Data), not relational
+    existence claims: the caller may roll back their creation. FK checks remain
+    enabled. A fixed name and fingerprint identify this one logical attempt even
+    if the server commits an INSERT but the acknowledgement is lost.
+    """
+    conf = getattr(frappe, "conf", None)
+    if not conf or not getattr(conf, "db_name", None):
+        return False
+    import pymysql
 
-            connect_kwargs: dict[str, Any] = {
-                "user": db_user,
-                "password": db_password,
-                "database": db_name,
-                "charset": "utf8mb4",
-                "autocommit": True,
-            }
-            if db_socket and os.path.exists(db_socket):
-                connect_kwargs["unix_socket"] = db_socket
-            else:
-                connect_kwargs["host"] = db_host
-                connect_kwargs["port"] = db_port
-
-            conn = pymysql.connect(**connect_kwargs)
-            try:
-                with conn.cursor() as cursor:
-                    cursor.execute("SET foreign_key_checks = 0")
-                    cols = list(fields.keys())
-                    placeholders = ", ".join(["%s"] * len(cols))
-                    col_names = ", ".join([f"`{c}`" for c in cols])
-                    sql = f"INSERT INTO `tabFresko Evidence Attempt` ({col_names}) VALUES ({placeholders})"
-                    cursor.execute(sql, list(fields.values()))
-                conn.commit()
-                return True
-            except Exception as ce:
-                print(f"[_persist_attempt_independently cursor ERROR: {ce}]")
-            finally:
-                conn.close()
-    except Exception as e:
-        print(f"[_persist_attempt_independently conn ERROR: {e}]")
+    row = dict(fields)
+    row.pop("audit_payload_sha256", None)
+    fingerprint = hashlib.sha256(json.dumps(
+        row, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str
+    ).encode("utf-8")).hexdigest()
+    row["audit_payload_sha256"] = fingerprint
+    kwargs = {
+        "user": getattr(conf, "db_user", None) or conf.db_name,
+        "password": conf.db_password,
+        "database": conf.db_name,
+        "charset": "utf8mb4",
+        "autocommit": True,
+        "connect_timeout": 2, "read_timeout": 2, "write_timeout": 2,
+    }
+    db_socket = getattr(conf, "db_socket", None)
+    if db_socket and os.path.exists(db_socket):
+        kwargs["unix_socket"] = db_socket
+    else:
+        kwargs["host"] = getattr(conf, "db_host", None) or "127.0.0.1"
+        kwargs["port"] = int(getattr(conf, "db_port", None) or 3306)
+    cols = ", ".join(f"`{c}`" for c in row)
+    placeholders = ", ".join("%s" for _ in row)
+    transient_codes = {1040, 1205, 1213, 2002, 2003, 2006, 2013, 2055}
+    for attempt_index in range(3):
+        conn = None
+        try:
+            conn = pymysql.connect(**kwargs)
+            with conn.cursor() as cursor:
+                cursor.execute("SET SESSION innodb_lock_wait_timeout = 1")
+                try:
+                    cursor.execute(
+                        f"INSERT INTO `tabFresko Evidence Attempt` ({cols}) VALUES ({placeholders})",
+                        list(row.values()),
+                    )
+                except pymysql.IntegrityError as exc:
+                    if not exc.args or exc.args[0] != 1062:
+                        raise
+                    cursor.execute(
+                        "SELECT audit_payload_sha256 FROM `tabFresko Evidence Attempt` WHERE name=%s",
+                        (row["name"],),
+                    )
+                    existing = cursor.fetchone()
+                    # A duplicate name alone is not proof of identical persistence.
+                    return bool(existing and existing[0] == fingerprint)
+            return True
+        except (pymysql.OperationalError, pymysql.InterfaceError, OSError) as exc:
+            transient = isinstance(exc, OSError) or (
+                bool(exc.args) and exc.args[0] in transient_codes
+            ) or isinstance(exc, pymysql.InterfaceError)
+            if not transient or attempt_index == 2:
+                return False
+        except Exception:
+            # Fail closed on permanent/schema/validation errors; do not leak SQL
+            # parameters, credentials or source payloads through exception logs.
+            return False
+        finally:
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+        time.sleep((0.05, 0.1)[attempt_index])
     return False
 
 
@@ -231,6 +262,7 @@ def _record_attempt(
     observed_sha256: str | None = None,
     reason: str | None = None,
     isolated: bool = False,
+    delivery_received_at: Any = None,
 ) -> str:
     """Insert an authoritative, structured, append-only attempt record.
 
@@ -275,6 +307,7 @@ def _record_attempt(
         "logical_attachment_key": logical_attachment_key,
         "scoped_attachment_version_key": scoped_attachment_version_key,
         "attempt_time": now,
+        "delivery_received_at": delivery_received_at,
         "actor": actor,
         "operation": operation,
         "outcome": outcome,
@@ -959,13 +992,11 @@ def ingest_message_evidence(
     Performs locking read, collision checks, payload conflict preservation,
     and inherited permission checks.
 
-    source_sender_id / source_sent_at / received_at are source-reported
-    provenance and are stored exactly as supplied. They are never defaulted: if
-    the provider reports no sender or send time, or the ingress time cannot be
-    established, they stay NULL. now(), creation, webhook-handler time and
-    worker time are all invalid substitutes. Once established they are
-    immutable, and a redelivery reporting different provenance under the same
-    canonical message identity is a conflict, not an overwrite.
+    source_sender_id/source_sent_at are immutable provider provenance.
+    received_at is this delivery's Fresko ingress receipt time. Evidence retains
+    only the original receipt (including historical NULL); each attempt records
+    its own delivery_received_at. Later receipts are not provenance conflicts.
+    None of these values defaults to creation, worker time or now().
     """
     canonical_payload_str, payload_sha = canonicalize_payload(raw_payload)
     scoped_key = compute_scoped_message_key(
@@ -1003,6 +1034,7 @@ def ingest_message_evidence(
             payload_sha256=payload_sha,
             source_payload=canonical_payload_str,
             reason="New evidence inserted without scoped message key",
+            delivery_received_at=received_at,
         )
         return doc, "SUCCESS_NEW"
 
@@ -1020,6 +1052,7 @@ def ingest_message_evidence(
             payload_sha256=payload_sha,
             source_payload=canonical_payload_str,
             reason="New scoped message evidence ingested successfully",
+            delivery_received_at=received_at,
         )
         return doc, "SUCCESS_NEW"
     except frappe.UniqueValidationError:
@@ -1053,6 +1086,7 @@ def ingest_message_evidence(
                 scoped_message_key=scoped_key,
                 payload_sha256=payload_sha,
                 reason="Caller lacks permission to access existing evidence on redelivery",
+                delivery_received_at=received_at,
                 isolated=True,
             )
             frappe.throw("Access denied", frappe.PermissionError)
@@ -1073,6 +1107,7 @@ def ingest_message_evidence(
                 payload_sha256=payload_sha,
                 source_payload=canonical_payload_str,
                 reason=f"Key collision: scope fields do not match existing row {existing.name}",
+                delivery_received_at=received_at,
                 isolated=True,
             )
             raise IntegrityConflictError(
@@ -1094,7 +1129,6 @@ def ingest_message_evidence(
         incoming_provenance = {
             "source_sender_id": source_sender_id,
             "source_sent_at": source_sent_at,
-            "received_at": received_at,
         }
         for prov_field, incoming_value in incoming_provenance.items():
             stored_value = existing.get(prov_field) if hasattr(existing, "get") else getattr(existing, prov_field, None)
@@ -1112,6 +1146,7 @@ def ingest_message_evidence(
                 evidence=existing.name,
                 operation="MESSAGE_INGEST",
                 outcome="CONFLICT_PROVENANCE_MISMATCH",
+                delivery_received_at=received_at,
                 scoped_message_key=scoped_key,
                 payload_sha256=payload_sha,
                 existing_payload_sha256=existing.message_payload_sha256,
@@ -1146,6 +1181,7 @@ def ingest_message_evidence(
                 existing_payload_sha256=existing.message_payload_sha256,
                 source_payload=canonical_payload_str,
                 reason="Conflicting payload received for existing scoped message key",
+                delivery_received_at=received_at,
                 isolated=True,
             )
             # F2-001: a conflict that cannot be durably recorded must not be
@@ -1168,6 +1204,7 @@ def ingest_message_evidence(
             scoped_message_key=scoped_key,
             payload_sha256=payload_sha,
             reason="Idempotent duplicate message delivery accepted",
+            delivery_received_at=received_at,
         )
         return frappe.get_doc("Fresko Evidence", existing.name), "SUCCESS_IDEMPOTENT_REDELIVERY"
 

@@ -113,8 +113,8 @@
   {
    "fieldname": "received_at",
    "fieldtype": "Datetime",
-   "label": "Received At Ingress",
-   "description": "When Fresko's trusted ingress boundary received the provider event. Not creation, not source_sent_at, not worker processing time. NULL when the historical record cannot establish it.",
+   "label": "First Received At Ingress",
+   "description": "Original Fresko ingress receipt time, not provider-message provenance. Fieldname received_at retained for compatibility. Never overwritten or filled by redelivery; historical NULL stays unknown. Subsequent receipts belong to Evidence Attempt.delivery_received_at. Not creation or worker time.",
    "read_only": 1
   },
   {

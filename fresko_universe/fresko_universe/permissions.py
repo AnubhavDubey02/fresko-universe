@@ -392,7 +392,7 @@ def evidence_attempt_permission_query(user: str | None = None) -> str:
         return ""
     roles = current_roles(user)
     if ROLE_APPROVER in roles or ROLE_ACCOUNTS in roles:
-        return ""
+        return "`tabFresko Evidence Attempt`.evidence IN (SELECT name FROM `tabFresko Evidence`)"
     if ROLE_SALESPERSON in roles:
         user_esc = frappe.db.escape(user)
         return (
@@ -418,5 +418,9 @@ def evidence_attempt_has_permission(doc, ptype: str | None = None, user: str | N
 
     if not evidence_name:
         return False
+    # F2-006: identifier snapshots can outlive a rolled-back entity. They must
+    # not inherit the permissive 'Evidence without deal' rule for a missing row.
+    user = user or frappe.session.user
+    if not frappe.db.exists("Fresko Evidence", evidence_name):
+        return user == "Administrator" or is_system_manager(current_roles(user))
     return evidence_has_permission(evidence_name, "read", user=user)
-
