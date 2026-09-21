@@ -11,7 +11,10 @@ class FreskoEvidence(Document):
     """Message and operational evidence container.
 
     Enforces immutability of identity, payload, and verified integrity fields.
-    Does not hash path or URL strings into content_sha256 (resolving FSEC-004).
+    Does not hash path or URL strings into content_sha256 — content hashes are
+    computed from actual file bytes. This is one repair contributing to FSEC-004;
+    it does not close it. FSEC-004 remains OPEN as a Phase 2 entry gate (see
+    docs/security/SECURITY_FINDINGS.md).
     """
 
     def before_insert(self):
@@ -59,6 +62,15 @@ class FreskoEvidence(Document):
                         "Cannot initialize Evidence with COMPLETE or CONFLICT verification status",
                         frappe.PermissionError,
                     )
+                # Sender/sent time are source provenance; received_at is the
+                # first Fresko receipt. Both require the trusted ingress service.
+                for f in ("source_sender_id", "source_sent_at", "received_at"):
+                    if self.get(f):
+                        frappe.throw(
+                            f"Cannot supply source-reported provenance field '{f}'; "
+                            "server ingress service required",
+                            frappe.PermissionError,
+                        )
             return
 
         # Direct Desk/API changes to operational aggregation/identity fields are blocked
@@ -69,6 +81,9 @@ class FreskoEvidence(Document):
                 "manifest_status",
                 "scoped_message_key",
                 "message_payload_sha256",
+                "source_sender_id",
+                "source_sent_at",
+                "received_at",
             ):
                 if self.has_value_changed(f):
                     frappe.throw(
@@ -77,6 +92,10 @@ class FreskoEvidence(Document):
                     )
 
         # Immutability once set
+        # Receipt belongs to the first delivery. Even historical NULL must not
+        # be replaced by the time of a later delivery, including by services.
+        if self.has_value_changed("received_at"):
+            frappe.throw("Original ingress receipt time is immutable", title="Evidence Immutable")
         immutable_fields = (
             "content_sha256",
             "message_id",
@@ -88,6 +107,11 @@ class FreskoEvidence(Document):
             "conversation_id",
             "provider_message_id",
             "message_payload_sha256",
+            # Source-reported provenance is immutable once established, even in
+            # service: a later delivery cannot rewrite what the source reported.
+            "source_sender_id",
+            "source_sent_at",
+            "received_at",
         )
         for f in immutable_fields:
             if self.has_value_changed(f) and self.get_db_value(f):

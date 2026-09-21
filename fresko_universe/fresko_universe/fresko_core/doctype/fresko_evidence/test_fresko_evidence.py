@@ -578,6 +578,365 @@ class TestFreskoEvidence(FrappeTestCase):
         )
         self.assertTrue(len(attempts) > 0, "Conflict attempt record must survive caller rollback")
 
+    def test_conflict_records_durable_audit_with_committed_independent_state(self):
+        """F2-001 (healthy path): a recorded conflict must declare the durability it achieved.
+
+        When the independent audit connection works, the attempt row must be
+        stamped COMMITTED_INDEPENDENT and must survive caller rollback.
+        """
+        msg_id = f"MSG_F2_001_OK_{frappe.generate_hash(length=6)}"
+
+        ev1, _ = ingest_message_evidence(
+            provider="whatsapp-cloud",
+            provider_account_id="ACC_BENCH",
+            conversation_id="CONV_BENCH",
+            provider_message_id=msg_id,
+            raw_payload={"text": "Original payload"},
+        )
+        frappe.db.commit()
+
+        def cleanup_committed_rows():
+            frappe.set_user("Administrator")
+            frappe.db.rollback()
+            frappe.db.delete("Fresko Evidence Attempt", {"evidence": ev1.name})
+            frappe.db.delete("Fresko Evidence", {"name": ev1.name})
+            frappe.db.commit()
+
+        self.addCleanup(cleanup_committed_rows)
+
+        _ev_conf, outcome = ingest_message_evidence(
+            provider="whatsapp-cloud",
+            provider_account_id="ACC_BENCH",
+            conversation_id="CONV_BENCH",
+            provider_message_id=msg_id,
+            raw_payload={"text": "TAMPERED payload"},
+        )
+        self.assertEqual(outcome, "CONFLICT_PAYLOAD_MISMATCH")
+
+        frappe.db.rollback()
+
+        rows = frappe.db.sql(
+            """
+            SELECT durability_state
+            FROM `tabFresko Evidence Attempt`
+            WHERE evidence = %s AND outcome = 'CONFLICT_PAYLOAD_MISMATCH'
+            """,
+            (ev1.name,),
+            as_dict=True,
+        )
+
+        print(
+            "\nF2-001 durable_conflict_audit:\n"
+            f"rows_after_rollback={len(rows)}\n"
+            f"durability_states={[r['durability_state'] for r in rows]}\n"
+        )
+
+        self.assertEqual(len(rows), 1, "conflict attempt must survive caller rollback")
+        self.assertEqual(
+            rows[0]["durability_state"],
+            "COMMITTED_INDEPENDENT",
+            "a row that survived independent commit must say so",
+        )
+
+    def test_conflict_fails_closed_when_independent_audit_connection_fails(self):
+        """F2-001 (degraded path): an unrecordable conflict must fail closed.
+
+        Previously _record_attempt(isolated=True) fell back to an insert inside the
+        caller's transaction when the independent connection failed, returned None,
+        and let ingest_message_evidence report CONFLICT_PAYLOAD_MISMATCH as a
+        handled conflict. On caller rollback the only record of the conflict was
+        destroyed, and nothing had signalled that.
+
+        Now _record_attempt reports the durability it actually achieved, and the
+        conflict path refuses to claim a handled conflict it cannot evidence.
+        """
+        from fresko_universe.fresko_core.services import evidence_service
+
+        msg_id = f"MSG_F2_001_FAIL_{frappe.generate_hash(length=6)}"
+        original_payload = {"text": "Original payload"}
+
+        ev1, _ = ingest_message_evidence(
+            provider="whatsapp-cloud",
+            provider_account_id="ACC_BENCH",
+            conversation_id="CONV_BENCH",
+            provider_message_id=msg_id,
+            raw_payload=original_payload,
+        )
+        frappe.db.commit()
+
+        original_sha = frappe.db.get_value(
+            "Fresko Evidence", ev1.name, "message_payload_sha256"
+        )
+
+        def cleanup_committed_rows():
+            frappe.set_user("Administrator")
+            frappe.db.rollback()
+            frappe.db.delete("Fresko Evidence Attempt", {"evidence": ev1.name})
+            frappe.db.delete("Fresko Evidence", {"name": ev1.name})
+            frappe.db.commit()
+
+        self.addCleanup(cleanup_committed_rows)
+
+        # Simulate the independent audit connection being unavailable.
+        real_persist = evidence_service._persist_attempt_independently
+        independent_attempts = []
+
+        def failing_persist(fields):
+            independent_attempts.append(fields.get("outcome"))
+            return False
+
+        evidence_service._persist_attempt_independently = failing_persist
+        try:
+            with self.assertRaises(evidence_service.IntegrityConflictError) as ctx:
+                ingest_message_evidence(
+                    provider="whatsapp-cloud",
+                    provider_account_id="ACC_BENCH",
+                    conversation_id="CONV_BENCH",
+                    provider_message_id=msg_id,
+                    raw_payload={"text": "TAMPERED payload"},
+                )
+        finally:
+            evidence_service._persist_attempt_independently = real_persist
+
+        # Assert the intended protection reason, not merely that something raised.
+        self.assertIn("could not be durably recorded", str(ctx.exception))
+        self.assertIn("CALLER_TRANSACTION_BOUND", str(ctx.exception))
+        self.assertIn(
+            "CONFLICT_PAYLOAD_MISMATCH",
+            independent_attempts,
+            "independent persistence must have been attempted for the conflict",
+        )
+
+        frappe.db.rollback()
+
+        durable_rows = frappe.db.count(
+            "Fresko Evidence Attempt",
+            {"evidence": ev1.name, "outcome": "CONFLICT_PAYLOAD_MISMATCH"},
+        )
+        persisted_sha = frappe.db.get_value(
+            "Fresko Evidence", ev1.name, "message_payload_sha256"
+        )
+        persisted_status = frappe.db.get_value(
+            "Fresko Evidence", ev1.name, "overall_verification_status"
+        )
+
+        print(
+            "\nF2-001 conflict_fails_closed_on_independent_failure:\n"
+            f"independent_persist_attempted={independent_attempts}\n"
+            f"durable_conflict_rows_after_rollback={durable_rows}\n"
+            f"payload_sha_unchanged={persisted_sha == original_sha}\n"
+            f"overall_verification_status={persisted_status}\n"
+        )
+
+        # The caller-bound row is genuinely gone — that is physics, and the point
+        # is that nothing claimed otherwise and the operation did not succeed.
+        self.assertEqual(
+            durable_rows,
+            0,
+            "caller-bound attempt is expected to be lost; the fix is failing closed, "
+            "not pretending the row survived",
+        )
+        # The tampered payload must not have been accepted, and the CONFLICT status
+        # write must have rolled back with the caller.
+        self.assertEqual(persisted_sha, original_sha, "original payload hash must be intact")
+        self.assertNotEqual(
+            persisted_status,
+            "CONFLICT",
+            "rolled-back conflict status must not persist as a handled conflict",
+        )
+
+    def test_source_provenance_stored_exactly_and_absent_stays_null(self):
+        """Source-reported provenance is stored verbatim; absent values stay NULL."""
+        from frappe.utils import get_datetime
+
+        sent_at = "2026-09-19 10:30:00"
+        received_at = "2026-09-19 10:30:05"
+
+        ev, outcome = ingest_message_evidence(
+            provider="whatsapp-cloud",
+            provider_account_id="ACC_BENCH",
+            conversation_id="CONV_BENCH",
+            provider_message_id=f"MSG_PROV_OK_{frappe.generate_hash(length=6)}",
+            raw_payload={"text": "with provenance"},
+            source_sender_id="wa_sender_1",
+            source_sent_at=sent_at,
+            received_at=received_at,
+        )
+        self.assertEqual(outcome, "SUCCESS_NEW")
+
+        row = frappe.db.get_value(
+            "Fresko Evidence",
+            ev.name,
+            ["source_sender_id", "source_sent_at", "received_at", "creation"],
+            as_dict=True,
+        )
+        self.assertEqual(row.source_sender_id, "wa_sender_1")
+        self.assertEqual(get_datetime(row.source_sent_at), get_datetime(sent_at))
+        self.assertEqual(get_datetime(row.received_at), get_datetime(received_at))
+        # received_at is the ingress instant, deliberately earlier than the row
+        # write here, proving it is not silently taken from creation.
+        self.assertNotEqual(
+            get_datetime(row.received_at),
+            get_datetime(row.creation),
+            "received_at must not be derived from row creation time",
+        )
+
+        # Absent provenance must remain NULL, never defaulted.
+        ev_absent, _ = ingest_message_evidence(
+            provider="whatsapp-cloud",
+            provider_account_id="ACC_BENCH",
+            conversation_id="CONV_BENCH",
+            provider_message_id=f"MSG_PROV_NULL_{frappe.generate_hash(length=6)}",
+            raw_payload={"text": "no provenance"},
+        )
+        absent = frappe.db.get_value(
+            "Fresko Evidence",
+            ev_absent.name,
+            ["source_sender_id", "source_sent_at", "received_at"],
+            as_dict=True,
+        )
+
+        print(
+            "\nF2-SRC provenance_storage:\n"
+            f"sender={row.source_sender_id!r} sent_at={row.source_sent_at} "
+            f"received_at={row.received_at} creation={row.creation}\n"
+            f"absent_row={dict(absent)}\n"
+        )
+
+        self.assertIsNone(absent.source_sender_id)
+        self.assertIsNone(absent.source_sent_at)
+        self.assertIsNone(absent.received_at)
+
+    def test_source_provenance_cannot_be_forged_via_desk_or_api(self):
+        """Desk/API callers can neither supply nor later alter source provenance."""
+        # 1. Direct creation supplying provenance must be denied.
+        forged = frappe.new_doc("Fresko Evidence")
+        forged.evidence_type = "Note"
+        forged.source_sender_id = "forged_sender"
+        with self.assertRaises(frappe.PermissionError):
+            forged.insert()
+
+        forged_time = frappe.new_doc("Fresko Evidence")
+        forged_time.evidence_type = "Note"
+        forged_time.source_sent_at = "2000-01-01 00:00:00"
+        with self.assertRaises(frappe.PermissionError):
+            forged_time.insert()
+
+        # 2. Altering established provenance through the ORM must be denied.
+        ev, _ = ingest_message_evidence(
+            provider="whatsapp-cloud",
+            provider_account_id="ACC_BENCH",
+            conversation_id="CONV_BENCH",
+            provider_message_id=f"MSG_PROV_FORGE_{frappe.generate_hash(length=6)}",
+            raw_payload={"text": "forge target"},
+            source_sender_id="wa_sender_real",
+            source_sent_at="2026-09-19 11:00:00",
+            received_at="2026-09-19 11:00:01",
+        )
+
+        doc = frappe.get_doc("Fresko Evidence", ev.name)
+        doc.source_sender_id = "wa_sender_tampered"
+        with self.assertRaises(frappe.PermissionError):
+            doc.save()
+
+        self.assertEqual(
+            frappe.db.get_value("Fresko Evidence", ev.name, "source_sender_id"),
+            "wa_sender_real",
+        )
+
+    def test_redelivery_never_overwrites_provenance_and_conflict_fails_closed(self):
+        """Redelivery must not rewrite provenance; disagreement is a conflict."""
+        from fresko_universe.fresko_core.services import evidence_service
+
+        msg_id = f"MSG_PROV_CONFLICT_{frappe.generate_hash(length=6)}"
+        payload = {"text": "same body"}
+
+        ev, _ = ingest_message_evidence(
+            provider="whatsapp-cloud",
+            provider_account_id="ACC_BENCH",
+            conversation_id="CONV_BENCH",
+            provider_message_id=msg_id,
+            raw_payload=payload,
+            source_sender_id="wa_sender_1",
+            source_sent_at="2026-09-19 10:00:00",
+            received_at="2026-09-19 10:00:02",
+        )
+        frappe.db.commit()
+
+        def cleanup_committed_rows():
+            frappe.set_user("Administrator")
+            frappe.db.rollback()
+            frappe.db.delete("Fresko Evidence Attempt", {"evidence": ev.name})
+            frappe.db.delete("Fresko Evidence", {"name": ev.name})
+            frappe.db.commit()
+
+        self.addCleanup(cleanup_committed_rows)
+
+        # Identical redelivery (a worker retry) must be idempotent and must not
+        # disturb the established provenance.
+        _ev_retry, retry_outcome = ingest_message_evidence(
+            provider="whatsapp-cloud",
+            provider_account_id="ACC_BENCH",
+            conversation_id="CONV_BENCH",
+            provider_message_id=msg_id,
+            raw_payload=payload,
+            source_sender_id="wa_sender_1",
+            source_sent_at="2026-09-19 10:00:00",
+            received_at="2026-09-19 10:00:02",
+        )
+        self.assertEqual(retry_outcome, "SUCCESS_IDEMPOTENT_REDELIVERY")
+        self.assertEqual(
+            frappe.db.get_value("Fresko Evidence", ev.name, "source_sender_id"),
+            "wa_sender_1",
+            "a retry must not alter established provenance",
+        )
+
+        # Redelivery claiming a different sender, with a byte-identical body, is
+        # a provenance conflict rather than a silent overwrite.
+        with self.assertRaises(evidence_service.IntegrityConflictError) as ctx:
+            ingest_message_evidence(
+                provider="whatsapp-cloud",
+                provider_account_id="ACC_BENCH",
+                conversation_id="CONV_BENCH",
+                provider_message_id=msg_id,
+                raw_payload=payload,
+                source_sender_id="wa_sender_2",
+                source_sent_at="2026-09-19 10:00:00",
+                received_at="2026-09-19 10:00:02",
+            )
+        self.assertIn("already established", str(ctx.exception))
+        self.assertIn("source_sender_id", str(ctx.exception))
+
+        frappe.db.rollback()
+
+        stored_sender = frappe.db.get_value(
+            "Fresko Evidence", ev.name, "source_sender_id"
+        )
+        conflict_rows = frappe.db.sql(
+            """
+            SELECT durability_state
+            FROM `tabFresko Evidence Attempt`
+            WHERE evidence = %s AND outcome = 'CONFLICT_PROVENANCE_MISMATCH'
+            """,
+            (ev.name,),
+            as_dict=True,
+        )
+
+        print(
+            "\nF2-SRC provenance_conflict:\n"
+            f"stored_sender_after_conflict={stored_sender!r}\n"
+            f"conflict_attempt_rows={len(conflict_rows)}\n"
+            f"durability_states={[r['durability_state'] for r in conflict_rows]}\n"
+        )
+
+        self.assertEqual(
+            stored_sender, "wa_sender_1", "conflict must not overwrite provenance"
+        )
+        self.assertEqual(
+            len(conflict_rows), 1, "provenance conflict must be durably recorded"
+        )
+        self.assertEqual(conflict_rows[0]["durability_state"], "COMMITTED_INDEPENDENT")
+
     def test_source_bound_expectations_and_ambiguity_rejection(self):
         """Finding 2: Ambiguous provenance matches and caller fallback must be rejected."""
         import json

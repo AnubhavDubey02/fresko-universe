@@ -80,6 +80,7 @@ from fresko_universe.constants import (  # noqa: E402
     ATS_ACTIVE_STATUSES,
     COMMERCIAL_LOCK_STATUSES,
     DEAL_TRANSITIONS,
+    EVIDENCE_ACTOR_UNKNOWN,
     EXCEPTION_TYPES,
     MATERIAL_REVISION_FIELDS,
     OVERSELL_OVERRIDE_ROLES,
@@ -1630,17 +1631,88 @@ class TestFSEC004FSEC005Behavioral(unittest.TestCase):
             existing_doc = MagicMock(name="EV-EXISTING", overall_verification_status="CONFLICT")
             frappe.get_doc = MagicMock(return_value=existing_doc)
 
-            doc, outcome = ingest_message_evidence(
-                provider="whatsapp-cloud",
-                provider_account_id="ACC_1",
-                conversation_id="CONV_1",
-                provider_message_id="MSG_1",
-                raw_payload={"text": "Different conflicting message content"},
-            )
+            # F2-001: this test asserts conflict *outcome* semantics, which now
+            # require the conflict to have been durably recorded. Make that
+            # precondition explicit instead of relying on it accidentally.
+            from fresko_universe.fresko_core.services import evidence_service
+
+            orig_persist = evidence_service._persist_attempt_independently
+            evidence_service._persist_attempt_independently = lambda fields: True
+            try:
+                doc, outcome = ingest_message_evidence(
+                    provider="whatsapp-cloud",
+                    provider_account_id="ACC_1",
+                    conversation_id="CONV_1",
+                    provider_message_id="MSG_1",
+                    raw_payload={"text": "Different conflicting message content"},
+                )
+            finally:
+                evidence_service._persist_attempt_independently = orig_persist
             self.assertEqual(outcome, "CONFLICT_PAYLOAD_MISMATCH")
         finally:
             frappe.new_doc = orig_new_doc
             frappe.db.sql = orig_sql
+
+    def test_payload_conflict_fails_closed_when_audit_not_durable(self):
+        """F2-001: a payload conflict that cannot be durably recorded must raise.
+
+        Previously _record_attempt(isolated=True) silently fell back to an insert
+        in the caller's transaction and the conflict was still reported as
+        handled, so a caller rollback erased the only record of it.
+        """
+        from fresko_universe.fresko_core.services.evidence_service import (
+            IntegrityConflictError,
+            ingest_message_evidence,
+        )
+        from fresko_universe.fresko_core.services import evidence_service
+        import frappe
+
+        existing_row = {
+            "name": "EV-EXISTING",
+            "deal": None,
+            "provider": "whatsapp-cloud",
+            "provider_account_id": "ACC_1",
+            "conversation_id": "CONV_1",
+            "provider_message_id": "MSG_1",
+            "scoped_message_key": "mocked_key",
+            "message_payload_sha256": "original_payload_hash_1111",
+            "overall_verification_status": "PENDING",
+        }
+
+        orig_new_doc = frappe.new_doc
+        orig_sql = frappe.db.sql
+        orig_persist = evidence_service._persist_attempt_independently
+        try:
+            def flex_new_doc(dt, *a, **k):
+                d = MagicMock()
+                d.doctype = dt
+                if dt == "Fresko Evidence":
+                    d.insert = MagicMock(side_effect=frappe.UniqueValidationError("Fresko Evidence", "EV-NEW", "Duplicate key"))
+                else:
+                    d.insert = MagicMock()
+                return d
+
+            frappe.new_doc = MagicMock(side_effect=flex_new_doc)
+            frappe.db.sql = MagicMock(return_value=[types.SimpleNamespace(**existing_row)])
+            frappe.get_doc = MagicMock(return_value=MagicMock(name="EV-EXISTING"))
+
+            # Independent audit connection unavailable.
+            evidence_service._persist_attempt_independently = lambda fields: False
+
+            with self.assertRaises(IntegrityConflictError) as ctx:
+                ingest_message_evidence(
+                    provider="whatsapp-cloud",
+                    provider_account_id="ACC_1",
+                    conversation_id="CONV_1",
+                    provider_message_id="MSG_1",
+                    raw_payload={"text": "Different conflicting message content"},
+                )
+            self.assertIn("could not be durably recorded", str(ctx.exception))
+            self.assertIn("CALLER_TRANSACTION_BOUND", str(ctx.exception))
+        finally:
+            frappe.new_doc = orig_new_doc
+            frappe.db.sql = orig_sql
+            evidence_service._persist_attempt_independently = orig_persist
 
     def test_unauthorized_redelivery_blocked(self):
         from fresko_universe.fresko_core.services.evidence_service import ingest_message_evidence
@@ -2318,6 +2390,264 @@ class TestFSEC004FSEC005Behavioral(unittest.TestCase):
             if os.path.exists(manifest_path):
                 os.remove(manifest_path)
 
+    def test_manifest_must_not_be_fabricated_from_observed_values(self):
+        """F2-002: a manifest must never be synthesised from observed bytes/hash.
+
+        _load_manifest_data() falls back to an attempt row when the manifest file
+        cannot be read. If source_payload will not parse, it builds
+        {"attachments": [{"expected_byte_count": observed, "expected_sha256":
+        observed}]} — fabricating the authoritative source out of values that
+        were computed from the actual file. Verifying actual against expected
+        then proves nothing, yet the attachment is accepted under the trusted
+        OFFLINE_IMPORT_MANIFEST provenance type.
+
+        observed_* is written only on ATTACHMENT_VERIFY attempts, and this query
+        has no operation filter, so such a row can be selected here.
+        """
+        import frappe
+        from fresko_universe.fresko_core.services.evidence_service import (
+            validate_completeness_provenance,
+        )
+
+        observed_bytes = 4242
+        observed_hash = "observed_hash_computed_from_actual_bytes"
+
+        verify_attempt = {
+            "name": "ATTEMPT-VERIFY-1",
+            "source_payload": None,
+            "observed_byte_count": observed_bytes,
+            "observed_sha256": observed_hash,
+        }
+
+        orig_sql = frappe.db.sql
+        try:
+            frappe.db.sql = MagicMock(
+                return_value=[types.SimpleNamespace(**verify_attempt)]
+            )
+
+            att_row = {
+                "name": "ATT-CIRCULAR",
+                "file_url": "/private/files/whatever.pdf",
+                "identity_type": "ordinal",
+                "attachment_ordinal": 0,
+                "logical_attachment_key": "log_circular",
+                "provenance_type": "OFFLINE_IMPORT_MANIFEST",
+                # Points at an attempt row, not a readable manifest file.
+                "provenance_ref": "ATTEMPT-VERIFY-1",
+                "expected_byte_count": -1,
+                "expected_sha256": None,
+            }
+            parent_row = {"name": "EV-CIRC", "message_payload_sha256": "parent_hash"}
+
+            trusted, reason, bound_bytes, bound_hash = validate_completeness_provenance(
+                att_row, parent_row
+            )
+
+            print(
+                "\nF2-002 manifest_fabrication_from_observed:\n"
+                f"trusted={trusted}\n"
+                f"reason={reason}\n"
+                f"bound_bytes={bound_bytes} (observed was {observed_bytes})\n"
+                f"bound_hash={bound_hash} (observed was {observed_hash})\n"
+            )
+
+            self.assertFalse(
+                trusted,
+                "F2-002: expected values were derived from observed values, so "
+                "verification would be circular and must not be trusted",
+            )
+            self.assertNotEqual(
+                bound_bytes,
+                observed_bytes,
+                "expected byte count must not be the observed byte count",
+            )
+            self.assertNotEqual(
+                bound_hash,
+                observed_hash,
+                "expected hash must not be the observed hash",
+            )
+        finally:
+            frappe.db.sql = orig_sql
+
+    def test_unauthenticated_actor_must_not_be_recorded_as_administrator(self):
+        """F2-003: an unknown actor must not be fabricated as Administrator.
+
+        _record_attempt uses `actor = frappe.session.user or "Administrator"` and
+        writes that value to actor, owner and modified_by. With no authenticated
+        session — a background webhook worker or scheduled job — an UNKNOWN actor
+        silently becomes Administrator, fabricating audit provenance.
+        """
+        import frappe
+        from fresko_universe.fresko_core.services import evidence_service
+
+        captured = {}
+
+        orig_persist = evidence_service._persist_attempt_independently
+        orig_user = frappe.session.user
+        try:
+            def capture(fields):
+                captured.update(fields)
+                return True
+
+            evidence_service._persist_attempt_independently = capture
+            frappe.session.user = None
+
+            evidence_service._record_attempt(
+                evidence="EV-NOACTOR",
+                operation="MESSAGE_INGEST",
+                outcome="SUCCESS_NEW",
+                isolated=True,
+            )
+        finally:
+            evidence_service._persist_attempt_independently = orig_persist
+            frappe.session.user = orig_user
+
+        print(
+            "\nF2-003 unauthenticated_actor:\n"
+            f"actor={captured.get('actor')!r}\n"
+            f"owner={captured.get('owner')!r}\n"
+            f"modified_by={captured.get('modified_by')!r}\n"
+        )
+
+        self.assertNotEqual(
+            captured.get("actor"),
+            "Administrator",
+            "F2-003: an unknown actor was fabricated as Administrator in the audit trail",
+        )
+        self.assertEqual(
+            captured.get("actor"),
+            EVIDENCE_ACTOR_UNKNOWN,
+            "an unestablished actor must be recorded as UNKNOWN",
+        )
+        # owner/modified_by are ORM bookkeeping and must stay a real User link,
+        # so they legitimately remain concrete. `actor` is the audit claim.
+        self.assertEqual(captured.get("owner"), "Administrator")
+        self.assertEqual(captured.get("modified_by"), "Administrator")
+
+    def test_authenticated_actor_is_recorded_verbatim(self):
+        """F2-003 counterpart: a real session actor must be recorded unchanged."""
+        import frappe
+        from fresko_universe.fresko_core.services import evidence_service
+
+        captured = {}
+
+        orig_persist = evidence_service._persist_attempt_independently
+        orig_user = frappe.session.user
+        try:
+            def capture(fields):
+                captured.update(fields)
+                return True
+
+            evidence_service._persist_attempt_independently = capture
+            frappe.session.user = "salesperson@example.com"
+
+            evidence_service._record_attempt(
+                evidence="EV-ACTOR",
+                operation="MESSAGE_INGEST",
+                outcome="SUCCESS_NEW",
+                isolated=True,
+            )
+        finally:
+            evidence_service._persist_attempt_independently = orig_persist
+            frappe.session.user = orig_user
+
+        self.assertEqual(captured.get("actor"), "salesperson@example.com")
+        self.assertEqual(captured.get("owner"), "salesperson@example.com")
+        self.assertNotEqual(captured.get("actor"), EVIDENCE_ACTOR_UNKNOWN)
+
+    def test_source_provenance_fields_have_no_defaults(self):
+        """Source-reported provenance must be unfabricatable by migration.
+
+        A default or reqd flag on these fields would let a schema sync populate
+        legacy rows with something the source never reported. Absent must stay
+        NULL, so the schema must declare no default and no reqd.
+        """
+        import json as _json
+        import os as _os
+
+        schema_path = _os.path.join(
+            _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+            "fresko_universe",
+            "fresko_core",
+            "doctype",
+            "fresko_evidence",
+            "fresko_evidence.json",
+        )
+        with open(schema_path, "r", encoding="utf-8") as fh:
+            schema = _json.load(fh)
+
+        fields = {f["fieldname"]: f for f in schema["fields"]}
+
+        for name, expected_type in (
+            ("source_sender_id", "Data"),
+            ("source_sent_at", "Datetime"),
+            ("received_at", "Datetime"),
+        ):
+            self.assertIn(name, fields, f"{name} must exist on Fresko Evidence")
+            field = fields[name]
+            self.assertEqual(field["fieldtype"], expected_type)
+            self.assertNotIn(
+                "default",
+                field,
+                f"{name} must declare no default; absent provenance stays NULL",
+            )
+            self.assertFalse(
+                field.get("reqd", 0),
+                f"{name} must not be reqd; the source may legitimately not establish it",
+            )
+            self.assertTrue(
+                field.get("read_only", 0),
+                f"{name} must be read_only so Desk cannot edit it directly",
+            )
+
+    def test_provenance_conflict_outcome_declared_in_schema_and_constants(self):
+        """CONFLICT_PROVENANCE_MISMATCH must exist in both constants and the doctype.
+
+        A provenance disagreement is not a payload disagreement; recording it as
+        CONFLICT_PAYLOAD_MISMATCH would itself be an untruthful audit label.
+        """
+        import json as _json
+        import os as _os
+
+        from fresko_universe.constants import EVIDENCE_ATTEMPT_OUTCOMES
+
+        self.assertIn("CONFLICT_PROVENANCE_MISMATCH", EVIDENCE_ATTEMPT_OUTCOMES)
+
+        schema_path = _os.path.join(
+            _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+            "fresko_universe",
+            "fresko_core",
+            "doctype",
+            "fresko_evidence_attempt",
+            "fresko_evidence_attempt.json",
+        )
+        with open(schema_path, "r", encoding="utf-8") as fh:
+            schema = _json.load(fh)
+
+        outcome_field = [f for f in schema["fields"] if f["fieldname"] == "outcome"][0]
+        options = outcome_field["options"].split("\n")
+
+        self.assertIn("CONFLICT_PROVENANCE_MISMATCH", options)
+        # Constants and schema must not drift apart.
+        self.assertEqual(sorted(options), sorted(EVIDENCE_ATTEMPT_OUTCOMES))
+
+    def test_same_reported_value_compares_instants_not_text(self):
+        """Provenance comparison must not raise a false conflict on format alone."""
+        from fresko_universe.fresko_core.services.evidence_service import (
+            _same_reported_value,
+        )
+
+        # Same instant expressed differently must NOT be a conflict.
+        self.assertTrue(_same_reported_value("2026-09-19 10:30:00", "2026-09-19 10:30:00"))
+        # Genuinely different instants must be a conflict.
+        self.assertFalse(_same_reported_value("2026-09-19 10:30:00", "2026-09-19 10:31:00"))
+        # Plain identifiers compare as text, tolerant of surrounding whitespace.
+        self.assertTrue(_same_reported_value("wa_sender_1", " wa_sender_1 "))
+        self.assertFalse(_same_reported_value("wa_sender_1", "wa_sender_2"))
+        # NULL handling: unknown is not a disagreement with unknown.
+        self.assertTrue(_same_reported_value(None, None))
+        self.assertFalse(_same_reported_value("wa_sender_1", None))
+
     def test_regression_superseded_file_protection_and_verification_rejection(self):
         """Finding 2: Files backing SUPERSEDED attachments must remain protected; superseded attachments cannot be verified."""
         import os
@@ -2828,7 +3158,73 @@ class TestFSEC004FSEC005Behavioral(unittest.TestCase):
 
 
 
+class TestF2BoundedPersistence(unittest.TestCase):
+    def setUp(self):
+        from unittest.mock import patch
+        import frappe
+        from fresko_universe.fresko_core.services import evidence_service
+        self.svc = evidence_service
+        self.driver = types.ModuleType("pymysql")
+        for name in ("OperationalError", "InterfaceError", "IntegrityError"):
+            setattr(self.driver, name, type(name, (Exception,), {}))
+        self.cursor = MagicMock()
+        self.connection = MagicMock()
+        self.connection.cursor.return_value.__enter__.return_value = self.cursor
+        self.driver.connect = MagicMock(return_value=self.connection)
+        self.fields = {"name": "one-logical-attempt", "evidence": "EV", "outcome": "CONFLICT_KEY_COLLISION"}
+        for p in (patch.dict(sys.modules, {"pymysql": self.driver}),
+                  patch.object(frappe, "conf", types.SimpleNamespace(db_name="test", db_password="test"), create=True),
+                  patch.object(self.svc.time, "sleep"), patch.object(frappe.db, "commit")):
+            p.start()
+            self.addCleanup(p.stop)
+
+    def test_first_success_no_retry_or_caller_commit(self):
+        import frappe
+        self.assertTrue(self.svc._persist_attempt_independently(self.fields))
+        self.assertEqual(self.driver.connect.call_count, 1)
+        self.svc.time.sleep.assert_not_called()
+        frappe.db.commit.assert_not_called()
+        self.assertNotIn("foreign_key_checks", str(self.cursor.execute.call_args_list))
+
+    def test_transient_failure_one_retry(self):
+        self.driver.connect.side_effect = [self.driver.OperationalError(2003, "offline"), self.connection]
+        self.assertTrue(self.svc._persist_attempt_independently(self.fields))
+        self.assertEqual(self.driver.connect.call_count, 2)
+        self.svc.time.sleep.assert_called_once_with(0.05)
+
+    def test_all_fail_exactly_two_bounded_retries(self):
+        self.driver.connect.side_effect = self.driver.OperationalError(2003, "offline")
+        self.assertFalse(self.svc._persist_attempt_independently(self.fields))
+        self.assertEqual(self.driver.connect.call_count, 3)
+        self.assertEqual([c.args[0] for c in self.svc.time.sleep.call_args_list], [0.05, 0.1])
+        self.assertEqual(self.driver.connect.call_args.kwargs["connect_timeout"], 2)
+
+    def test_permanent_error_not_retried(self):
+        self.driver.connect.side_effect = self.driver.OperationalError(1045, "access denied")
+        self.assertFalse(self.svc._persist_attempt_independently(self.fields))
+        self.assertEqual(self.driver.connect.call_count, 1)
+
+    def test_identical_duplicate_confirmed_but_mismatch_rejected(self):
+        digest = hashlib.sha256(json.dumps(self.fields, sort_keys=True, separators=(",", ":"),
+                                          ensure_ascii=False, default=str).encode()).hexdigest()
+        def execute(sql, args=None):
+            if sql.startswith("INSERT"):
+                raise self.driver.IntegrityError(1062, "duplicate")
+        self.cursor.execute.side_effect = execute
+        self.cursor.fetchone.return_value = (digest,)
+        self.assertTrue(self.svc._persist_attempt_independently(self.fields))
+        self.assertFalse(self.svc._persist_attempt_independently({**self.fields, "outcome": "different"}))
+
+    def test_missing_parent_identifier_does_not_inherit_salesperson_access(self):
+        from unittest.mock import patch
+        import frappe
+        from fresko_universe import permissions
+        with patch.object(frappe.db, "exists", return_value=False), \
+                patch.object(permissions, "current_roles", return_value={"Fresko Salesperson"}):
+            self.assertFalse(permissions.evidence_attempt_has_permission(
+                types.SimpleNamespace(evidence="rolled-back"), "read", user="sales@example.test"))
+
+
 if __name__ == "__main__":
     unittest.main()
-
 

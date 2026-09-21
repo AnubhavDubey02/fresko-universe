@@ -97,6 +97,27 @@
    "label": "Provider Message ID"
   },
   {
+   "fieldname": "source_sender_id",
+   "fieldtype": "Data",
+   "label": "Source Reported Sender ID",
+   "description": "Sender identifier exactly as reported by the provider. Never inferred from owner, session user, customer or buyer. NULL when the source does not establish it.",
+   "read_only": 1
+  },
+  {
+   "fieldname": "source_sent_at",
+   "fieldtype": "Datetime",
+   "label": "Source Reported Sent At",
+   "description": "Send time explicitly reported by the provider. NULL when the provider supplies none. Never now(), creation, webhook time or worker time.",
+   "read_only": 1
+  },
+  {
+   "fieldname": "received_at",
+   "fieldtype": "Datetime",
+   "label": "First Received At Ingress",
+   "description": "Original Fresko ingress receipt time, not provider-message provenance. Fieldname received_at retained for compatibility. Never overwritten or filled by redelivery; historical NULL stays unknown. Subsequent receipts belong to Evidence Attempt.delivery_received_at. Not creation or worker time.",
+   "read_only": 1
+  },
+  {
    "fieldname": "scoped_message_key",
    "fieldtype": "Data",
    "label": "Scoped Message Key",
