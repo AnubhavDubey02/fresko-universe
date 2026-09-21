@@ -63,10 +63,43 @@ creation is performed automatically. Historical values are not rewritten.
 
 Local smoke: **123 tests**, no failures/errors/skips. Constants: **14 tests**.
 Readiness corpus: **19 fixtures**. Readiness contract: **6 tests**. All passed.
-Live tests in `test_f2_corrective.py` are included by the pinned app-wide runner.
-They assert persisted values after real commits/rollbacks, rather than just SQL
-text or mock call counts. Exact-SHA pinned bench results must be recorded after
-CI completes; local smoke is not a substitute for that gate.
+Targeted local retry/access suite: **6 tests**, all passed (included in smoke).
+
+Exact implementation SHA: `f8486921bab12198c8623ce1db36086fbf8f8b44`.
+[CI run 35644231347](https://github.com/AnubhavDubey02/fresko-universe/actions/runs/35644231347)
+completed successfully on that SHA. Logs independently retrieved using the
+authenticated GitHub CLI:
+
+| Gate | Count | Failures | Errors | Skips |
+|---|---:|---:|---:|---:|
+| CI smoke | 123 tests | 0 | 0 | 0 |
+| CI readiness contract | 6 tests | 0 | 0 | 0 |
+| CI readiness corpus | 19 fixtures | 0 | 0 | 0 |
+| Full pinned Frappe/MariaDB bench | 119 tests | 0 | 0 | 0 |
+
+Smoke job: `106480660477`. Bench job: `106480754663`.
+Bench includes **11 live corrective tests** from `test_f2_corrective.py` and ends
+with `Ran 119 tests`, `OK`, `==> CI bench OK`. Frappe/ERPNext immutable pins
+are unchanged. This is a real fresh-site install + migrate + full app test gate,
+not an assertion that a pre-existing production site was upgraded.
+
+Persisted-state output from the bench log:
+
+```text
+F2-005 persisted: first=2026-09-19 10:01:00 redelivery=2026-09-19 10:05:00 outcome=SUCCESS_IDEMPOTENT_REDELIVERY
+F2-005 historical received_at=NULL remains NULL after later receipt
+F2-005 source_sender_id: conflict audit survives rollback; original unchanged
+F2-005 source_sent_at: conflict audit survives rollback; original unchanged
+F2-006 persisted: attempt=1 canonical_evidence=0 canonical_attachment=0 references=IDENTIFIER_SNAPSHOTS relational_FKs=0 no_parent_fabricated
+F2-007 transient: connections=2 persisted_attempts=1 after_caller_rollback
+F2-007 exhausted: connections=3 retries=2 conflict_failed_closed=True durable_rows=0
+F2-007 ambiguous INSERT committed then acknowledgement lost: rows=1 identical_replay=True mismatched_duplicate=False
+F2-007 caller mutation rolled back; independent conflict attempt still committed
+```
+
+This document's follow-up evidence commit changes no implementation or tests.
+Its own CI result must be checked separately; the run above proves the named
+implementation SHA only. PR #3 remains draft and unmerged.
 
 CHA exemption and recoverable amount remain PENDING pending shipment-specific
 receipts/exemption evidence; approximately INR 80,000 is user-reported, not
