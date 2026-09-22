@@ -106,3 +106,117 @@ The large `docs/FRESKO_UNIVERSE_CODEX_START_HERE.md` remains valuable product an
 ## Environment and credential note
 
 This session used the signed-in GitHub web interface because local terminal elevation was unavailable. No password, token, API key, OAuth secret, or user credential was requested, copied into repository content, or committed. GitHub Actions supplied the reproducible smoke and bench verification.
+
+## 2026-09-22 independent review — ChatGPT
+
+Reviewer/session label: ChatGPT (Personal review)
+
+### Agent/session attribution convention
+
+Multiple Codex environments may work on this repository. Preserve that distinction without implying employer authorship, sponsorship, approval, or ownership.
+
+Use:
+- Codex (Personal) — Codex work performed from Anubhav's personal environment/device.
+- Codex (Office/Cognizant environment) — Codex work performed from Anubhav's office/Cognizant environment/device. This is an environment/session label only; it does NOT mean Cognizant authored, sponsored, approved, or owns the repository work.
+- ChatGPT (Personal review) — independent review in Anubhav's personal ChatGPT project context.
+- If environment is unknown, write "environment UNKNOWN"; never infer it.
+
+Existing references saying "Codex (Cognizant)" should be interpreted and, in a later cleanup, renamed to "Codex (Office/Cognizant environment)".
+
+### Review of AGENTS.md
+
+The current lean AGENTS.md direction is sound. Preserve its reasoning-freedom language: future models must remain free to challenge historical recommendations when current code, persisted-state evidence, or reproducible tests disagree.
+
+Add these two principles to AGENTS.md in the same documentation-only change:
+
+1. A passing test suite proves only the assertions exercised by that suite. Do not infer semantic correctness, security closure, migration safety, or production readiness solely from green CI.
+
+2. When practical, reproduce a suspected runtime defect before changing production behavior. Do not change runtime code solely because a historical document says behavior is wrong.
+
+Keep AGENTS.md lean. Detailed architecture/history belongs in AGENT_HANDOFF.md and canonical project docs, not AGENTS.md.
+
+### Branch / PR dependency finding
+
+Observed repository graph during independent review:
+
+- Phase 1 / PR #2 tip:
+dbf6e2f57b8d250193d0db880ed3eb3bc9fbc8e3
+
+- Phase 2 / PR #3 tip:
+df7d0fd5b1ac1672be5fe15a18916e70bbf9d79e
+based on Phase 1
+
+- CI hardening / PR #4 tip:
+4d98d72a0419b38ef426095aa0f61a1e042ab0ec
+separate child of Phase 1
+
+- AGENTS/handoff / PR #5:
+based on Phase 2
+
+Therefore PR #4's hardened workflow is NOT yet part of PR #3 merely because both are green.
+
+If/when PR #4 is incorporated into Phase 1:
+1. update Phase 2 from the resulting Phase 1 state;
+2. rerun Phase 2 CI;
+3. only then claim that Phase 2 inherits the hardened workflow.
+
+Do not merge, retarget, rebase, force-push, or rewrite branches from this note alone. Repository-owner authorization still controls merge decisions.
+
+### CI hardening review
+
+PR #4's direction was independently reviewed and is technically coherent:
+
+- top-level contents: read permission;
+- Ubuntu 24.04 pinning;
+- GitHub Actions pinned by immutable SHAs;
+- checkout persist-credentials disabled;
+- setup-node package-manager caching disabled.
+
+Its smoke and pinned Frappe/MariaDB bench jobs were green when reviewed.
+
+Important: green CI proves only those executed gates, not broader Phase 2 semantic correctness.
+
+### Remaining Phase 2 proof / reconciliation work
+
+Before treating PR #3 as complete or closing broader security findings:
+
+1. Reconcile dated/canonical Phase 2 and security documentation against actual current PR #3 code, migrations, tests and CI.
+
+FSEC-004/FSEC-005 must not be closed merely from commit titles or narrow corrective evidence.
+
+2. Add or verify an upgrade/migration regression for existing historical Fresko Evidence Attempt rows across the change from Link-style references to Data identifier snapshots.
+
+Prove:
+- existing identifier values are preserved;
+- historical values are not fabricated or reinterpreted;
+- legacy NULL audit fingerprints remain NULL/UNKNOWN truthfully;
+- permissions remain correct;
+- migration succeeds against an existing-state fixture, not only a fresh site.
+
+3. Review:
+docs/phase2_readiness/F2_005_007_CORRECTIVE_EVIDENCE.md
+
+Remove any unrelated/context-contaminated material before treating the document as canonical Phase 2 evidence.
+
+4. Keep PR #3 draft/unmerged until those proof and reconciliation items are independently checked.
+
+### Handoff maintenance rule
+
+Update AGENT_HANDOFF.md after meaningful work units, for example:
+
+- completed corrective slice;
+- security re-review;
+- migration proof;
+- material architecture decision;
+- branch/base change;
+- merge.
+
+Do not append noise after every command or ordinary test rerun.
+
+Every meaningful entry should record:
+- agent/session label;
+- environment label when known;
+- exact branch and SHA;
+- what actually changed;
+- what was independently verified;
+- what remains UNKNOWN/PENDING.

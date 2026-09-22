@@ -22,6 +22,8 @@ This file does not prescribe a model, reasoning budget, chain-of-thought style, 
 - Keep AI output advisory. Deterministic rules, source evidence, and authorized human decisions control financial and inventory truth.
 - Never commit credentials, tokens, personal data, external archives, or production secrets.
 - Record test evidence against immutable commit SHAs and report failures honestly.
+- A passing test suite proves only the assertions exercised by that suite. Do not infer semantic correctness, security closure, migration safety, or production readiness solely from green CI.
+- When practical, reproduce a suspected runtime defect before changing production behavior. Do not change runtime code solely because a historical document says behavior is wrong.
 - Prefer focused changes and tests that match the actual risk. Do not weaken a test merely to obtain a green result.
 
 ## Current handoff
