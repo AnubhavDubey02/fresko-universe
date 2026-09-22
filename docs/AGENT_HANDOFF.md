@@ -4,6 +4,12 @@ Status snapshot: 2026-09-22
 
 Prepared by: Codex (Cognizant)
 
+## Handoff publication
+
+This handoff and the root `AGENTS.md` were added on the separate `codex/agent-handoff` branch and proposed to `phase2-evidence-durability` as draft PR #5: https://github.com/AnubhavDubey02/fresko-universe/pull/5.
+
+Initial publication commits were `eb8eacd259e5de4998ae059188ac4e7ca508da06` and `2da45de7fab7fa3658556f453066599de4486f69`. The documentation-only GitHub Actions run https://github.com/AnubhavDubey02/fresko-universe/actions/runs/35705620935 succeeded: smoke completed in 6 seconds and the pinned bench completed in 5 minutes 20 seconds. Its Node.js 20 and `ubuntu-latest` annotations are expected because this branch inherits the Phase 2 workflow; the separate PR #4 contains the verified workflow hardening.
+
 ## Purpose and reasoning freedom
 
 This is a factual handoff for future ChatGPT, Codex, Cortex, and human contributors. It records what was observed and changed in one working session. It is not a command to repeat the same approach, and it does not limit a future model's reasoning depth, tools, architecture choices, or ability to disagree. Re-check every time-sensitive fact against the live repository.
