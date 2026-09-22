@@ -7,6 +7,9 @@ on:
   push:
     branches: [phase1-doctype-scaffold, main, master]
 
+permissions:
+  contents: read
+
 concurrency:
   group: phase1-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -14,10 +17,12 @@ concurrency:
 jobs:
   smoke-unit:
     name: Smoke unit (Gate 1 / D4 / constants)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
       - name: Run offline smoke suite
@@ -41,7 +46,7 @@ jobs:
 
   frappe-bench:
     name: Bench install + migrate + run-tests (pinned v15)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     needs: smoke-unit
     services:
@@ -72,22 +77,25 @@ jobs:
       FRAPPE_SITE: test.localhost
       BENCH_DIR: /home/runner/frappe-bench
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Runner requirements note
         run: |
-          echo "Full ERPNext v15 bench is heavy on ubuntu-latest (disk/RAM/time)."
+          echo "Full ERPNext v15 bench is heavy on ubuntu-24.04 (disk/RAM/time)."
           echo "See docs/VERSIONS.md. Job fails honestly on OOM/timeout — do not fake green."
           df -h
           free -h
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "18"
+          package-manager-cache: false
 
       - name: System packages
         run: |
@@ -121,7 +129,7 @@ jobs:
 
       - name: Upload bench logs on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: bench-logs
           path: |
