@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -453,8 +454,15 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    sites_path = str(Path.cwd() / "sites")
-    frappe.init(site=args.site, sites_path=sites_path)
+    cwd = Path.cwd()
+    sites_path = cwd / "sites" if (cwd / "sites").is_dir() else cwd
+    site_config = sites_path / args.site / "site_config.json"
+    _require(site_config.is_file(), f"Site configuration is missing: {site_config}")
+
+    # Frappe's file logger resolves ../logs and <site>/logs from the process
+    # working directory, so direct site-aware CLIs must run from sites/.
+    os.chdir(sites_path)
+    frappe.init(site=args.site, sites_path=".")
     frappe.connect()
     try:
         globals()[args.stage]()
