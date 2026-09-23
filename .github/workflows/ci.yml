@@ -73,6 +73,8 @@ jobs:
       BENCH_DIR: /home/runner/frappe-bench
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Runner requirements note
         run: |
@@ -127,4 +129,5 @@ jobs:
           path: |
             /home/runner/frappe-bench/logs/
             /home/runner/frappe-bench/sites/test.localhost/logs/
+            /home/runner/frappe-bench/sites/upgrade.localhost/logs/
           if-no-files-found: ignore

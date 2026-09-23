@@ -9,6 +9,8 @@ SITE="${FRAPPE_SITE:-test.localhost}"
 DB_HOST="${DB_HOST:-127.0.0.1}"
 DB_ROOT_PASSWORD="${DB_ROOT_PASSWORD:-root}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin}"
+BASELINE_SHA="${FRESKO_PHASE1_SHA:-dbf6e2f57b8d250193d0db880ed3eb3bc9fbc8e3}"
+UPGRADE_SITE="${FRESKO_UPGRADE_SITE:-upgrade.localhost}"
 
 if [[ ! -f "${PIN_FILE}" ]]; then
   echo "Missing pin file: ${PIN_FILE}" >&2
@@ -110,26 +112,29 @@ if ! bench --site "${SITE}" list-apps 2>/dev/null | grep -q '^erpnext'; then
   bench --site "${SITE}" install-app erpnext
 fi
 
-APP_SRC="${ROOT}/fresko_universe"
-echo "==> Vendor fresko_universe from ${APP_SRC} (copy + mini git repo for bench)"
-rm -rf apps/fresko_universe
-mkdir -p apps/fresko_universe
-# Prefer rsync; fall back to cp
-if command -v rsync >/dev/null 2>&1; then
-  rsync -a --delete --exclude '.git' --exclude '*.egg-info' --exclude '__pycache__' \
-    "${APP_SRC}/" apps/fresko_universe/
-else
-  cp -a "${APP_SRC}/." apps/fresko_universe/
-  rm -rf apps/fresko_universe/.git apps/fresko_universe/*.egg-info
-fi
-git -C apps/fresko_universe init -q
-git -C apps/fresko_universe config user.email "ci@fresko.local"
-git -C apps/fresko_universe config user.name "Fresko CI"
-git -C apps/fresko_universe add -A
-git -C apps/fresko_universe commit -qm "ci: vendor fresko_universe for Gate 2 bench"
+vendor_fresko_app() {
+  local app_src="$1"
+  local label="$2"
+  echo "==> Vendor fresko_universe ${label} from ${app_src}"
+  rm -rf apps/fresko_universe
+  mkdir -p apps/fresko_universe
+  if command -v rsync >/dev/null 2>&1; then
+    rsync -a --delete --exclude '.git' --exclude '*.egg-info' --exclude '__pycache__' \
+      "${app_src}/" apps/fresko_universe/
+  else
+    cp -a "${app_src}/." apps/fresko_universe/
+    rm -rf apps/fresko_universe/.git apps/fresko_universe/*.egg-info
+  fi
+  git -C apps/fresko_universe init -q
+  git -C apps/fresko_universe config user.email "ci@fresko.local"
+  git -C apps/fresko_universe config user.name "Fresko CI"
+  git -C apps/fresko_universe add -A
+  git -C apps/fresko_universe commit -qm "ci: vendor fresko_universe ${label}"
+  ./env/bin/pip install -q -e ./apps/fresko_universe
+}
 
-echo "==> pip install -e fresko_universe"
-./env/bin/pip install -q -e ./apps/fresko_universe
+APP_SRC="${ROOT}/fresko_universe"
+vendor_fresko_app "${APP_SRC}" "current-gate-2"
 
 # Register after pip install (must not be present during new-site).
 mkdir -p sites
@@ -156,5 +161,44 @@ echo "==> ERPNext before_tests finished"
 
 echo "==> run-tests --app fresko_universe"
 bench --site "${SITE}" run-tests --app fresko_universe
+
+echo "==> prove exact Phase 1 Evidence Attempt Link-to-Data migration"
+if ! git -C "${ROOT}" merge-base --is-ancestor "${BASELINE_SHA}" HEAD; then
+  echo "Phase 1 baseline ${BASELINE_SHA} is not available as an ancestor of HEAD" >&2
+  exit 1
+fi
+
+UPGRADE_TMP="$(mktemp -d)"
+trap 'rm -rf "${UPGRADE_TMP}"' EXIT
+git -C "${ROOT}" archive "${BASELINE_SHA}" fresko_universe | tar -x -C "${UPGRADE_TMP}"
+vendor_fresko_app "${UPGRADE_TMP}/fresko_universe" "phase1-${BASELINE_SHA}"
+
+if [[ -d "sites/${UPGRADE_SITE}" ]]; then
+  echo "Upgrade proof site already exists: ${UPGRADE_SITE}" >&2
+  exit 1
+fi
+bench new-site "${UPGRADE_SITE}" \
+  --mariadb-root-password "${DB_ROOT_PASSWORD}" \
+  --admin-password "${ADMIN_PASSWORD}" \
+  --no-mariadb-socket \
+  --db-host "${DB_HOST}"
+bench --site "${UPGRADE_SITE}" install-app erpnext
+bench --site "${UPGRADE_SITE}" install-app fresko_universe
+./env/bin/python "${ROOT}/scripts/prove_evidence_attempt_link_data_migration.py" \
+  --site "${UPGRADE_SITE}" seed_phase1
+
+vendor_fresko_app "${APP_SRC}" "current-upgrade-candidate"
+diff -qr \
+  --exclude='.git' \
+  --exclude='*.egg-info' \
+  --exclude='__pycache__' \
+  "${APP_SRC}" apps/fresko_universe
+
+bench --site "${UPGRADE_SITE}" migrate
+./env/bin/python "${ROOT}/scripts/prove_evidence_attempt_link_data_migration.py" \
+  --site "${UPGRADE_SITE}" verify_first_migrate
+bench --site "${UPGRADE_SITE}" migrate
+./env/bin/python "${ROOT}/scripts/prove_evidence_attempt_link_data_migration.py" \
+  --site "${UPGRADE_SITE}" verify_second_migrate
 
 echo "==> CI bench OK"
