@@ -4,7 +4,7 @@
 
 **Reviewed:** 2026-10-01
 
-**Scope:** PR #2 / `phase1-doctype-scaffold`; Phase 2 implementation remains on hold.
+**Scope:** Historical Phase 1 authority plus dated PR #7 stabilization status. Phase 2A Outward/Field Assertion remains unimplemented; this index authorizes no merge or implementation.
 
 Use this index before relying on an older design memo. Historical documents remain
 in the repository as dated evidence; a later canonical decision overrides a

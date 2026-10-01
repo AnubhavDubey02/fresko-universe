@@ -30,7 +30,7 @@ Real-world examples represent facts or classifications at a stated evidence time
 
 ### 447 Plum crates
 
-The 447 unpriced Plum crates are a historical intermediate state proving that physical Outward must be recordable before price is known. At that historical point, the Outward has `rate = null` and deterministically opens `OUTWARD_UNPRICED`. This fixture must not be presented as proof that the crates remain unpriced today.
+The 447 unpriced Plum crates are a historical intermediate state proving that physical Outward must be recordable before price is known. Future Phase 2A acceptance must represent that historical movement with `rate = null` and deterministically open `OUTWARD_UNPRICED`. This example must not be presented as proof that an Outward record already exists or that the crates remain unpriced today.
 
 ### 180 Grapes crates
 
