@@ -948,25 +948,32 @@ def validate_completeness_provenance(
 
 
 
-def _same_reported_value(existing_value: Any, incoming_value: Any) -> bool:
-    """Compare two source-reported provenance values tolerantly.
+def _same_reported_value(
+    existing_value: Any,
+    incoming_value: Any,
+    *,
+    compare_as_datetime: bool = False,
+) -> bool:
+    """Compare immutable source provenance without weakening identifier identity.
 
-    Datetimes may arrive as strings from a caller and as datetime objects from
-    the database, so compare those as instants. Anything else compares as text.
-    Used only to detect disagreement; it never rewrites either value.
+    ``source_sent_at`` may arrive as text from a caller and as a datetime from
+    the database, so its caller opts into instant comparison. Identifiers such
+    as ``source_sender_id`` are compared as exact, whitespace-normalized text;
+    date-like identifiers must never be reinterpreted as timestamps.
     """
     if existing_value is None or incoming_value is None:
         return existing_value == incoming_value
 
-    try:
-        from frappe.utils import get_datetime
+    if compare_as_datetime:
+        try:
+            from frappe.utils import get_datetime
 
-        left = get_datetime(existing_value)
-        right = get_datetime(incoming_value)
-        if left is not None and right is not None:
-            return left == right
-    except Exception:
-        pass
+            left = get_datetime(existing_value)
+            right = get_datetime(incoming_value)
+            if left is not None and right is not None:
+                return left == right
+        except Exception:
+            pass
 
     return str(existing_value).strip() == str(incoming_value).strip()
 
@@ -1079,7 +1086,7 @@ def ingest_message_evidence(
 
         # 1. Permission check FIRST: never expose existing record merely because key matches
         if not permissions.evidence_has_permission(existing.name, "read", user=frappe.session.user):
-            _record_attempt(
+            durability = _record_attempt(
                 evidence=existing.name,
                 operation="MESSAGE_INGEST",
                 outcome="ACCESS_DENIED",
@@ -1089,6 +1096,11 @@ def ingest_message_evidence(
                 delivery_received_at=received_at,
                 isolated=True,
             )
+            if durability != "COMMITTED_INDEPENDENT":
+                raise IntegrityConflictError(
+                    "Access denied on message redelivery, but the denial could not "
+                    f"be durably recorded (durability_state={durability})"
+                )
             frappe.throw("Access denied", frappe.PermissionError)
 
         # 2. Collision check: all 4 original scope fields must match exactly
@@ -1099,17 +1111,23 @@ def ingest_message_evidence(
             and existing.provider_message_id == provider_message_id
         )
         if not scope_matches:
-            _record_attempt(
+            reason = f"Key collision: scope fields do not match existing row {existing.name}"
+            durability = _record_attempt(
                 evidence=existing.name,
                 operation="MESSAGE_INGEST",
                 outcome="CONFLICT_KEY_COLLISION",
                 scoped_message_key=scoped_key,
                 payload_sha256=payload_sha,
                 source_payload=canonical_payload_str,
-                reason=f"Key collision: scope fields do not match existing row {existing.name}",
+                reason=reason,
                 delivery_received_at=received_at,
                 isolated=True,
             )
+            if durability != "COMMITTED_INDEPENDENT":
+                raise IntegrityConflictError(
+                    f"{reason}; additionally the collision could not be durably "
+                    f"recorded (durability_state={durability})"
+                )
             raise IntegrityConflictError(
                 f"Scoped message key collision detected on evidence {existing.name}",
             )
@@ -1134,7 +1152,11 @@ def ingest_message_evidence(
             stored_value = existing.get(prov_field) if hasattr(existing, "get") else getattr(existing, prov_field, None)
             if stored_value is None or incoming_value is None:
                 continue
-            if _same_reported_value(stored_value, incoming_value):
+            if _same_reported_value(
+                stored_value,
+                incoming_value,
+                compare_as_datetime=prov_field == "source_sent_at",
+            ):
                 continue
 
             reason = (
@@ -1256,7 +1278,7 @@ def ingest_attachment(
         curr = existing_att[0]
         # Permission check: caller must have read permission on parent to access existing attachment
         if not permissions.evidence_has_permission(evidence_name, "read", user=frappe.session.user):
-            _record_attempt(
+            durability = _record_attempt(
                 evidence=evidence_name,
                 evidence_attachment=curr.name,
                 operation="ATTACHMENT_INGEST",
@@ -1265,6 +1287,11 @@ def ingest_attachment(
                 reason="Caller lacks read permission for existing attachment on redelivery",
                 isolated=True,
             )
+            if durability != "COMMITTED_INDEPENDENT":
+                raise IntegrityConflictError(
+                    "Access denied on attachment redelivery, but the denial could not "
+                    f"be durably recorded (durability_state={durability})"
+                )
             frappe.throw("Access denied", frappe.PermissionError)
 
         curr_prov_type = getattr(curr, "provenance_type", None) or (curr.get("provenance_type") if hasattr(curr, "get") else None)
@@ -1314,7 +1341,7 @@ def ingest_attachment(
             return frappe.get_doc("Fresko Evidence Attachment", curr.name), "SUCCESS_IDEMPOTENT_REDELIVERY"
         else:
             reason = "New file or conflicting provenance submitted for existing logical attachment without correction flow"
-            _record_attempt(
+            durability = _record_attempt(
                 evidence=evidence_name,
                 evidence_attachment=curr.name,
                 operation="ATTACHMENT_INGEST",
@@ -1323,6 +1350,11 @@ def ingest_attachment(
                 reason=reason,
                 isolated=True,
             )
+            if durability != "COMMITTED_INDEPENDENT":
+                raise IntegrityConflictError(
+                    f"{reason}; additionally the attachment conflict could not be durably "
+                    f"recorded (durability_state={durability})"
+                )
             frappe.throw(
                 f"Logical attachment '{curr.name}' already exists with different content/provenance; use supersede_attachment",
                 frappe.ValidationError,
@@ -1332,7 +1364,7 @@ def ingest_attachment(
     if identity_type == "ordinal":
         proved, ord_err = prove_ordinal_ordering(parent, int(identity_value), provenance_type, provenance_ref)
         if not proved:
-            _record_attempt(
+            durability = _record_attempt(
                 evidence=evidence_name,
                 operation="ATTACHMENT_INGEST",
                 outcome="VALIDATION_FAILED",
@@ -1340,6 +1372,11 @@ def ingest_attachment(
                 reason=ord_err,
                 isolated=True,
             )
+            if durability != "COMMITTED_INDEPENDENT":
+                raise IntegrityConflictError(
+                    "Ordinal attachment validation failed, but the failure could not be "
+                    f"durably recorded (durability_state={durability})"
+                )
             frappe.throw(
                 ord_err or "Ordinal identity requires verified stable-ordering provenance",
                 frappe.ValidationError,
@@ -1658,7 +1695,7 @@ def verify_and_capture_attachment(attachment_name: str) -> CaptureResult:
         except Exception as we:
             write_err = we
 
-        _record_attempt(
+        durability = _record_attempt(
             evidence=parent.name,
             evidence_attachment=att.name,
             operation="ATTACHMENT_VERIFY",
@@ -1671,6 +1708,12 @@ def verify_and_capture_attachment(attachment_name: str) -> CaptureResult:
             + (f"; persisting failure status failed: {write_err}" if write_err else ""),
             isolated=True,
         )
+
+        if durability != "COMMITTED_INDEPENDENT":
+            raise IntegrityConflictError(
+                "Attachment capture database write failed, but the failure could not be "
+                f"durably recorded (durability_state={durability})"
+            )
 
         if write_err is not None:
             # Never claim a persisted failure status after swallowing its write failure

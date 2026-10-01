@@ -8,6 +8,7 @@ import os
 import sys
 import types
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -53,6 +54,7 @@ def _install_frappe_stub():
     frappe.new_doc = MagicMock()
     utils = types.ModuleType("frappe.utils")
     utils.flt = lambda v, p=None: float(v or 0)
+    utils.get_datetime = lambda v: v if isinstance(v, datetime) else datetime.fromisoformat(str(v))
     utils.nowdate = lambda: "2026-09-15"
     utils.now_datetime = lambda: "2026-09-15 12:00:00"
     frappe.utils = utils
@@ -240,7 +242,10 @@ class TestCommercialLock(unittest.TestCase):
 
     def test_dispatch_lock_precedes_physical_reads(self):
         deals_py = (ROOT / "fresko_universe" / "deals.py").read_text()
+        release_body = deals_py.split("def advance_to_legacy_outward_pending", 1)[1].split("def record_dispatch", 1)[0]
         body = deals_py.split("def record_dispatch", 1)[1].split("def request_revision", 1)[0]
+        self.assertIn("lock_container_for_update(locked_container)", release_body)
+        self.assertIn('frappe.get_doc("Fresko Deal", deal_name, for_update=True)', release_body)
         self.assertIn("lock_container_for_update(locked_container)", body)
         self.assertIn('frappe.get_doc("Fresko Deal", deal_name, for_update=True)', body)
         self.assertEqual(body.count("FOR UPDATE"), 2)
@@ -252,6 +257,50 @@ class TestCommercialLock(unittest.TestCase):
             body.index('frappe.get_doc("Fresko Deal", deal_name, for_update=True)'),
             body.index("SELECT inward_qty"),
         )
+
+    def test_rate_rules_and_decisions_use_container_first_lock_order(self):
+        deals_py = (ROOT / "fresko_universe" / "deals.py").read_text()
+        apply_body = deals_py.split("def apply_rate_rules", 1)[1].split("def accept_counter", 1)[0]
+        approvals_py = (ROOT / "fresko_universe" / "approvals.py").read_text()
+        decide_body = approvals_py.split("def decide", 1)[1].split("def create_revision_approval", 1)[0]
+
+        for body in (apply_body, decide_body):
+            self.assertLess(
+                body.index("lock_container_for_update(locked_container)"),
+                body.index('frappe.get_doc("Fresko Deal", deal_name, for_update=True)'),
+            )
+        self.assertIn(
+            'frappe.get_doc("Fresko Container", locked_container, for_update=True)',
+            apply_body,
+        )
+        self.assertGreaterEqual(apply_body.count("assert_can_apply_rate_rules("), 2)
+        self.assertLess(
+            decide_body.index('frappe.get_doc("Fresko Deal", deal_name, for_update=True)'),
+            decide_body.index('if deal.status != "Approval Required"'),
+        )
+
+        accept_body = deals_py.split("def accept_counter", 1)[1].split(
+            "def _load_counter_approval", 1
+        )[0]
+        self.assertLess(
+            accept_body.index("lock_container_for_update(locked_container)"),
+            accept_body.index('frappe.get_doc("Fresko Deal", deal_name, for_update=True)'),
+        )
+        self.assertLess(
+            accept_body.index('frappe.get_doc("Fresko Deal", deal_name, for_update=True)'),
+            accept_body.index('if deal.status != "Countered"'),
+        )
+        self.assertLess(
+            accept_body.index('if deal.status != "Countered"'),
+            accept_body.index("counter_approval = _load_counter_approval(deal)"),
+        )
+
+    def test_legacy_dispatch_contract_is_explicit(self):
+        deals_py = (ROOT / "fresko_universe" / "deals.py").read_text()
+        self.assertIn("def advance_to_legacy_outward_pending", deals_py)
+        self.assertIn('"legacy_dispatch_transition": True', deals_py)
+        self.assertIn('"physical_outward_recorded": False', deals_py)
+        self.assertIn('"phase2a_outward_authorized": False', deals_py)
 
     def test_revision_and_approval_are_server_created(self):
         for doctype in ("fresko_revision", "fresko_approval"):
@@ -500,7 +549,7 @@ class TestGate1RatePolicyMissing(unittest.TestCase):
 
         inserted = []
 
-        def fake_get_doc(dt, name=None):
+        def fake_get_doc(dt, name=None, **kwargs):
             if dt == "Fresko Deal":
                 return deal
             if dt == "Fresko Container":
@@ -608,6 +657,18 @@ class TestGate1RatePolicyMissing(unittest.TestCase):
         self.assertEqual(deal.approved_rate, 85)
         self.assertEqual(deal.rate_floor, 80)
 
+    def test_6_out_of_band_opens_rate_floor_breach_once(self):
+        deal = self._deal(proposed_rate=70, count_size="16/20")
+        container = self._container(
+            lots=[self._lot(floor=80, ceiling=150, count_size="16/20")],
+            rate_rules=[],
+        )
+        result, inserted = self._run_apply(deal, container)
+        self.assertEqual(result["status"], "Approval Required")
+        breaches = [i for i in inserted if i.get("exception_type") == "RATE_FLOOR_BREACH"]
+        self.assertEqual(len(breaches), 1)
+        self.assertEqual(breaches[0]["severity"], "Material")
+
 
 class TestD4AcceptCounterACL(unittest.TestCase):
     """D4 tighter: only owner or salesperson_user; SM/Approver cannot accept."""
@@ -637,6 +698,7 @@ class TestD4AcceptCounterACL(unittest.TestCase):
         frappe.db.get_value = MagicMock(
             return_value=types.SimpleNamespace(decision="COUNTER", decision_rate=12)
         )
+        frappe.get_all = MagicMock(return_value=[])
         frappe.db.commit = MagicMock()
         deals_mod.available_to_sell = MagicMock(return_value=100)
         return deals_mod.accept_counter(deal.name), deal
@@ -835,13 +897,80 @@ class TestFSEC001WhitelistACL(unittest.TestCase):
         import frappe
         from fresko_universe import deals as deals_mod
 
-        deal = self._deal(status="Approved")
+        deal = self._deal(status="Outward Pending")
         self._as("appr@x.com", ["Fresko Approver"])
         frappe.get_doc = MagicMock(return_value=deal)
         frappe.db.sql = MagicMock(return_value=[])
         frappe.db.commit = MagicMock()
         result = deals_mod.record_dispatch(deal.name, 5)
         self.assertEqual(result["dispatched_qty"], 5)
+        self.assertEqual(result["status"], "Partially Dispatched")
+        self.assertTrue(result["legacy_dispatch_transition"])
+        self.assertFalse(result["physical_outward_recorded"])
+        self.assertFalse(result["phase2a_outward_authorized"])
+
+    def test_approver_can_release_approved_deal_for_outward(self):
+        import frappe
+        from fresko_universe import deals as deals_mod
+
+        deal = self._deal(status="Approved")
+        self._as("appr@x.com", ["Fresko Approver"])
+        frappe.get_doc = MagicMock(return_value=deal)
+        frappe.db.commit = MagicMock()
+        result = deals_mod.release_for_outward(deal.name)
+        self.assertEqual(result["status"], "Outward Pending")
+        self.assertTrue(result["legacy_dispatch_transition"])
+        self.assertFalse(result["physical_outward_recorded"])
+        self.assertFalse(result["phase2a_outward_authorized"])
+        deal.save.assert_called_once_with(ignore_permissions=True)
+
+    def test_record_dispatch_rejects_unreleased_and_terminal_states(self):
+        import frappe
+        from fresko_universe import deals as deals_mod
+
+        self._as("appr@x.com", ["Fresko Approver"])
+        for status in (
+            "Proposed",
+            "Approval Required",
+            "Approved",
+            "Auto Approved",
+            "Rejected",
+            "Cancelled",
+            "Payment Pending",
+            "Paid",
+            "Reconciled",
+            "Disputed",
+        ):
+            with self.subTest(status=status):
+                deal = self._deal(status=status)
+                frappe.get_doc = MagicMock(return_value=deal)
+                with self.assertRaises(Exception) as ctx:
+                    deals_mod.record_dispatch(deal.name, 1)
+                self.assertIn("requires Outward Pending", str(ctx.exception))
+                deal.save.assert_not_called()
+
+    def test_record_dispatch_rejects_decrement_and_limits_dispatched_to_replay(self):
+        import frappe
+        from fresko_universe import deals as deals_mod
+
+        self._as("appr@x.com", ["Fresko Approver"])
+        partial = self._deal(status="Partially Dispatched")
+        partial.dispatched_qty = 5
+        frappe.get_doc = MagicMock(return_value=partial)
+        with self.assertRaises(Exception) as ctx:
+            deals_mod.record_dispatch(partial.name, 4)
+        self.assertIn("cannot decrease", str(ctx.exception))
+        partial.save.assert_not_called()
+
+        complete = self._deal(status="Dispatched")
+        complete.dispatched_qty = 10
+        frappe.get_doc = MagicMock(return_value=complete)
+        replay = deals_mod.record_dispatch(complete.name, 10)
+        self.assertEqual(replay["dispatched_qty"], 10)
+        complete.save.assert_not_called()
+        with self.assertRaises(Exception) as ctx:
+            deals_mod.record_dispatch(complete.name, 9)
+        self.assertIn("exact idempotent", str(ctx.exception))
 
     def test_accounts_cannot_apply_rate_rules(self):
         import frappe
@@ -1279,6 +1408,11 @@ class TestDecideCounterRuntime(unittest.TestCase):
         deal.save = MagicMock()
 
         inserted = []
+        rate_exception = MagicMock()
+        rate_exception.name = "EX-RATE"
+        rate_exception.exception_type = "RATE_FLOOR_BREACH"
+        rate_exception.status = "Open"
+        rate_exception.save = MagicMock()
 
         def get_doc_flex(*a, **k):
             if a and isinstance(a[0], dict) and a[0].get("doctype") == "Fresko Approval":
@@ -1286,14 +1420,21 @@ class TestDecideCounterRuntime(unittest.TestCase):
                 ap.name = "APR-CTR"
                 ap.decision = a[0]["decision"]
                 ap.decision_rate = a[0]["decision_rate"]
+                ap.reason = a[0]["reason"]
+                ap.exception = a[0]["exception"]
                 ap.insert = MagicMock()
                 inserted.append(a[0])
                 return ap
+            if a and a[0] == "Fresko Exception":
+                return rate_exception
             return deal
 
         frappe.session = types.SimpleNamespace(user="appr@x.com")
         frappe.get_roles = MagicMock(return_value=["Fresko Approver"])
         frappe.get_doc = MagicMock(side_effect=get_doc_flex)
+        frappe.get_all = MagicMock(
+            return_value=[types.SimpleNamespace(name=rate_exception.name)]
+        )
         frappe.db.commit = MagicMock()
         frappe.db.set_value = MagicMock()
 
@@ -1307,6 +1448,231 @@ class TestDecideCounterRuntime(unittest.TestCase):
         self.assertEqual(result["decision_rate"], 80)
         frappe.db.set_value.assert_called()
         self.assertTrue(any(i.get("decision") == "COUNTER" for i in inserted))
+        self.assertEqual(inserted[0]["exception"], rate_exception.name)
+        self.assertEqual(rate_exception.status, "In Progress")
+        self.assertIn("approval=APR-CTR", rate_exception.resolution_notes)
+        self.assertIn("decision=COUNTER", rate_exception.resolution_notes)
+        self.assertIn("stored_band=100..200", rate_exception.resolution_notes)
+        rate_exception.save.assert_called_once_with(ignore_permissions=True)
+
+
+class TestRateFloorBreachLifecycle(unittest.TestCase):
+    def _decide(self, decision, rate):
+        import frappe
+        from fresko_universe import approvals as approvals_mod
+
+        deal = MagicMock()
+        deal.name = "DEAL-RATE-LIFECYCLE"
+        deal.status = "Approval Required"
+        deal.proposed_rate = 5
+        deal.rate_floor = 10
+        deal.rate_ceiling = 50
+        deal.approved_rate = None
+        deal.approval_required = 1
+        deal.qty = 5
+        deal.container = "C1"
+        deal.lot_no = "L1"
+        deal.customer = "CUST-1"
+        deal.flags = MagicMock()
+        deal.set_status = MagicMock(side_effect=lambda status: setattr(deal, "status", status))
+        deal.save = MagicMock()
+
+        rate_exception = MagicMock()
+        rate_exception.name = "EX-RATE"
+        rate_exception.exception_type = "RATE_FLOOR_BREACH"
+        rate_exception.status = "Open"
+        rate_exception.save = MagicMock()
+
+        def get_doc_flex(*args, **kwargs):
+            if args and isinstance(args[0], dict):
+                values = args[0]
+                approval = MagicMock()
+                approval.name = "APR-RATE"
+                approval.decision = values["decision"]
+                approval.decision_rate = values["decision_rate"]
+                approval.reason = values["reason"]
+                approval.exception = values["exception"]
+                approval.insert = MagicMock()
+                return approval
+            if args and args[0] == "Fresko Exception":
+                return rate_exception
+            return deal
+
+        frappe.session = types.SimpleNamespace(user="approver@example.com")
+        frappe.get_roles = MagicMock(return_value=["Fresko Approver"])
+        frappe.get_doc = MagicMock(side_effect=get_doc_flex)
+        frappe.get_all = MagicMock(return_value=[types.SimpleNamespace(name=rate_exception.name)])
+        frappe.db.commit = MagicMock()
+        orig_ats = approvals_mod.available_to_sell
+        approvals_mod.available_to_sell = MagicMock(return_value=100)
+        try:
+            result = approvals_mod.decide(
+                deal.name,
+                decision,
+                decision_rate=rate,
+                reason=f"{decision.lower()} reason",
+            )
+        finally:
+            approvals_mod.available_to_sell = orig_ats
+        return result, rate_exception
+
+    def test_approve_resolves_in_band_and_waives_out_of_band(self):
+        for rate, expected in ((20, "Resolved"), (5, "Waived")):
+            with self.subTest(rate=rate):
+                result, rate_exception = self._decide("APPROVE", rate)
+                self.assertEqual(result["status"], "Approved")
+                self.assertEqual(rate_exception.status, expected)
+                self.assertIn("approval=APR-RATE", rate_exception.resolution_notes)
+                self.assertIn(f"decision_rate={rate}", rate_exception.resolution_notes)
+                self.assertIn("stored_band=10..50", rate_exception.resolution_notes)
+                self.assertIn("actor=approver@example.com", rate_exception.resolution_notes)
+                self.assertIn("reason=approve reason", rate_exception.resolution_notes)
+
+    def test_reject_resolves_rate_floor_breach(self):
+        result, rate_exception = self._decide("REJECT", None)
+        self.assertEqual(result["status"], "Rejected")
+        self.assertEqual(rate_exception.status, "Resolved")
+        self.assertIn("decision=REJECT", rate_exception.resolution_notes)
+
+    def test_combined_oversell_keeps_oversell_link_and_waives_rate_breach(self):
+        import frappe
+        from fresko_universe import approvals as approvals_mod
+
+        deal = MagicMock()
+        deal.name = "DEAL-COMBINED"
+        deal.status = "Approval Required"
+        deal.proposed_rate = 5
+        deal.rate_floor = 10
+        deal.rate_ceiling = 50
+        deal.approved_rate = None
+        deal.approval_required = 1
+        deal.qty = 5
+        deal.container = "C1"
+        deal.lot_no = "L1"
+        deal.customer = "CUST-1"
+        deal.flags = MagicMock()
+        deal.set_status = MagicMock(side_effect=lambda status: setattr(deal, "status", status))
+        deal.save = MagicMock()
+
+        rate_exception = MagicMock(
+            name="EX-RATE",
+            exception_type="RATE_FLOOR_BREACH",
+            status="Open",
+        )
+        rate_exception.name = "EX-RATE"
+        rate_exception.save = MagicMock()
+        oversell_exception = MagicMock(
+            name="EX-OVERSELL",
+            exception_type="OVERSELL_OVERRIDE",
+            status="Open",
+        )
+        oversell_exception.name = "EX-OVERSELL"
+        oversell_exception.insert = MagicMock()
+        approval_payload = {}
+
+        def get_doc_flex(*args, **kwargs):
+            if args and isinstance(args[0], dict):
+                values = args[0]
+                if values.get("doctype") == "Fresko Exception":
+                    return oversell_exception
+                approval_payload.update(values)
+                approval = MagicMock()
+                approval.name = "APR-COMBINED"
+                approval.decision = values["decision"]
+                approval.decision_rate = values["decision_rate"]
+                approval.reason = values["reason"]
+                approval.exception = values["exception"]
+                approval.insert = MagicMock()
+                return approval
+            if args and args[0] == "Fresko Exception":
+                return oversell_exception if args[1] == "EX-OVERSELL" else rate_exception
+            return deal
+
+        frappe.session = types.SimpleNamespace(user="Administrator")
+        frappe.get_roles = MagicMock(return_value=["System Manager"])
+        frappe.get_doc = MagicMock(side_effect=get_doc_flex)
+        frappe.get_all = MagicMock(return_value=[types.SimpleNamespace(name="EX-RATE")])
+        frappe.db.commit = MagicMock()
+        orig_ats = approvals_mod.available_to_sell
+        approvals_mod.available_to_sell = MagicMock(return_value=0)
+        try:
+            result = approvals_mod.decide(
+                deal.name,
+                "OVERSELL_OVERRIDE",
+                reason="combined commercial exception",
+                oversell_override=1,
+            )
+        finally:
+            approvals_mod.available_to_sell = orig_ats
+
+        self.assertEqual(result["status"], "Approved")
+        self.assertEqual(approval_payload["exception"], "EX-OVERSELL")
+        self.assertEqual(rate_exception.status, "Waived")
+        self.assertIn("approval=APR-COMBINED", rate_exception.resolution_notes)
+        self.assertIn("reason=combined commercial exception", rate_exception.resolution_notes)
+        self.assertEqual(oversell_exception.status, "Open")
+
+    def test_accept_counter_finalizes_from_accepted_rate(self):
+        import frappe
+        from fresko_universe import deals as deals_mod
+
+        for counter_rate, expected in ((20, "Resolved"), (5, "Waived")):
+            with self.subTest(counter_rate=counter_rate):
+                deal = MagicMock()
+                deal.name = "DEAL-COUNTER-LIFECYCLE"
+                deal.status = "Countered"
+                deal.owner = "owner@example.com"
+                deal.salesperson_user = None
+                deal.approval = "APR-COUNTER"
+                deal.approved_rate = None
+                deal.rate_floor = 10
+                deal.rate_ceiling = 50
+                deal.container = "C1"
+                deal.lot_no = "L1"
+                deal.qty = 5
+                deal.customer = "CUST-1"
+                deal.flags = MagicMock()
+                deal.set_status = MagicMock(
+                    side_effect=lambda status: setattr(deal, "status", status)
+                )
+                deal.save = MagicMock()
+
+                rate_exception = MagicMock()
+                rate_exception.name = "EX-RATE"
+                rate_exception.exception_type = "RATE_FLOOR_BREACH"
+                rate_exception.status = "In Progress"
+                rate_exception.save = MagicMock()
+
+                def get_doc_flex(*args, **kwargs):
+                    if args and args[0] == "Fresko Exception":
+                        return rate_exception
+                    return deal
+
+                frappe.session = types.SimpleNamespace(user="owner@example.com")
+                frappe.get_doc = MagicMock(side_effect=get_doc_flex)
+                frappe.get_all = MagicMock(return_value=[])
+                frappe.db.exists = MagicMock(return_value=True)
+                frappe.db.get_value = MagicMock(
+                    return_value=types.SimpleNamespace(
+                        name="APR-COUNTER",
+                        decision="COUNTER",
+                        decision_rate=counter_rate,
+                        reason="negotiated counter",
+                        exception=rate_exception.name,
+                    )
+                )
+                frappe.db.commit = MagicMock()
+                orig_ats = deals_mod.available_to_sell
+                deals_mod.available_to_sell = MagicMock(return_value=100)
+                try:
+                    result = deals_mod.accept_counter(deal.name)
+                finally:
+                    deals_mod.available_to_sell = orig_ats
+
+                self.assertEqual(result["status"], "Approved")
+                self.assertEqual(rate_exception.status, expected)
+                self.assertIn("decision=COUNTER", rate_exception.resolution_notes)
+                self.assertIn("reason=negotiated counter", rate_exception.resolution_notes)
 
 
 class TestFSEC004FSEC005Behavioral(unittest.TestCase):
@@ -1714,8 +2080,61 @@ class TestFSEC004FSEC005Behavioral(unittest.TestCase):
             frappe.db.sql = orig_sql
             evidence_service._persist_attempt_independently = orig_persist
 
+    def test_key_collision_fails_closed_when_audit_not_durable(self):
+        from fresko_universe.fresko_core.services import evidence_service
+        from fresko_universe.fresko_core.services.evidence_service import (
+            IntegrityConflictError,
+            ingest_message_evidence,
+        )
+        from fresko_universe import permissions
+        import frappe
+
+        existing_row = {
+            "name": "EV-COLLISION",
+            "deal": None,
+            "provider": "different-provider",
+            "provider_account_id": "ACC_1",
+            "conversation_id": "CONV_1",
+            "provider_message_id": "MSG_1",
+            "scoped_message_key": "collision-key",
+            "message_payload_sha256": "original",
+            "overall_verification_status": "PENDING",
+        }
+        orig_new_doc = frappe.new_doc
+        orig_sql = frappe.db.sql
+        orig_record = evidence_service._record_attempt
+        orig_permission = permissions.evidence_has_permission
+        try:
+            candidate = MagicMock()
+            candidate.insert = MagicMock(
+                side_effect=frappe.UniqueValidationError("Fresko Evidence", "EV-NEW", "dup")
+            )
+            frappe.new_doc = MagicMock(return_value=candidate)
+            frappe.db.sql = MagicMock(return_value=[types.SimpleNamespace(**existing_row)])
+            permissions.evidence_has_permission = MagicMock(return_value=True)
+            evidence_service._record_attempt = MagicMock(return_value="CALLER_TRANSACTION_BOUND")
+
+            with self.assertRaises(IntegrityConflictError) as ctx:
+                ingest_message_evidence(
+                    provider="whatsapp-cloud",
+                    provider_account_id="ACC_1",
+                    conversation_id="CONV_1",
+                    provider_message_id="MSG_1",
+                    raw_payload={"text": "collision"},
+                )
+            self.assertIn("collision could not be durably recorded", str(ctx.exception))
+        finally:
+            frappe.new_doc = orig_new_doc
+            frappe.db.sql = orig_sql
+            evidence_service._record_attempt = orig_record
+            permissions.evidence_has_permission = orig_permission
+
     def test_unauthorized_redelivery_blocked(self):
-        from fresko_universe.fresko_core.services.evidence_service import ingest_message_evidence
+        from fresko_universe.fresko_core.services import evidence_service
+        from fresko_universe.fresko_core.services.evidence_service import (
+            IntegrityConflictError,
+            ingest_message_evidence,
+        )
         import frappe
 
         # The payload hash matches so it would normally be an idempotent redelivery
@@ -1736,6 +2155,7 @@ class TestFSEC004FSEC005Behavioral(unittest.TestCase):
 
         orig_new_doc = frappe.new_doc
         orig_sql = frappe.db.sql
+        orig_record = evidence_service._record_attempt
         try:
             def flex_new_doc(dt, *a, **k):
                 d = MagicMock()
@@ -1752,8 +2172,9 @@ class TestFSEC004FSEC005Behavioral(unittest.TestCase):
             from fresko_universe import permissions
             orig_ev_has_perm = permissions.evidence_has_permission
             permissions.evidence_has_permission = MagicMock(return_value=False)
+            evidence_service._record_attempt = MagicMock(return_value="CALLER_TRANSACTION_BOUND")
 
-            with self.assertRaises(Exception) as ctx:
+            with self.assertRaises(IntegrityConflictError) as ctx:
                 ingest_message_evidence(
                     provider="whatsapp-cloud",
                     provider_account_id="ACC_1",
@@ -1761,10 +2182,11 @@ class TestFSEC004FSEC005Behavioral(unittest.TestCase):
                     provider_message_id="MSG_1",
                     raw_payload={"text": "Same content"},
                 )
-            self.assertIn("access denied", str(ctx.exception).lower())
+            self.assertIn("denial could not be durably recorded", str(ctx.exception).lower())
         finally:
             frappe.new_doc = orig_new_doc
             frappe.db.sql = orig_sql
+            evidence_service._record_attempt = orig_record
             permissions.evidence_has_permission = orig_ev_has_perm
 
     def test_forged_completeness_provenance_rejected(self):
@@ -1910,9 +2332,11 @@ class TestFSEC004FSEC005Behavioral(unittest.TestCase):
             frappe.get_doc = MagicMock(return_value=types.SimpleNamespace(**parent_row))
             from fresko_universe.fresko_core.services import evidence_service
             orig_get_path = evidence_service.get_validated_local_file_path
+            orig_record = evidence_service._record_attempt
 
             test_content = b"123456789012"
             evidence_service.get_validated_local_file_path = MagicMock(return_value="mock_file.txt")
+            evidence_service._record_attempt = MagicMock(return_value="COMMITTED_INDEPENDENT")
 
             def set_value_side_effect(dt, dn, fields, *a, **k):
                 if isinstance(fields, dict) and fields.get("capture_status") == "CAPTURED":
@@ -1936,6 +2360,219 @@ class TestFSEC004FSEC005Behavioral(unittest.TestCase):
             frappe.db.savepoint = orig_savepoint
             frappe.db.rollback = orig_rollback
             evidence_service.get_validated_local_file_path = orig_get_path
+            evidence_service._record_attempt = orig_record
+
+    def test_attachment_payload_conflict_fails_closed_when_audit_not_durable(self):
+        import frappe
+        from fresko_universe import permissions
+        from fresko_universe.fresko_core.services import evidence_service
+        from fresko_universe.fresko_core.services.evidence_service import (
+            IntegrityConflictError,
+            ingest_attachment,
+        )
+
+        parent = types.SimpleNamespace(
+            name="EV-1",
+            provider="whatsapp-cloud",
+            provider_account_id="ACC",
+            conversation_id="CONV",
+            provider_message_id="MSG",
+        )
+        attachment = types.SimpleNamespace(
+            name="ATT-1",
+            file_url="/private/files/original.pdf",
+            content_sha256="original-sha",
+            capture_status="CAPTURED",
+            version=1,
+            logical_attachment_key="logical-key",
+            provenance_type="PROVIDER_PAYLOAD_DIGEST",
+            provenance_ref=None,
+            expected_byte_count=8,
+            expected_sha256="original-sha",
+        )
+        orig_sql = frappe.db.sql
+        orig_permission = permissions.evidence_has_permission
+        orig_assert_file = evidence_service.assert_file_read_permission
+        orig_record = evidence_service._record_attempt
+        try:
+            def flex_sql(query, params=None, as_dict=False):
+                if "FROM `tabFresko Evidence Attachment`" in query:
+                    return [attachment]
+                if "FROM `tabFresko Evidence`" in query:
+                    return [parent]
+                return []
+
+            frappe.db.sql = MagicMock(side_effect=flex_sql)
+            permissions.evidence_has_permission = MagicMock(return_value=True)
+            evidence_service.assert_file_read_permission = MagicMock()
+            evidence_service._record_attempt = MagicMock(
+                return_value="CALLER_TRANSACTION_BOUND"
+            )
+
+            with self.assertRaises(IntegrityConflictError) as ctx:
+                ingest_attachment(
+                    evidence_name="EV-1",
+                    file_url="/private/files/replacement.pdf",
+                    identity_type="provider_id",
+                    identity_value="provider-attachment-1",
+                    provenance_type="PROVIDER_PAYLOAD_DIGEST",
+                    expected_byte_count=9,
+                    expected_sha256="replacement-sha",
+                )
+
+            self.assertIn("attachment conflict could not be durably recorded", str(ctx.exception))
+            self.assertEqual(
+                evidence_service._record_attempt.call_args.kwargs["outcome"],
+                "CONFLICT_PAYLOAD_MISMATCH",
+            )
+        finally:
+            frappe.db.sql = orig_sql
+            permissions.evidence_has_permission = orig_permission
+            evidence_service.assert_file_read_permission = orig_assert_file
+            evidence_service._record_attempt = orig_record
+
+    def test_attachment_ordinal_validation_fails_closed_when_audit_not_durable(self):
+        import frappe
+        from fresko_universe import permissions
+        from fresko_universe.fresko_core.services import evidence_service
+        from fresko_universe.fresko_core.services.evidence_service import (
+            IntegrityConflictError,
+            ingest_attachment,
+        )
+
+        parent = types.SimpleNamespace(
+            name="EV-1",
+            provider="whatsapp-cloud",
+            provider_account_id="ACC",
+            conversation_id="CONV",
+            provider_message_id="MSG",
+        )
+        orig_sql = frappe.db.sql
+        orig_permission = permissions.evidence_has_permission
+        orig_assert_file = evidence_service.assert_file_read_permission
+        orig_prove = evidence_service.prove_ordinal_ordering
+        orig_record = evidence_service._record_attempt
+        try:
+            def flex_sql(query, params=None, as_dict=False):
+                if "FROM `tabFresko Evidence Attachment`" in query:
+                    return []
+                if "FROM `tabFresko Evidence`" in query:
+                    return [parent]
+                return []
+
+            frappe.db.sql = MagicMock(side_effect=flex_sql)
+            permissions.evidence_has_permission = MagicMock(return_value=True)
+            evidence_service.assert_file_read_permission = MagicMock()
+            evidence_service.prove_ordinal_ordering = MagicMock(
+                return_value=(False, "Stable ordering provenance is required")
+            )
+            evidence_service._record_attempt = MagicMock(
+                return_value="CALLER_TRANSACTION_BOUND"
+            )
+
+            with self.assertRaises(IntegrityConflictError) as ctx:
+                ingest_attachment(
+                    evidence_name="EV-1",
+                    file_url="/private/files/ordinal.pdf",
+                    identity_type="ordinal",
+                    identity_value=0,
+                    provenance_type="MISSING_PROVENANCE",
+                )
+
+            self.assertIn("could not be durably recorded", str(ctx.exception))
+            self.assertEqual(
+                evidence_service._record_attempt.call_args.kwargs["outcome"],
+                "VALIDATION_FAILED",
+            )
+        finally:
+            frappe.db.sql = orig_sql
+            permissions.evidence_has_permission = orig_permission
+            evidence_service.assert_file_read_permission = orig_assert_file
+            evidence_service.prove_ordinal_ordering = orig_prove
+            evidence_service._record_attempt = orig_record
+
+    def test_capture_db_write_failure_fails_closed_when_audit_not_durable(self):
+        import frappe
+        from unittest.mock import mock_open, patch
+        from fresko_universe.fresko_core.services import evidence_service
+        from fresko_universe.fresko_core.services.evidence_service import (
+            IntegrityConflictError,
+            verify_and_capture_attachment,
+        )
+
+        attachment = types.SimpleNamespace(
+            name="ATT-DB-FAIL-CLOSED",
+            evidence="EV-1",
+            file_url="/private/files/capture.pdf",
+            storage_ref="File/1",
+            provenance_type="PROVIDER_HEADER_CONTENT_LENGTH",
+            provenance_ref=None,
+            expected_byte_count=3,
+            expected_sha256=None,
+            capture_status="PENDING",
+            readback_verified=0,
+            content_sha256=None,
+            content_byte_count=0,
+            logical_attachment_key="logical-key",
+            scoped_attachment_version_key="version-key",
+            is_current_version=1,
+            is_superseded=0,
+        )
+        parent = types.SimpleNamespace(name="EV-1")
+        orig_sql = frappe.db.sql
+        orig_get_doc = frappe.get_doc
+        orig_set_value = frappe.db.set_value
+        orig_assert_capture = evidence_service.assert_can_capture_evidence
+        orig_assert_file = evidence_service.assert_file_read_permission
+        orig_validate = evidence_service.validate_completeness_provenance
+        orig_get_path = evidence_service.get_validated_local_file_path
+        orig_record = evidence_service._record_attempt
+        try:
+            def flex_sql(query, params=None, as_dict=False):
+                if "FROM `tabFresko Evidence Attachment`" in query:
+                    return [attachment]
+                if "FROM `tabFresko Evidence`" in query:
+                    return [parent]
+                return []
+
+            def fail_capture_write(doctype, name, values, *args, **kwargs):
+                if isinstance(values, dict) and values.get("capture_status") == "CAPTURED":
+                    raise Exception("simulated capture finalization failure")
+                return None
+
+            frappe.db.sql = MagicMock(side_effect=flex_sql)
+            frappe.get_doc = MagicMock(return_value=parent)
+            frappe.db.set_value = MagicMock(side_effect=fail_capture_write)
+            evidence_service.assert_can_capture_evidence = MagicMock()
+            evidence_service.assert_file_read_permission = MagicMock()
+            evidence_service.validate_completeness_provenance = MagicMock(
+                return_value=(True, None, 3, None)
+            )
+            evidence_service.get_validated_local_file_path = MagicMock(
+                return_value="mock-capture.pdf"
+            )
+            evidence_service._record_attempt = MagicMock(
+                return_value="CALLER_TRANSACTION_BOUND"
+            )
+
+            with patch("builtins.open", mock_open(read_data=b"abc")):
+                with self.assertRaises(IntegrityConflictError) as ctx:
+                    verify_and_capture_attachment("ATT-DB-FAIL-CLOSED")
+
+            self.assertIn("could not be durably recorded", str(ctx.exception))
+            self.assertEqual(
+                evidence_service._record_attempt.call_args.kwargs["outcome"],
+                "FAILED_DB_WRITE",
+            )
+        finally:
+            frappe.db.sql = orig_sql
+            frappe.get_doc = orig_get_doc
+            frappe.db.set_value = orig_set_value
+            evidence_service.assert_can_capture_evidence = orig_assert_capture
+            evidence_service.assert_file_read_permission = orig_assert_file
+            evidence_service.validate_completeness_provenance = orig_validate
+            evidence_service.get_validated_local_file_path = orig_get_path
+            evidence_service._record_attempt = orig_record
 
     def test_unauthorized_attachment_redelivery_blocked(self):
         import frappe
@@ -2631,19 +3268,33 @@ class TestFSEC004FSEC005Behavioral(unittest.TestCase):
         # Constants and schema must not drift apart.
         self.assertEqual(sorted(options), sorted(EVIDENCE_ATTEMPT_OUTCOMES))
 
-    def test_same_reported_value_compares_instants_not_text(self):
+    def test_same_reported_value_normalizes_only_sent_at_as_datetime(self):
         """Provenance comparison must not raise a false conflict on format alone."""
         from fresko_universe.fresko_core.services.evidence_service import (
             _same_reported_value,
         )
 
         # Same instant expressed differently must NOT be a conflict.
-        self.assertTrue(_same_reported_value("2026-09-19 10:30:00", "2026-09-19 10:30:00"))
+        self.assertTrue(
+            _same_reported_value(
+                "2026-09-19 10:30:00",
+                "2026-09-19T10:30:00",
+                compare_as_datetime=True,
+            )
+        )
         # Genuinely different instants must be a conflict.
-        self.assertFalse(_same_reported_value("2026-09-19 10:30:00", "2026-09-19 10:31:00"))
+        self.assertFalse(
+            _same_reported_value(
+                "2026-09-19 10:30:00",
+                "2026-09-19 10:31:00",
+                compare_as_datetime=True,
+            )
+        )
         # Plain identifiers compare as text, tolerant of surrounding whitespace.
         self.assertTrue(_same_reported_value("wa_sender_1", " wa_sender_1 "))
         self.assertFalse(_same_reported_value("wa_sender_1", "wa_sender_2"))
+        # Date-like identifiers remain identifiers, not timestamps.
+        self.assertFalse(_same_reported_value("2026-09-19", "2026-09-19 00:00:00"))
         # NULL handling: unknown is not a disagreement with unknown.
         self.assertTrue(_same_reported_value(None, None))
         self.assertFalse(_same_reported_value("wa_sender_1", None))
@@ -2759,7 +3410,9 @@ class TestFSEC004FSEC005Behavioral(unittest.TestCase):
             "provider_message_id": "MSG",
         }
         import frappe
+        from fresko_universe.fresko_core.services import evidence_service
         orig_sql = frappe.db.sql
+        orig_record = evidence_service._record_attempt
         try:
             def flex_sql(query, params=None, as_dict=False):
                 if "FROM `tabFresko Evidence`" in query:
@@ -2767,6 +3420,7 @@ class TestFSEC004FSEC005Behavioral(unittest.TestCase):
                 return []
 
             frappe.db.sql = MagicMock(side_effect=flex_sql)
+            evidence_service._record_attempt = MagicMock(return_value="COMMITTED_INDEPENDENT")
             with self.assertRaises(Exception) as ctx_ord:
                 ingest_attachment(
                     evidence_name="EV-1",
@@ -2778,6 +3432,7 @@ class TestFSEC004FSEC005Behavioral(unittest.TestCase):
             self.assertIn("stable ordering", str(ctx_ord.exception).lower())
         finally:
             frappe.db.sql = orig_sql
+            evidence_service._record_attempt = orig_record
 
     def test_regression_transaction_boundary_no_blanket_commits(self):
         """Finding 1: Internal blanket commits must be removed; unrelated caller changes are NOT committed."""
@@ -2914,9 +3569,11 @@ class TestFSEC004FSEC005Behavioral(unittest.TestCase):
         from fresko_universe.fresko_core.services import evidence_service
         orig_assert_file = evidence_service.assert_file_read_permission
         orig_get_path = evidence_service.get_validated_local_file_path
+        orig_record = evidence_service._record_attempt
         try:
             evidence_service.assert_file_read_permission = MagicMock()
             evidence_service.get_validated_local_file_path = MagicMock(return_value="mock_invoice.pdf")
+            evidence_service._record_attempt = MagicMock(return_value="COMMITTED_INDEPENDENT")
 
             def flex_sql(query, params=None, as_dict=False):
                 if "FROM `tabFresko Evidence Attachment`" in query:
@@ -2945,6 +3602,7 @@ class TestFSEC004FSEC005Behavioral(unittest.TestCase):
             frappe.db.sql = orig_sql
             evidence_service.assert_file_read_permission = orig_assert_file
             evidence_service.get_validated_local_file_path = orig_get_path
+            evidence_service._record_attempt = orig_record
 
     def test_regression_never_claim_persisted_failure_after_write_failure(self):
         """Finding 4: When updating status to FAILED_RETRYABLE throws, the error is NOT swallowed."""
@@ -3077,10 +3735,12 @@ class TestFSEC004FSEC005Behavioral(unittest.TestCase):
         from fresko_universe.fresko_core.services import evidence_service
         orig_assert_file = evidence_service.assert_file_read_permission
         orig_get_path = evidence_service.get_validated_local_file_path
+        orig_record = evidence_service._record_attempt
         status_updates = []
         try:
             evidence_service.assert_file_read_permission = MagicMock()
             evidence_service.get_validated_local_file_path = MagicMock(return_value="mock.txt")
+            evidence_service._record_attempt = MagicMock(return_value="COMMITTED_INDEPENDENT")
 
             attempt_row = {
                 "name": "ATT-ATTEMPT",
@@ -3123,6 +3783,7 @@ class TestFSEC004FSEC005Behavioral(unittest.TestCase):
             frappe.db.set_value = orig_set_value
             evidence_service.assert_file_read_permission = orig_assert_file
             evidence_service.get_validated_local_file_path = orig_get_path
+            evidence_service._record_attempt = orig_record
 
     def test_regression_parent_aggregation_uses_current_read(self):
         """Finding 7: Parent aggregation must query child attachments with current-read semantics (LOCK IN SHARE MODE / FOR UPDATE)."""

@@ -208,6 +208,18 @@ class TestFreskoDeal(FrappeTestCase):
         self.assertEqual(flt(deal.proposed_rate), 5)
         self.assertEqual(flt(deal.approved_rate), 12)
         self.assertEqual(result["approval"], deal.approval)
+        approval = frappe.get_doc("Fresko Approval", result["approval"])
+        self.assertTrue(approval.exception)
+        rate_exception = frappe.get_doc("Fresko Exception", approval.exception)
+        self.assertEqual(rate_exception.exception_type, "RATE_FLOOR_BREACH")
+        self.assertEqual(rate_exception.status, "Resolved")
+        self.assertTrue(rate_exception.resolved_at)
+        self.assertTrue(rate_exception.resolved_by)
+        self.assertIn(f"approval={approval.name}", rate_exception.resolution_notes)
+        self.assertIn("decision=APPROVE", rate_exception.resolution_notes)
+        self.assertIn("decision_rate=12", rate_exception.resolution_notes)
+        self.assertIn("stored_band=10.0..50.0", rate_exception.resolution_notes)
+        self.assertIn("reason=ok", rate_exception.resolution_notes)
 
     def test_decide_rejects_from_proposed(self):
         # F-H2
@@ -292,6 +304,143 @@ class TestFreskoDeal(FrappeTestCase):
         self.assertEqual(d2.status, "Approval Required")
         with self.assertRaises(frappe.ValidationError):
             approvals_api.decide(d2.name, "APPROVE", reason="should fail ATS")
+
+    def test_concurrent_apply_rate_rules_serializes_on_container(self):
+        """Independent transactions cannot both auto-approve against stale ATS."""
+        d1 = _make_deal(self.container, qty=60, rate=20, alias="RateRaceA")
+        d2 = _make_deal(self.container, qty=60, rate=20, alias="RateRaceB")
+        deal_names = [d1.name, d2.name]
+        frappe.db.commit()
+
+        def cleanup_committed_rows():
+            frappe.set_user("Administrator")
+            frappe.db.rollback()
+            frappe.db.delete("Fresko Approval", {"deal": ("in", deal_names)})
+            frappe.db.delete("Fresko Exception", {"deal": ("in", deal_names)})
+            frappe.db.delete("Fresko Revision", {"parent_name": ("in", deal_names)})
+            frappe.db.delete("Fresko Deal", {"name": ("in", deal_names)})
+            frappe.db.delete("Fresko Container Lot", {"parent": self.container.name})
+            frappe.db.delete("Fresko Container", {"name": self.container.name})
+            frappe.db.commit()
+
+        self.addCleanup(cleanup_committed_rows)
+        site = frappe.local.site
+        barrier = threading.Barrier(2)
+        outcomes = Queue()
+
+        def apply_worker(deal_name):
+            frappe.init(site=site)
+            frappe.connect()
+            frappe.set_user("Administrator")
+            try:
+                barrier.wait(timeout=20)
+                result = deals_api.apply_rate_rules(deal_name)
+                outcomes.put((deal_name, "OK", result["status"]))
+            except Exception as exc:
+                frappe.db.rollback()
+                outcomes.put((deal_name, "ERROR", str(exc)))
+            finally:
+                frappe.destroy()
+
+        workers = [
+            threading.Thread(target=apply_worker, args=(d1.name,)),
+            threading.Thread(target=apply_worker, args=(d2.name,)),
+        ]
+        for worker in workers:
+            worker.start()
+        for worker in workers:
+            worker.join(timeout=30)
+        self.assertFalse(any(worker.is_alive() for worker in workers), "rate worker hung")
+
+        results = [outcomes.get_nowait(), outcomes.get_nowait()]
+        self.assertEqual([row[1] for row in results], ["OK", "OK"], results)
+        self.assertEqual(
+            sorted(row[2] for row in results),
+            ["Approval Required", "Auto Approved"],
+            results,
+        )
+
+        frappe.db.rollback()
+        committed_statuses = frappe.get_all(
+            "Fresko Deal",
+            filters={"name": ("in", deal_names)},
+            pluck="status",
+        )
+        self.assertEqual(
+            sorted(committed_statuses),
+            ["Approval Required", "Auto Approved"],
+        )
+
+    def test_concurrent_accept_counter_allows_one_transition(self):
+        """Two acceptors serialize; only one consumes the Countered state."""
+        deal = _make_deal(self.container, rate=5, alias="CounterAcceptRace")
+        deals_api.apply_rate_rules(deal.name)
+        counter = approvals_api.decide(
+            deal.name,
+            "COUNTER",
+            decision_rate=11,
+            reason="single concurrent acceptance",
+        )
+        frappe.db.commit()
+
+        def cleanup_committed_rows():
+            frappe.set_user("Administrator")
+            frappe.db.rollback()
+            frappe.db.delete("Fresko Approval", {"deal": deal.name})
+            frappe.db.delete("Fresko Exception", {"deal": deal.name})
+            frappe.db.delete("Fresko Revision", {"parent_name": deal.name})
+            frappe.db.delete("Fresko Deal", {"name": deal.name})
+            frappe.db.delete("Fresko Container Lot", {"parent": self.container.name})
+            frappe.db.delete("Fresko Container", {"name": self.container.name})
+            frappe.db.commit()
+
+        self.addCleanup(cleanup_committed_rows)
+        site = frappe.local.site
+        barrier = threading.Barrier(2)
+        outcomes = Queue()
+
+        def accept_worker():
+            frappe.init(site=site)
+            frappe.connect()
+            frappe.set_user("Administrator")
+            try:
+                barrier.wait(timeout=20)
+                result = deals_api.accept_counter(deal.name)
+                outcomes.put(("OK", result["status"]))
+            except Exception as exc:
+                frappe.db.rollback()
+                outcomes.put(("DENIED", str(exc)))
+            finally:
+                frappe.destroy()
+
+        workers = [threading.Thread(target=accept_worker) for _ in range(2)]
+        for worker in workers:
+            worker.start()
+        for worker in workers:
+            worker.join(timeout=30)
+        self.assertFalse(any(worker.is_alive() for worker in workers), "counter accept worker hung")
+
+        results = [outcomes.get_nowait(), outcomes.get_nowait()]
+        self.assertEqual([row[0] for row in results].count("OK"), 1, results)
+        self.assertEqual([row[0] for row in results].count("DENIED"), 1, results)
+        denied = next(row for row in results if row[0] == "DENIED")
+        self.assertIn("only valid from Countered", denied[1])
+
+        frappe.db.rollback()
+        committed_deal = frappe.get_doc("Fresko Deal", deal.name)
+        self.assertEqual(committed_deal.status, "Approved")
+        self.assertEqual(committed_deal.approval, counter["approval"])
+        rate_exceptions = frappe.get_all(
+            "Fresko Exception",
+            filters={"deal": deal.name, "exception_type": "RATE_FLOOR_BREACH"},
+            fields=["status", "resolution_notes"],
+        )
+        self.assertEqual(len(rate_exceptions), 1)
+        self.assertEqual(rate_exceptions[0].status, "Resolved")
+        self.assertIn(
+            f"approval={counter['approval']}",
+            rate_exceptions[0].resolution_notes,
+        )
 
     def test_unresolved_buyer_blocks_reconciled(self):
         deal = _make_deal(self.container, rate=20, alias="UnresolvedBuyer")
@@ -481,6 +630,20 @@ class TestFreskoDeal(FrappeTestCase):
             )
         )
         self.assertTrue(result["approval"])
+        approval = frappe.get_doc("Fresko Approval", result["approval"])
+        linked_exception = frappe.get_doc("Fresko Exception", approval.exception)
+        self.assertEqual(linked_exception.exception_type, "OVERSELL_OVERRIDE")
+        rate_rows = frappe.get_all(
+            "Fresko Exception",
+            filters={"deal": d2.name, "exception_type": "RATE_FLOOR_BREACH"},
+            pluck="name",
+        )
+        self.assertEqual(len(rate_rows), 1)
+        rate_exception = frappe.get_doc("Fresko Exception", rate_rows[0])
+        self.assertEqual(rate_exception.status, "Waived")
+        self.assertIn(f"approval={approval.name}", rate_exception.resolution_notes)
+        self.assertIn("decision=OVERSELL_OVERRIDE", rate_exception.resolution_notes)
+        self.assertIn("reason=Owner committed commercially", rate_exception.resolution_notes)
 
     def test_lot_inward_cannot_drop_below_approved_sold(self):
         # F-H1
@@ -513,13 +676,10 @@ class TestFreskoDeal(FrappeTestCase):
             reason="test setup: commercial oversell only",
             oversell_override=1,
         )
-        # Exercise the race from a legal dispatch state. Approval alone cannot
-        # jump straight to Dispatched under the Phase 1 state machine.
+        # Exercise the race from a legal dispatch state through the supported
+        # row-locked outward release service.
         for pending_deal in (d1, d2):
-            pending_deal.reload()
-            pending_deal.set_status("Outward Pending")
-            pending_deal.save(ignore_permissions=True)
-        frappe.db.commit()  # make setup visible to the two independent connections
+            deals_api.release_for_outward(pending_deal.name)
 
         deal_names = [d1.name, d2.name]
 
