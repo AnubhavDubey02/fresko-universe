@@ -230,6 +230,8 @@ Every meaningful entry should record:
 - Base before migration proof: `df7d0fd5b1ac1672be5fe15a18916e70bbf9d79e`
 - Incorporated migration-proof head: `845cf14e1480cacae4febbd9aea53f264f46bf9a`
 - Stabilization implementation commit: `893f353` (`fix: stabilize evidence and legacy dispatch gates`)
+- Handoff consolidation commit: `9dbc494` (`docs: update agent handoff for stabilization`)
+- ATS CI corrective commit: `f6c255a` (`fix: refresh ATS reads after container lock`)
 - Draft consolidation PR: https://github.com/AnubhavDubey02/fresko-universe/pull/7
 
 PR #7 includes the PR #6 migration-proof commits, the useful PR #4 workflow hardening, and the stabilization implementation. PRs #4, #5, and #6 remain open at this snapshot. Do not close them merely from this handoff; repository-owner authorization controls closure and merge decisions.
@@ -248,7 +250,7 @@ The existing `Fresko Deal.dispatched_qty` remains a legacy cumulative scalar. Ne
 
 ### Verification completed locally
 
-- Offline smoke suite: 137/137 passed.
+- Offline smoke suite: 139/139 passed at `f6c255a` (137/137 before the CI corrective tests).
 - WhatsApp readiness fixtures: 19 validated.
 - Readiness contract tests: 6/6 passed.
 - Python compilation of every changed Python file: passed.
@@ -256,9 +258,19 @@ The existing `Fresko Deal.dispatched_qty` remains a legacy cumulative scalar. Ne
 
 The test suite includes real two-connection Bench regressions for rate-rule serialization, counter acceptance, and lot dispatch concurrency. They were added but could not be executed locally because this device has no configured Frappe Bench/site.
 
+### First PR #7 CI result and corrective action
+
+GitHub Actions run https://github.com/AnubhavDubey02/fresko-universe/actions/runs/36862068554 tested implementation SHA `893f3535293ad1d9b0311145b85b701c664f614a`:
+
+- Smoke unit passed.
+- Bench initialization, pinned Frappe/ERPNext checkout, site creation, application installation, migration, and ERPNext test bootstrap all passed.
+- The Bench suite ran 121 tests and had one failure: `test_concurrent_apply_rate_rules_serializes_on_container` observed two `Auto Approved` results instead of one `Auto Approved` plus one `Approval Required`.
+
+This exposed a real production race rather than a bad expectation. A worker could establish an InnoDB REPEATABLE READ snapshot while probing its Deal, wait for the container lock, and then reuse the stale snapshot in the ordinary lot/reservation SELECTs. Commit `f6c255a` propagates `for_update=True` into both ATS child reads so they use current `FOR UPDATE` semantics after the container lock. It also adds focused offline coverage proving that mutation paths use locking reads while display ATS calls remain non-locking. Preserve the real two-connection Bench regression; do not weaken its expected statuses.
+
 ### Verification still pending
 
-PR #7 must pass against its exact current head:
+PR #7 must pass against the exact head containing `f6c255a` and this handoff update:
 
 - `Smoke unit (Gate 1 / D4 / constants)`
 - `Bench install + migrate + run-tests (pinned v15)`
