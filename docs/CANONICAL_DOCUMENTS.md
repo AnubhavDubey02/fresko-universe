@@ -2,7 +2,7 @@
 
 **Status:** Phase 1 closeout index
 
-**Reviewed:** 2026-09-18
+**Reviewed:** 2026-10-01
 
 **Scope:** PR #2 / `phase1-doctype-scaffold`; Phase 2 implementation remains on hold.
 
@@ -14,6 +14,7 @@ conflicting proposal without rewriting the historical record.
 
 | Subject | Canonical document | Rule |
 |---|---|---|
+| Latest stabilization and temporal acceptance status | `docs/CANONICAL_STATUS_ADDENDUM_2026-10-01.md` | Current exact-head checkpoint and dated corrections to time-bounded business examples; preserves older documents as historical evidence. |
 | Locked product and architecture decisions | `docs/DECISIONS.md` | Highest authority for D1, D3-D6, D10, merge gates, dependency sovereignty, and security role. |
 | Phase 1 Container/Deal design | `docs/PHASE1_BLUEPRINT_FINAL.md` | Supersedes specialist drafts where they conflict. |
 | Remaining uncertainty | `docs/OPEN_QUESTIONS.md` | `UNKNOWN` and `PENDING` items remain open until evidence or an authorized decision closes them. |

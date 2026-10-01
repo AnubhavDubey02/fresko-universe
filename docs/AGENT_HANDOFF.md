@@ -322,3 +322,37 @@ GitHub device authorization was completed for the repository owner and stored by
 2. Discuss the stacked-PR merge/consolidation choice with the repository owner before changing PR bases, closing predecessor PRs, or merging.
 3. After that decision, start the Phase 2A Outward/Field Assertion branch from the verified checkpoint (or a documentation-only descendant).
 4. Preserve existing migration proof, Evidence Attempt identifier semantics, ATS current-read semantics, and legacy API compatibility while building the new vertical slice.
+
+## 2026-10-01 independent live-review corrections — accepted by repository owner
+
+This section supersedes only the current-status interpretations identified below. It does not rewrite or invalidate the historical observations earlier in this handoff.
+
+### Latest exact-head green checkpoint
+
+- Exact head: `313d275c37e051f2e57d2e731e7cf5add4d72694`
+- GitHub Actions run: https://github.com/AnubhavDubey02/fresko-universe/actions/runs/36869705722
+- Result: both `Smoke unit (Gate 1 / D4 / constants)` and `Bench install + migrate + run-tests (pinned v15)` passed.
+- The root `AGENTS.md` from PR #5 is now carried forward on the integration branch so the handoff's repository-guidance reference is complete.
+- Current dated status and temporal corrections are recorded in `docs/CANONICAL_STATUS_ADDENDUM_2026-10-01.md`.
+
+This supersedes the earlier wording that treated `0d30a139cfe7f5945e73ef8ed8c6650e0db8d1e6` as the latest exact-head verified checkpoint. Any descendant created by these documentation-only corrections still requires its own exact-head run before it is described as green.
+
+### Time-bounded acceptance-example corrections
+
+These business examples are inputs for future Phase 2A/later acceptance coverage. The stabilization checkpoint does not implement them, prove the live balances, or contain executable cases for these exact values in the current 19-case WhatsApp readiness corpus.
+
+- 447 unpriced Plum crates is a historical intermediate state demonstrating that physical Outward can precede price. It is not an assertion that the crates remain unpriced today.
+- 180 unpriced Grapes crates is also a historical intermediate state. Later authorized rates exist for the final 180; preserve the earlier unpriced event and represent later pricing as a new source-backed, authorized assertion without backdating it into the physical movement.
+- INR 101 is now classified as labour-related. It must remain outside customer/Sohail collections and customer receipt/allocation totals. This is a payment-classification boundary case, not merely a missing or unidentified receipt.
+- INR 350,000 with `Authorization InProcess` is pending at that evidence time only. Do not infer later clearance without later source evidence.
+- The provisional 92 × INR 700 and the 3,060-versus-3,056 comparison remain time-bounded evidence cases under the rules in the canonical-status addendum.
+
+### Corrected next actions
+
+The earlier immediate-next-action list is superseded by this sequence:
+
+1. Keep PR #7 documentation/governance corrections separate from Phase 2A implementation and rerun full exact-head CI.
+2. Do not merge, retarget, or close predecessor PRs without repository-owner authorization.
+3. After the corrected stabilization head is green, create a focused Phase 2A branch from `313d275` or its documentation-only green descendant.
+4. Before substantial Phase 2A coding, create `docs/CONTAINER_CYCLE_TO_CA_CONTRACT.md` on that focused branch.
+5. Implement only `Fresko Field Assertion`, `Fresko Outward`, and `Fresko Outward Line` in the first Phase 2A slice, preserving the physical/commercial/collection boundaries above.
