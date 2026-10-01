@@ -268,16 +268,16 @@ GitHub Actions run https://github.com/AnubhavDubey02/fresko-universe/actions/run
 
 This exposed a real production race rather than a bad expectation. A worker could establish an InnoDB REPEATABLE READ snapshot while probing its Deal, wait for the container lock, and then reuse the stale snapshot in the ordinary lot/reservation SELECTs. Commit `f6c255a` propagates `for_update=True` into both ATS child reads so they use current `FOR UPDATE` semantics after the container lock. It also adds focused offline coverage proving that mutation paths use locking reads while display ATS calls remain non-locking. Preserve the real two-connection Bench regression; do not weaken its expected statuses.
 
-### Verification still pending
+### Exact-head verification result
 
-PR #7 must pass against the exact head containing `f6c255a` and this handoff update:
+GitHub Actions run https://github.com/AnubhavDubey02/fresko-universe/actions/runs/36868658419 passed against exact head `0d30a139cfe7f5945e73ef8ed8c6650e0db8d1e6`, which contains the stabilization implementation, ATS correction, and this consolidated handoff history:
 
-- `Smoke unit (Gate 1 / D4 / constants)`
-- `Bench install + migrate + run-tests (pinned v15)`
-- Phase 1-to-current migration followed by a second idempotence migration
-- real MariaDB/Redis concurrency coverage executed by the Bench job
+- `Smoke unit (Gate 1 / D4 / constants)` passed in 8 seconds.
+- `Bench install + migrate + run-tests (pinned v15)` passed in 5 minutes 22 seconds.
+- The Bench job included the Phase 1-to-current migration followed by a second idempotence migration.
+- The real MariaDB/Redis concurrency regressions, including the ATS rate-rule race, executed successfully.
 
-Do not claim the handoff documentation commit or any later PR #7 head is green from the local results or an ancestor run. Inspect the exact GitHub Actions SHA.
+This is the verified stabilization checkpoint. A later documentation-only descendant may record this result without changing runtime behavior; do not describe such a descendant itself as exact-head green unless its own checks complete.
 
 ### Locked direction after stabilization
 
@@ -318,7 +318,7 @@ GitHub device authorization was completed for the repository owner and stored by
 
 ### Immediate next actions
 
-1. Commit and push this updated handoff to PR #7.
-2. Inspect PR #7 checks at the exact new head and fix only genuine blocker failures.
-3. Once PR #7 is green and independently reviewed, start the Phase 2A Outward/Field Assertion branch from that exact head.
-4. Preserve existing migration proof, Evidence Attempt identifier semantics, and legacy API compatibility while building the new vertical slice.
+1. Treat `0d30a139cfe7f5945e73ef8ed8c6650e0db8d1e6` and its passing run as the verified stabilization checkpoint.
+2. Discuss the stacked-PR merge/consolidation choice with the repository owner before changing PR bases, closing predecessor PRs, or merging.
+3. After that decision, start the Phase 2A Outward/Field Assertion branch from the verified checkpoint (or a documentation-only descendant).
+4. Preserve existing migration proof, Evidence Attempt identifier semantics, ATS current-read semantics, and legacy API compatibility while building the new vertical slice.
