@@ -93,7 +93,7 @@ from fresko_universe.rate_rules import (  # noqa: E402
     rate_in_band,
     resolve_rate_band,
 )
-from fresko_universe.ats import commercial_qty_for_ats  # noqa: E402
+from fresko_universe.ats import available_to_sell, commercial_qty_for_ats  # noqa: E402
 from fresko_universe.permissions import APPROVAL_APPLY_DECISIONS  # noqa: E402
 
 
@@ -206,6 +206,51 @@ class TestATS(unittest.TestCase):
         d = MagicMock(status="Cancelled", qty=100, dispatched_qty=40)
         self.assertEqual(commercial_qty_for_ats(d), 40)
         self.assertIn("Cancelled", ATS_ACTIVE_STATUSES)
+
+    def test_for_update_uses_current_reads_after_container_lock(self):
+        """A lock waiter must not reuse its pre-lock REPEATABLE READ snapshot."""
+        import frappe
+
+        frappe.db.sql.reset_mock()
+        frappe.db.sql.side_effect = [
+            [],
+            [types.SimpleNamespace(inward_qty=100)],
+            [],
+        ]
+        try:
+            self.assertEqual(
+                available_to_sell("CON-RACE", "LOT-A", for_update=True),
+                100,
+            )
+            queries = [call.args[0] for call in frappe.db.sql.call_args_list]
+        finally:
+            frappe.db.sql.side_effect = None
+            frappe.db.sql.return_value = []
+            frappe.db.sql.reset_mock()
+
+        self.assertEqual(len(queries), 3)
+        self.assertIn("FOR UPDATE", queries[0].upper())
+        self.assertIn("FOR UPDATE", queries[1].upper())
+        self.assertIn("FOR UPDATE", queries[2].upper())
+
+    def test_display_ats_keeps_nonlocking_reads(self):
+        import frappe
+
+        frappe.db.sql.reset_mock()
+        frappe.db.sql.side_effect = [
+            [types.SimpleNamespace(inward_qty=100)],
+            [],
+        ]
+        try:
+            self.assertEqual(available_to_sell("CON-VIEW", "LOT-A"), 100)
+            queries = [call.args[0] for call in frappe.db.sql.call_args_list]
+        finally:
+            frappe.db.sql.side_effect = None
+            frappe.db.sql.return_value = []
+            frappe.db.sql.reset_mock()
+
+        self.assertEqual(len(queries), 2)
+        self.assertTrue(all("FOR UPDATE" not in query.upper() for query in queries))
 
 
 class TestD4(unittest.TestCase):
