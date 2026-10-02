@@ -235,6 +235,16 @@ def assert_can_activate_field_assertion() -> None:
     assert_can_post_outward()
 
 
+def assert_can_prepare_quantity_assertion() -> None:
+    """Quantity assertion maker role gate follows the Phase 2A physical ledger."""
+    assert_can_prepare_outward()
+
+
+def assert_can_activate_quantity_assertion() -> None:
+    """Quantity assertion checker role gate follows the Phase 2A physical ledger."""
+    assert_can_post_outward()
+
+
 # --- DocType hooks (FSEC-003) -------------------------------------------------
 
 
@@ -530,6 +540,45 @@ def field_assertion_has_permission(
     if not outward_name:
         return False
     return outward_has_permission(outward_name, ptype, user=user)
+
+
+def quantity_assertion_permission_query(user: str | None = None) -> str:
+    """Quantity assertion visibility is maker-scoped for Sales and read-only for Desk."""
+    user = user or frappe.session.user
+    roles = current_roles(user)
+    if user == "Administrator" or is_system_manager(roles):
+        return ""
+    if ROLE_APPROVER in roles or ROLE_ACCOUNTS in roles:
+        return ""
+    if ROLE_SALESPERSON in roles:
+        return (
+            "`tabFresko Container Quantity Assertion`.prepared_by = "
+            f"{frappe.db.escape(user)}"
+        )
+    return "1=0"
+
+
+def quantity_assertion_has_permission(
+    doc, ptype: str | None = None, user: str | None = None
+) -> bool:
+    """Quantity assertion mutation is service-only; reads use the Phase 2A boundary."""
+    user = user or frappe.session.user
+    ptype = ptype or "read"
+    if ptype == "delete":
+        return False
+    if ptype in {"create", "write"}:
+        return bool(getattr(doc, "flags", None) and getattr(doc.flags, "in_service", False))
+    roles = current_roles(user)
+    if user == "Administrator" or is_system_manager(roles):
+        return True
+    if ROLE_APPROVER in roles or ROLE_ACCOUNTS in roles:
+        return ptype in {"read", "print", "report", "export"}
+    prepared_by = _phase2a_linked_value(
+        doc, "Fresko Container Quantity Assertion", "prepared_by"
+    )
+    return ROLE_SALESPERSON in roles and prepared_by == user and ptype in {
+        "read", "print", "report"
+    }
 
 
 def _phase2a_linked_value(doc, doctype: str, fieldname: str):

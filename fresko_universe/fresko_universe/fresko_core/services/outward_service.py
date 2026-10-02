@@ -185,6 +185,9 @@ def _outward_response(doc, *, replayed: bool = False) -> dict[str, Any]:
         "movement_type": doc.movement_type,
         "status": doc.status,
         "source_event_key": doc.source_event_key,
+        "gatepass_no": doc.gatepass_no,
+        "vehicle_no": doc.vehicle_no,
+        "raw_party_name": doc.raw_party_name,
         "replayed": replayed,
         "physical_outward_recorded": doc.status == "Posted",
         "commercial_deal_required": False,
@@ -210,6 +213,9 @@ def create_outward(
     lines: Any,
     posting_reason: str | None = None,
     deal: str | None = None,
+    gatepass_no: str | None = None,
+    vehicle_no: str | None = None,
+    raw_party_name: str | None = None,
 ) -> dict[str, Any]:
     """Create an evidence-linked Draft Outward without requiring Deal/buyer/rate."""
     permissions.assert_can_prepare_outward()
@@ -247,6 +253,10 @@ def create_outward(
         "company": company,
         "container": container,
         "deal": deal,
+        # These are raw logistics context, not Customer/buyer resolution inputs.
+        "gatepass_no": _raw_text(gatepass_no, "gatepass_no"),
+        "vehicle_no": _raw_text(vehicle_no, "vehicle_no"),
+        "raw_party_name": _raw_text(raw_party_name, "raw_party_name"),
         "movement_type": "OUTWARD",
         "movement_at": str(movement_at),
         "source_evidence": source_evidence,
@@ -473,6 +483,11 @@ def create_outward_reversal(
         "company": original.company,
         "container": original.container,
         "deal": original.deal,
+        # Preserve the source-reported context on a compensating movement;
+        # these fields remain raw context and are never resolved to Customer.
+        "gatepass_no": original.gatepass_no,
+        "vehicle_no": original.vehicle_no,
+        "raw_party_name": original.raw_party_name,
         "movement_type": "REVERSAL",
         "movement_at": str(movement_at),
         "source_evidence": source_evidence,

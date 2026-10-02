@@ -265,6 +265,9 @@ class TestPhase2AOutward(FrappeTestCase):
             movement_at="2026-10-01 10:30:00",
             source_evidence=evidence.name,
             source_event_id="  raw-event-id  ",
+            gatepass_no="  GP / 007  ",
+            vehicle_no="  KA-01-AB-1234  ",
+            raw_party_name="  Shri M/s A & B  ",
             lines=[
                 {
                     "source_line_ref": "  raw-line-ref  ",
@@ -280,6 +283,9 @@ class TestPhase2AOutward(FrappeTestCase):
         )
         doc = frappe.get_doc("Fresko Outward", created["name"])
         self.assertEqual(doc.source_event_id, "  raw-event-id  ")
+        self.assertEqual(doc.gatepass_no, "  GP / 007  ")
+        self.assertEqual(doc.vehicle_no, "  KA-01-AB-1234  ")
+        self.assertEqual(doc.raw_party_name, "  Shri M/s A & B  ")
         self.assertEqual(doc.lines[0].source_line_ref, "  raw-line-ref  ")
         self.assertEqual(doc.lines[0].raw_lot_text, "  BALANCE / UNMAPPED  ")
         self.assertEqual(doc.lines[0].raw_qty_text, "  92 crates  ")
@@ -492,6 +498,15 @@ class TestPhase2AOutward(FrappeTestCase):
                 source_evidence=evidence.name,
                 source_event_id="same-source-event",
                 lines=[self._line(11, lot_no="REPLAY-LOT")],
+            )
+        with self.assertRaises(frappe.UniqueValidationError):
+            outward.create(
+                container=container.name,
+                movement_at="2026-10-01 10:00:00",
+                source_evidence=evidence.name,
+                source_event_id="same-source-event",
+                gatepass_no="CHANGED",
+                lines=[self._line(10, lot_no="REPLAY-LOT")],
             )
         self.assertEqual(frappe.db.count("Fresko Outward", {"source_event_key": first.source_event_key}), 1)
         # Reset the main connection's snapshot before checking the independently

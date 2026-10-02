@@ -16,6 +16,9 @@ def create(
     lines,
     posting_reason=None,
     deal=None,
+    gatepass_no=None,
+    vehicle_no=None,
+    raw_party_name=None,
 ):
     return outward_service.create_outward(
         container=container,
@@ -25,6 +28,9 @@ def create(
         lines=lines,
         posting_reason=posting_reason,
         deal=deal,
+        gatepass_no=gatepass_no,
+        vehicle_no=vehicle_no,
+        raw_party_name=raw_party_name,
     )
 
 
