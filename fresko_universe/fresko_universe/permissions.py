@@ -203,6 +203,38 @@ def assert_can_read_ats_snapshot() -> None:
     _throw_denied("container snapshot", _("requires a Fresko role or System Manager"))
 
 
+def assert_can_prepare_outward() -> None:
+    """Phase 2A maker: Salesperson, Approver, or System Manager; Accounts denied."""
+    roles = current_roles()
+    if is_system_manager(roles) or roles & {ROLE_SALESPERSON, ROLE_APPROVER}:
+        return
+    _throw_denied(
+        "prepare physical Outward",
+        _("requires Fresko Salesperson, Fresko Approver, or System Manager"),
+    )
+
+
+def assert_can_post_outward() -> None:
+    """Phase 2A checker: Approver or System Manager; maker separation is enforced separately."""
+    roles = current_roles()
+    if is_system_manager(roles) or ROLE_APPROVER in roles:
+        return
+    _throw_denied(
+        "post physical Outward",
+        _("requires Fresko Approver or System Manager"),
+    )
+
+
+def assert_can_prepare_field_assertion() -> None:
+    """Phase 2A assertion maker role gate."""
+    assert_can_prepare_outward()
+
+
+def assert_can_activate_field_assertion() -> None:
+    """Phase 2A assertion checker role gate."""
+    assert_can_post_outward()
+
+
 # --- DocType hooks (FSEC-003) -------------------------------------------------
 
 
@@ -424,3 +456,87 @@ def evidence_attempt_has_permission(doc, ptype: str | None = None, user: str | N
     if not frappe.db.exists("Fresko Evidence", evidence_name):
         return user == "Administrator" or is_system_manager(current_roles(user))
     return evidence_has_permission(evidence_name, "read", user=user)
+
+
+def outward_permission_query(user: str | None = None) -> str:
+    """Salesperson sees their prepared Outwards; checker/accounts roles see all."""
+    user = user or frappe.session.user
+    roles = current_roles(user)
+    if user == "Administrator" or is_system_manager(roles):
+        return ""
+    if ROLE_APPROVER in roles or ROLE_ACCOUNTS in roles:
+        return ""
+    if ROLE_SALESPERSON in roles:
+        return f"`tabFresko Outward`.prepared_by = {frappe.db.escape(user)}"
+    return "1=0"
+
+
+def outward_has_permission(doc, ptype: str | None = None, user: str | None = None) -> bool:
+    """All Outward mutation is service-only; reads follow the maker/checker boundary."""
+    user = user or frappe.session.user
+    ptype = ptype or "read"
+    if ptype == "delete":
+        return False
+    if ptype in {"create", "write"}:
+        return bool(
+            getattr(doc, "flags", None)
+            and getattr(doc.flags, "in_service", False)
+        )
+
+    roles = current_roles(user)
+    if user == "Administrator" or is_system_manager(roles):
+        return True
+    if ROLE_APPROVER in roles or ROLE_ACCOUNTS in roles:
+        return ptype in {"read", "print", "report", "export"}
+    if ROLE_SALESPERSON not in roles:
+        return False
+    prepared_by = _phase2a_linked_value(doc, "Fresko Outward", "prepared_by")
+    return prepared_by == user and ptype in {"read", "print", "report"}
+
+
+def field_assertion_permission_query(user: str | None = None) -> str:
+    """Assertion visibility inherits the linked Outward maker scope."""
+    user = user or frappe.session.user
+    roles = current_roles(user)
+    if user == "Administrator" or is_system_manager(roles):
+        return ""
+    if ROLE_APPROVER in roles or ROLE_ACCOUNTS in roles:
+        return ""
+    if ROLE_SALESPERSON in roles:
+        user_esc = frappe.db.escape(user)
+        return (
+            "`tabFresko Field Assertion`.outward IN ("
+            "SELECT name FROM `tabFresko Outward` "
+            f"WHERE prepared_by = {user_esc})"
+        )
+    return "1=0"
+
+
+def field_assertion_has_permission(
+    doc, ptype: str | None = None, user: str | None = None
+) -> bool:
+    """All assertion mutation is service-only; reads inherit the parent Outward."""
+    user = user or frappe.session.user
+    ptype = ptype or "read"
+    if ptype == "delete":
+        return False
+    if ptype in {"create", "write"}:
+        return bool(
+            getattr(doc, "flags", None)
+            and getattr(doc.flags, "in_service", False)
+        )
+
+    outward_name = _phase2a_linked_value(doc, "Fresko Field Assertion", "outward")
+    if not outward_name:
+        return False
+    return outward_has_permission(outward_name, ptype, user=user)
+
+
+def _phase2a_linked_value(doc, doctype: str, fieldname: str):
+    if doc is None:
+        return None
+    if isinstance(doc, str):
+        return frappe.db.get_value(doctype, doc, fieldname)
+    return getattr(doc, fieldname, None) or (
+        doc.get(fieldname) if hasattr(doc, "get") else None
+    )

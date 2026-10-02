@@ -36,6 +36,8 @@ permission_query_conditions = {
     "Fresko Evidence": "fresko_universe.permissions.evidence_permission_query",
     "Fresko Evidence Attachment": "fresko_universe.permissions.evidence_attachment_permission_query",
     "Fresko Evidence Attempt": "fresko_universe.permissions.evidence_attempt_permission_query",
+    "Fresko Outward": "fresko_universe.permissions.outward_permission_query",
+    "Fresko Field Assertion": "fresko_universe.permissions.field_assertion_permission_query",
 }
 
 has_permission = {
@@ -43,6 +45,8 @@ has_permission = {
     "Fresko Evidence": "fresko_universe.permissions.evidence_has_permission",
     "Fresko Evidence Attachment": "fresko_universe.permissions.evidence_attachment_has_permission",
     "Fresko Evidence Attempt": "fresko_universe.permissions.evidence_attempt_has_permission",
+    "Fresko Outward": "fresko_universe.permissions.outward_has_permission",
+    "Fresko Field Assertion": "fresko_universe.permissions.field_assertion_has_permission",
 }
 
 # FSEC-004 / FSEC-005 — Protect captured original files and evidence records

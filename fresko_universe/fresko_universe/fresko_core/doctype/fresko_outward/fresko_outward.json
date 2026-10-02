@@ -1,0 +1,43 @@
+{
+ "doctype": "DocType",
+ "name": "Fresko Outward",
+ "module": "Fresko Core",
+ "engine": "InnoDB",
+ "is_submittable": 0,
+ "track_changes": 0,
+ "allow_rename": 0,
+ "autoname": "naming_series:",
+ "naming_rule": "By \"Naming Series\" field",
+ "title_field": "container",
+ "search_fields": "container,movement_type,status,source_evidence,source_event_id,source_event_key",
+ "sort_field": "movement_at",
+ "sort_order": "DESC",
+ "fields": [
+  {"fieldname": "naming_series", "fieldtype": "Select", "label": "Series", "reqd": 1, "options": "OUT-.YYYY.-.", "default": "OUT-.YYYY.-.", "read_only": 1},
+  {"fieldname": "company", "fieldtype": "Link", "label": "Company", "options": "Company", "reqd": 1, "read_only": 1},
+  {"fieldname": "container", "fieldtype": "Link", "label": "Container", "options": "Fresko Container", "reqd": 1, "read_only": 1, "in_list_view": 1},
+  {"fieldname": "deal", "fieldtype": "Link", "label": "Commercial Deal (Optional)", "options": "Fresko Deal", "description": "Optional commercial context only; physical movement never depends on this link or Deal.dispatched_qty.", "read_only": 1},
+  {"fieldname": "movement_type", "fieldtype": "Select", "label": "Movement Type", "options": "OUTWARD\nREVERSAL", "default": "OUTWARD", "reqd": 1, "read_only": 1, "in_list_view": 1},
+  {"fieldname": "movement_at", "fieldtype": "Datetime", "label": "Movement At", "reqd": 1, "read_only": 1, "in_list_view": 1},
+  {"fieldname": "source_evidence", "fieldtype": "Link", "label": "Source Evidence", "options": "Fresko Evidence", "reqd": 1, "read_only": 1},
+  {"fieldname": "source_event_id", "fieldtype": "Data", "label": "Source Event ID", "description": "Raw source-scoped event identifier preserved exactly as supplied to the controlled service.", "reqd": 1, "read_only": 1},
+  {"fieldname": "source_event_key", "fieldtype": "Data", "label": "Source Event Key", "description": "Server-computed canonical idempotency key. Callers must never supply this field.", "reqd": 1, "unique": 1, "read_only": 1},
+  {"fieldname": "payload_sha256", "fieldtype": "Data", "label": "Payload SHA256", "description": "Server-computed digest distinguishing idempotent replay from same-key payload conflict.", "reqd": 1, "read_only": 1},
+  {"fieldname": "status", "fieldtype": "Select", "label": "Status", "options": "Draft\nReview Pending\nPosted", "default": "Draft", "reqd": 1, "read_only": 1, "in_list_view": 1},
+  {"fieldname": "reverses_outward", "fieldtype": "Link", "label": "Reverses Outward", "options": "Fresko Outward", "unique": 1, "read_only": 1},
+  {"fieldname": "posting_reason", "fieldtype": "Small Text", "label": "Posting / Reversal Reason", "read_only": 1},
+  {"fieldname": "prepared_by", "fieldtype": "Link", "label": "Prepared By", "options": "User", "reqd": 1, "read_only": 1},
+  {"fieldname": "prepared_at", "fieldtype": "Datetime", "label": "Prepared At", "reqd": 1, "read_only": 1},
+  {"fieldname": "submitted_by", "fieldtype": "Link", "label": "Submitted For Review By", "options": "User", "read_only": 1},
+  {"fieldname": "submitted_at", "fieldtype": "Datetime", "label": "Submitted For Review At", "read_only": 1},
+  {"fieldname": "posted_by", "fieldtype": "Link", "label": "Posted By", "options": "User", "read_only": 1},
+  {"fieldname": "posted_at", "fieldtype": "Datetime", "label": "Posted At", "read_only": 1},
+  {"fieldname": "lines", "fieldtype": "Table", "label": "Outward Lines", "options": "Fresko Outward Line", "reqd": 1, "read_only": 1}
+ ],
+ "permissions": [
+  {"role": "System Manager", "read": 1, "write": 0, "create": 0, "delete": 0, "submit": 0, "cancel": 0, "amend": 0, "report": 1, "export": 1, "import": 0, "share": 0, "print": 1, "email": 0, "if_owner": 0},
+  {"role": "Fresko Approver", "read": 1, "write": 0, "create": 0, "delete": 0, "submit": 0, "cancel": 0, "amend": 0, "report": 1, "export": 1, "import": 0, "share": 0, "print": 1, "email": 0, "if_owner": 0},
+  {"role": "Fresko Accounts", "read": 1, "write": 0, "create": 0, "delete": 0, "submit": 0, "cancel": 0, "amend": 0, "report": 1, "export": 1, "import": 0, "share": 0, "print": 1, "email": 0, "if_owner": 0},
+  {"role": "Fresko Salesperson", "read": 1, "write": 0, "create": 0, "delete": 0, "submit": 0, "cancel": 0, "amend": 0, "report": 1, "export": 0, "import": 0, "share": 0, "print": 1, "email": 0, "if_owner": 0}
+ ]
+}

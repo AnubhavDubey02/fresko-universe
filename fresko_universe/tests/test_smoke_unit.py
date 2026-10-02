@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import hashlib
+import ast
 import json
 import os
+import re
 import sys
 import types
 import unittest
@@ -420,6 +422,268 @@ class TestLayout(unittest.TestCase):
         deals = ROOT / "fresko_universe" / "fresko_deals" / "doctype"
         self.assertFalse((deals / "fresko_approval").exists())
         self.assertFalse((deals / "fresko_revision").exists())
+
+
+class TestPhase2AContracts(unittest.TestCase):
+    """Offline contracts for the planned physical Outward vertical slice.
+
+    These checks deliberately fail until Phase 2A supplies the three DocTypes,
+    their controllers, and the public/service API.  They are structural gates,
+    not a substitute for the MariaDB transaction, permission, and migration
+    tests that must run in Bench.
+    """
+
+    APP = ROOT / "fresko_universe"
+
+    def _doctype(self, slug):
+        matches = list(self.APP.rglob(f"{slug}.json"))
+        self.assertTrue(matches, f"missing Phase 2A DocType JSON: {slug}")
+        path = matches[0]
+        return path, json.loads(path.read_text())
+
+    def _implementation_sources(self):
+        """Return the future Outward/Assertion public and service sources."""
+        candidates = [
+            self.APP / "outward.py",
+            self.APP / "field_assertion.py",
+            self.APP / "field_assertions.py",
+            self.APP / "fresko_core" / "physical.py",
+            self.APP / "fresko_core" / "services" / "outward_service.py",
+            self.APP / "fresko_core" / "services" / "field_assertion_service.py",
+            self.APP / "fresko_core" / "services" / "field_assertions_service.py",
+        ]
+        present = [p for p in candidates if p.exists()]
+        self.assertTrue(
+            present,
+            "missing Phase 2A public/service module (outward + field assertion)",
+        )
+        return [(p, p.read_text()) for p in present]
+
+    def test_phase2a_doctypes_exist_and_line_is_child(self):
+        outward_path, outward = self._doctype("fresko_outward")
+        line_path, line = self._doctype("fresko_outward_line")
+        assertion_path, assertion = self._doctype("fresko_field_assertion")
+
+        self.assertEqual(outward["name"], "Fresko Outward")
+        self.assertEqual(line["name"], "Fresko Outward Line")
+        self.assertEqual(assertion["name"], "Fresko Field Assertion")
+        self.assertEqual(outward_path.parent.parent, line_path.parent.parent)
+        self.assertEqual(assertion_path.parent.parent, outward_path.parent.parent)
+        self.assertEqual(line.get("istable"), 1, "Outward Line must be a child table")
+
+        child_fields = [
+            f for f in outward.get("fields", [])
+            if f.get("fieldtype") in {"Table", "Table MultiSelect"}
+        ]
+        self.assertTrue(
+            any(f.get("options") == "Fresko Outward Line" for f in child_fields),
+            "Fresko Outward must contain a Fresko Outward Line table",
+        )
+        for path in (outward_path, line_path, assertion_path):
+            self.assertTrue(path.with_suffix(".py").exists(), f"missing controller: {path}")
+
+    def test_outward_deal_buyer_rate_are_optional(self):
+        _, outward = self._doctype("fresko_outward")
+        _, line = self._doctype("fresko_outward_line")
+        for schema in (outward, line):
+            for field in schema.get("fields", []):
+                fieldname = field.get("fieldname", "").lower()
+                if fieldname in {"deal", "buyer", "customer", "rate", "approved_rate"}:
+                    self.assertFalse(
+                        field.get("reqd", 0),
+                        f"physical Outward field cannot require commercial context: {fieldname}",
+                    )
+                    if fieldname in {"rate", "approved_rate"}:
+                        self.assertNotEqual(field.get("default"), 0)
+                        self.assertNotEqual(field.get("default"), "0")
+
+    def test_outward_status_and_unpriced_exception_contract(self):
+        _, outward = self._doctype("fresko_outward")
+        _, exception = self._doctype("fresko_exception")
+        constants = (self.APP / "constants.py").read_text()
+        outward_text = json.dumps(outward)
+        exception_text = json.dumps(exception)
+
+        for status in ("Draft", "Review Pending", "Posted"):
+            self.assertIn(status, outward_text, f"missing Outward status: {status}")
+        self.assertIn("OUTWARD_UNPRICED", constants + outward_text + exception_text)
+        outward_exception_links = [
+            f for f in outward.get("fields", [])
+            if f.get("fieldtype") in {"Link", "Table", "Table MultiSelect"}
+            and "Fresko Exception" in str(f.get("options", ""))
+        ]
+        exception_outward_links = [
+            f for f in exception.get("fields", [])
+            if f.get("fieldtype") == "Link"
+            and f.get("options") == "Fresko Outward"
+        ]
+        self.assertTrue(
+            outward_exception_links or exception_outward_links,
+            "Outward and its deterministic Exception must have an explicit link",
+        )
+
+    def test_outward_hardening_contracts_are_explicit(self):
+        _, outward = self._doctype("fresko_outward")
+        _, assertion = self._doctype("fresko_field_assertion")
+        _, exception = self._doctype("fresko_exception")
+        outward_fields = {row["fieldname"]: row for row in outward["fields"]}
+        assertion_fields = {row["fieldname"]: row for row in assertion["fields"]}
+        exception_options = next(
+            row["options"]
+            for row in exception["fields"]
+            if row["fieldname"] == "exception_type"
+        ).splitlines()
+
+        self.assertIn("deal", outward_fields)
+        self.assertFalse(outward_fields["deal"].get("reqd", 0))
+        self.assertEqual(outward_fields["reverses_outward"].get("unique"), 1)
+        self.assertIn("currency", assertion_fields)
+        self.assertEqual(assertion_fields["currency"].get("options"), "Currency")
+        self.assertIn("rate_uom", assertion_fields)
+        self.assertEqual(assertion_fields["rate_uom"].get("options"), "UOM")
+        self.assertIn("OUTWARD_WITHOUT_DEAL", exception_options)
+
+    def test_physical_service_has_raw_uom_capacity_and_current_read_guards(self):
+        sources = dict(self._implementation_sources())
+        service = next(
+            source
+            for path, source in sources.items()
+            if path.name == "outward_service.py"
+        )
+        physical = next(
+            source for path, source in sources.items() if path.name == "physical.py"
+        )
+        self.assertIn("def _raw_text", service)
+        self.assertIn("math.isfinite", service)
+        self.assertIn("assert_container_capacity", service)
+        self.assertIn("evidence_has_permission", service)
+        self.assertIn("_current_outward_name_by_source_event", service)
+        self.assertIn("IFNULL(outward_line_key, '')", service)
+        self.assertIn("Physical UOM Mismatch", physical)
+        self.assertIn("FOR UPDATE", physical.upper())
+
+    def test_outward_conflicts_and_live_snapshot_have_truthful_audit_context(self):
+        sources = dict(self._implementation_sources())
+        service = next(
+            source
+            for path, source in sources.items()
+            if path.name == "outward_service.py"
+        )
+        container = (
+            self.APP
+            / "fresko_core"
+            / "doctype"
+            / "fresko_container"
+            / "fresko_container.py"
+        ).read_text()
+        attempt_path, attempt = self._doctype("fresko_evidence_attempt")
+        self.assertTrue(attempt_path.exists())
+        operation_options = next(
+            field["options"]
+            for field in attempt["fields"]
+            if field["fieldname"] == "operation"
+        ).splitlines()
+        self.assertIn("OUTWARD_CREATE", operation_options)
+        self.assertIn("CONFLICT_PAYLOAD_MISMATCH", service)
+        self.assertIn("isolated=True", service)
+        for marker in (
+            '"snapshot_context"',
+            '"as_of"',
+            '"reporting_timezone"',
+            '"is_frozen": False',
+            '"is_ca_ready": False',
+            '"included_record_ids"',
+        ):
+            self.assertIn(marker, container)
+
+    def test_posted_immutability_and_append_only_corrections_exist(self):
+        outward_path, outward = self._doctype("fresko_outward")
+        assertion_path, assertion = self._doctype("fresko_field_assertion")
+        implementation = "\n".join(source for _, source in self._implementation_sources())
+        controllers = "\n".join(
+            path.with_suffix(".py").read_text() for path in (outward_path, assertion_path)
+        )
+        all_code = implementation + "\n" + controllers
+
+        assertion_fields = {f.get("fieldname") for f in assertion.get("fields", [])}
+        self.assertIn("supersedes", assertion_fields)
+        outward_fields = {f.get("fieldname") for f in outward.get("fields", [])}
+        self.assertTrue(
+            outward_fields
+            & {"reverses_outward", "reversal_of", "reversed_outward", "reversal_reference"},
+            "Outward must link a compensating reversal",
+        )
+        self.assertRegex(all_code.lower(), r"immutable|cannot .*edit|direct .*modif")
+        self.assertRegex(all_code.lower(), r"supersed")
+        self.assertRegex(all_code.lower(), r"revers")
+
+    def test_public_and_service_code_has_no_deal_dispatch_scalar_physical_path(self):
+        sources = self._implementation_sources()
+        combined = "\n".join(source for _, source in sources)
+        self.assertIn("Fresko Outward", combined)
+        for path, source in sources:
+            tree = ast.parse(source, filename=str(path))
+            docstrings = set()
+            for node in ast.walk(tree):
+                body = getattr(node, "body", None)
+                if isinstance(body, list) and body and isinstance(body[0], ast.Expr):
+                    value = body[0].value
+                    if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                        docstrings.add(id(value))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Attribute) and node.attr == "dispatched_qty":
+                    self.fail(
+                        f"Phase 2A physical path reads/writes Deal.dispatched_qty: {path}"
+                    )
+                if (
+                    isinstance(node, ast.Constant)
+                    and isinstance(node.value, str)
+                    and "dispatched_qty" in node.value
+                    and id(node) not in docstrings
+                ):
+                    self.fail(
+                        f"Phase 2A physical path names Deal.dispatched_qty at runtime: {path}"
+                    )
+
+    def test_outward_mutations_lock_container_before_current_reads(self):
+        sources = self._implementation_sources()
+        combined = "\n".join(source for _, source in sources)
+        self.assertIn("lock_container_for_update", combined)
+        self.assertTrue(
+            "for_update=True" in combined or "FOR UPDATE" in combined.upper(),
+            "mutation reads must use current/locking database semantics",
+        )
+        post = combined.split("def post_outward", 1)
+        self.assertGreater(len(post), 1, "missing public post_outward service")
+        post_body = post[1].split("\ndef ", 1)[0]
+        self.assertLess(
+            post_body.find("lock_container_for_update"),
+            post_body.find("for_update=True")
+            if "for_update=True" in post_body
+            else len(post_body),
+            "container lock must precede current child/lot reads",
+        )
+
+    def test_maker_checker_contract_forbids_self_posting(self):
+        outward_path, outward = self._doctype("fresko_outward")
+        implementation = "\n".join(source for _, source in self._implementation_sources())
+        controller = outward_path.with_suffix(".py").read_text()
+        fields = {f.get("fieldname") for f in outward.get("fields", [])}
+        self.assertTrue(fields & {"maker", "maker_user", "created_by", "prepared_by"})
+        self.assertTrue(fields & {"checker", "checker_user", "posted_by"})
+        code = (implementation + "\n" + controller).lower()
+        self.assertIn("maker", code)
+        self.assertTrue("checker" in code or "poster" in code or "posted_by" in code)
+        self.assertRegex(code, r"self[- ]post|maker .*checker|same .*maker|cannot .*own")
+
+    def test_rate_unknown_never_defaults_to_zero(self):
+        _, outward = self._doctype("fresko_outward")
+        code = "\n".join(source for _, source in self._implementation_sources())
+        schema_text = json.dumps(outward)
+        self.assertNotRegex(schema_text, r'"fieldname"\s*:\s*"(?:rate|approved_rate)".*?"default"\s*:\s*0')
+        self.assertNotRegex(code, r"(?im)\brate\s*=\s*0(?:\.0)?\b")
+        self.assertNotRegex(code, r"(?im)['\"]rate['\"]\s*:\s*0(?:\.0)?\b")
+        self.assertNotIn("rate or 0", code.lower())
 
 
 
