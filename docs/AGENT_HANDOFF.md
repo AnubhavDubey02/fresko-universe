@@ -468,3 +468,67 @@ The pre-change branch tip for this documentation checkpoint was
 `5e407a99d51c7d589022a64413c56e47867306cb`, whose exact-head GitHub Actions run
 was green as previously recorded. Any commit containing this new documentation
 still requires its own exact-head CI before it is described as green.
+
+## 2026-10-03 real-data shadow-replay and quantity-boundary iteration
+
+This is a focused local implementation checkpoint on
+`codex/real-data-shadow-replay`, based on business-decision commit
+`3998ca70ff044d48f83be4873fb3f0595336e679`. It has not yet been pushed and is
+not exact-head CI verified.
+
+### Implemented
+
+- Added a sanitized real-data shadow-replay manifest pinned to the reviewed
+  Plum, Grapes, and CA workbook hashes/ranges. It reproduces the dated totals
+  and rejects quantity-basis overwrite, pending-DO stock effects, INR 101
+  collection contamination, INR 350,000 state conflation, invented GP/rate
+  allocation, and unsupported 92-at-700 activation.
+- The 92-at-700 source is explicitly a pending Sohail handwritten photo with no
+  fabricated hash. It remains verification-pending until the exact photo and
+  role approval are linked.
+- Added immutable `Fresko Container Quantity Assertion` facts for
+  `DECLARED_SHIPPING`, `CUSTOMS_DECLARED`, and `OPERATING_INWARD`, with evidence,
+  canonical Decimal text, maker/checker, idempotency, locking, supersession, and
+  read-only reconciliation projection.
+- Declared 3,060 and operating inward 3,056 now coexist and project variance 4
+  as `OPEN_VARIANCE` without changing Container.inward_qty, stock, or ATS.
+- Added optional raw `gatepass_no`, `vehicle_no`, and `raw_party_name` to
+  physical Outward. They participate in payload conflict detection, survive
+  compensating reversal, and appear in physical snapshot provenance. Raw party
+  text does not resolve Customer.
+- Added migration proof for the new quantity assertion table/fields/options,
+  unique key, zero fabricated facts, and preservation of existing Container
+  inward/UOM values across two migrations.
+- Added `docs/COMMERCIAL_EVENT_ALIAS_CONTRACT.md` as the reviewed contract for
+  the next runtime slice: multi-lot Commercial Sale, many-to-many Sale/Outward
+  allocation, unallocated price buckets, and Trader -> Accounts -> Approver
+  reusable alias decisions. The contract is documentation only.
+
+### Local verification
+
+- Offline/unit/static suite: 153 tests passed.
+- Real-data shadow replay: manifest validated; 17 tests passed.
+- WhatsApp readiness: 19 fixtures validated; 6 contract tests passed.
+- All 20 repository JSON files parsed.
+- Relevant Python compilation and `git diff --check` passed; only local CRLF
+  conversion warnings were emitted.
+- New Bench integration tests cover quantity lifecycle, maker/checker,
+  idempotency conflict, 3,060/3,056 projection, no inward mutation, unknown/UOM,
+  supersession, cross-UOM behavior, and a two-connection competing activation.
+
+### Remaining gates and intentional boundaries
+
+- No local Frappe Bench/site exists, so the new integration/concurrency tests
+  and twice-migrate upgrade proof remain **PENDING GitHub Actions**.
+- The variance projection does not yet create a persistent `PHYSICAL_VARIANCE`
+  Exception because the current exception helper is Outward-scoped. The app
+  must not claim that exception opened, resolved, or waived.
+- No maker/checker Desk screen exists for quantity assertions.
+- Commercial Sale, alias mapping, Collections, Payment Allocation, supplier
+  ledgers/portal, settlement, ERP posting, and CA output remain unimplemented.
+- Excel remains the operational source of truth during the shadow pilot.
+
+Next: commit this iteration locally, re-authenticate GitHub, push the focused
+branch, run exact-head CI/Bench, and fix real failures without weakening tests.
+Only after that gate should the Commercial Event/Alias contract become runtime
+work; Collections/Payment Allocation remains the following separate slice.
