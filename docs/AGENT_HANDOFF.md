@@ -356,3 +356,55 @@ The earlier immediate-next-action list is superseded by this sequence:
 3. After the corrected stabilization head is green, create a focused Phase 2A branch from `313d275` or its documentation-only green descendant.
 4. Before substantial Phase 2A coding, create `docs/CONTAINER_CYCLE_TO_CA_CONTRACT.md` on that focused branch.
 5. Implement only `Fresko Field Assertion`, `Fresko Outward`, and `Fresko Outward Line` in the first Phase 2A slice, preserving the physical/commercial/collection boundaries above.
+
+## 2026-10-02 Phase 2A physical-Outward foundation — Codex (Office/Cognizant environment)
+
+This is a new dated implementation checkpoint. It does not rewrite the earlier stabilization history or authorize any merge, retarget, closure, or force-push of predecessor PRs.
+
+### Branch, base, and commits
+
+- Focused branch: `codex/phase2a-outward-assertions`
+- Base: documentation-only green stabilization descendant `5b8641168c2ddfea5e45e09491bdcdc18a186e60`
+- Base GitHub Actions run: https://github.com/AnubhavDubey02/fresko-universe/actions/runs/36881032528
+- Business-contract commit: `556bb165f04e5dfa96deb4e8dc28888a556cb010`
+- Implementation commit: `67b107cdb2b302a156143bc41c962f74e3e39bc6`
+- Contract: `docs/CONTAINER_CYCLE_TO_CA_CONTRACT.md`
+
+The contract was committed before substantial runtime coding. It connects Container, physical inward, Outward, Deal, future Collection/Allocation, supplier/cost/FX/expense ledgers, Exceptions, settlement, and CA-ready output while keeping their truth layers separate.
+
+### Implemented in the first slice
+
+- Added `Fresko Outward`, `Fresko Outward Line`, and rate-scoped `Fresko Field Assertion` DocTypes with controlled service-only mutation, maker/checker separation, append-only audit fields, and read-only Desk records.
+- Physical Outward posting does not require a Deal, buyer, customer, or rate. An optional same-Container Deal is reconciliation context only and is checked through Deal ACLs.
+- Posted physical quantities are derived only from posted Outward plus full compensating reversals. `Fresko Deal.dispatched_qty` remains compatibility-only and is neither read nor written by the physical ledger.
+- Raw source event/line identifiers and raw lot, quantity, UOM, and rate strings are preserved verbatim beside normalized fields.
+- Source identity plus identical payload is idempotent. A changed Outward payload under the same identity fails closed and records a `COMMITTED_INDEPENDENT` `Fresko Evidence Attempt` with operation `OUTWARD_CREATE` and conflict outcome.
+- Unpriced Outward is permitted and opens `OUTWARD_UNPRICED`. Missing commercial context opens `OUTWARD_WITHOUT_DEAL`; unmapped source-backed lot quantity opens `LOT_UNRESOLVED`.
+- A known rate assertion requires currency, rate UOM, effective time, evidence, and maker/checker review. Rate UOM must match its line or every line for a header assertion. Corrections supersede an active assertion; they do not mutate it.
+- Container-first locking plus current reads protect mapped-lot and whole-Container physical capacity, concurrent posting, reversal uniqueness, assertion activation, and multi-line unpriced resolution. Cross-UOM arithmetic is rejected until an authorized conversion model exists.
+- Container inward quantity, lot quantity, and UOM cannot be changed below or against net posted physical truth.
+- The additive Container API now separates physical, commercial, assertion, exception, and provenance sections. It labels the legacy Deal dispatch scalar explicitly and includes live `as_of`, timezone, version, record IDs, and raw line provenance. It also states `LIVE_OPERATIONAL`, `is_frozen=false`, `is_reconciliation_snapshot=false`, and `is_ca_ready=false`.
+- The Phase 1-to-current upgrade proof migrates twice, verifies all three new tables/critical fields/options/unique reversal link, proves no Outward or Assertion is fabricated, and proves an exact legacy `dispatched_qty=3.25` remains unchanged.
+
+### Verification completed locally
+
+- Offline smoke suite: 150/150 passed.
+- WhatsApp readiness fixtures: 19 validated.
+- Readiness contract tests: 6/6 passed.
+- All 13 DocType JSON files parsed successfully.
+- Relevant application/test/migration Python compilation passed.
+- `git diff --check` passed; only local LF/CRLF conversion notices were emitted.
+- An independent final team review found no concrete release blocker or likely pinned-Frappe/MariaDB syntax failure.
+
+The new Bench suite contains 19 integration cases, including real two-connection races for competing physical posts, distinct reversals, initial rate assertions, superseding rate assertions, and concurrent completion of two line rates. This device has no configured Frappe Bench/site, so those tests and the twice-migrate proof remain **PENDING GitHub Actions** at this checkpoint. Do not call `67b107c` exact-head green until its own workflow completes.
+
+### Explicit first-slice boundaries and next increments
+
+- Field Assertion is rate-only in this slice; it is not yet a generic fact framework.
+- The 3,060 declared-shipping versus 3,056 operating-inward case is not yet represented by a declared-quantity fact or an executable `PHYSICAL_VARIANCE` workflow. The exception type and close gate exist, but no variance should be claimed opened, resolved, or waived.
+- There is no purpose-built maker/checker Desk UI or report page yet. The operational surface is controlled whitelisted services plus read-only DocTypes and the Container snapshot.
+- Buyer mapping/commercial matching, Collections, Payment Allocation, INR 101 labour classification/payment treatment, any later evidence for INR 350,000 clearance, supplier invoice/remittance, FX/bank charges, expenses, Container Settlement, CA package generation, and ERP/accounting postings remain unimplemented.
+- The current snapshot is a live operational view, not a frozen reconciliation, settlement, statutory, or CA-ready output.
+- No predecessor PR was merged, retargeted, closed, rebased, or force-pushed by this work.
+
+Next: publish this branch as a draft PR targeted to `codex/integration-stabilization`, run the full pinned workflow, fix real failures without weakening race expectations, then record exact-head CI evidence. After that, the next practical increment is a small internal Desk pilot surface plus declared-shipping/inward variance capture; payments/allocations remain a separate later slice.
