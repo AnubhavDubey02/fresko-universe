@@ -164,8 +164,11 @@ def quantity_reconciliation_projection(container: str) -> dict[str, Any]:
     if not declared or declared.quantity is None:
         return {"container": container, "reconciliation_status": "UNRESOLVED", "reason": "declared shipping quantity is unknown or absent", "todo": "PHYSICAL_VARIANCE exception creation requires an Outward-linked service and is intentionally not invoked"}
     operating = _latest(container, "OPERATING_INWARD", uom=declared.uom)
+    # An active operating assertion in another UOM is explicit source data,
+    # so it must block the legacy Container.inward_qty compatibility fallback.
+    any_operating = _latest(container, "OPERATING_INWARD")
     compatibility = False
-    if not operating:
+    if not operating and not any_operating:
         legacy = frappe.get_doc("Fresko Container", container)
         legacy_uom = _clean(getattr(legacy, "uom", None))
         if legacy.inward_qty is not None and legacy_uom == declared.uom:
