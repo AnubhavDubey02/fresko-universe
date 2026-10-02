@@ -9,17 +9,17 @@
  "fields": [
   {
    "fieldname": "evidence",
-   "fieldtype": "Link",
-   "label": "Evidence",
-   "options": "Fresko Evidence",
+   "fieldtype": "Data",
+   "label": "Evidence Identifier Snapshot",
+   "description": "Immutable identifier observed during this attempt, NOT a relational existence claim. Independent audit may survive rollback of the named entity. Resolve access against a currently existing Evidence; never create a parent for this identifier.",
    "reqd": 1,
    "read_only": 1
   },
   {
    "fieldname": "evidence_attachment",
-   "fieldtype": "Link",
-   "label": "Evidence Attachment",
-   "options": "Fresko Evidence Attachment",
+   "fieldtype": "Data",
+   "label": "Attachment Identifier Snapshot",
+   "description": "Immutable observed attachment identifier; may refer to an entity whose caller transaction rolled back. Not a relational link.",
    "read_only": 1
   },
   {
@@ -48,6 +48,20 @@
    "read_only": 1
   },
   {
+   "fieldname": "delivery_received_at",
+   "fieldtype": "Datetime",
+   "label": "Delivery Received At Ingress",
+   "description": "Receipt time of this particular delivery, explicitly supplied by ingress. NULL when unknown; independent of audit attempt_time and source_sent_at.",
+   "read_only": 1
+  },
+  {
+   "fieldname": "audit_payload_sha256",
+   "fieldtype": "Data",
+   "label": "Independent Attempt Fingerprint",
+   "description": "SHA-256 of the immutable write envelope used to confirm identical duplicate-key retries. NULL on historical or caller-bound attempts; never backfilled.",
+   "read_only": 1
+  },
+  {
    "fieldname": "actor",
    "fieldtype": "Data",
    "label": "Actor",
@@ -66,8 +80,16 @@
    "fieldname": "outcome",
    "fieldtype": "Select",
    "label": "Outcome",
-   "options": "SUCCESS_NEW\nSUCCESS_IDEMPOTENT_REDELIVERY\nCONFLICT_PAYLOAD_MISMATCH\nCONFLICT_KEY_COLLISION\nVERIFICATION_SUCCESS\nVERIFICATION_HASH_MISMATCH\nVERIFICATION_PARTIAL_BYTES\nVERIFICATION_FAILURE_RETRYABLE\nVERIFICATION_FAILURE_PERMANENT\nFAILED_STORAGE\nFAILED_DB_WRITE\nACCESS_DENIED\nVALIDATION_FAILED",
+   "options": "SUCCESS_NEW\nSUCCESS_IDEMPOTENT_REDELIVERY\nCONFLICT_PAYLOAD_MISMATCH\nCONFLICT_KEY_COLLISION\nCONFLICT_PROVENANCE_MISMATCH\nVERIFICATION_SUCCESS\nVERIFICATION_HASH_MISMATCH\nVERIFICATION_PARTIAL_BYTES\nVERIFICATION_FAILURE_RETRYABLE\nVERIFICATION_FAILURE_PERMANENT\nFAILED_STORAGE\nFAILED_DB_WRITE\nACCESS_DENIED\nVALIDATION_FAILED",
    "reqd": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "durability_state",
+   "fieldtype": "Select",
+   "label": "Durability State",
+   "options": "COMMITTED_INDEPENDENT\nCALLER_TRANSACTION_BOUND\nUNKNOWN",
+   "default": "UNKNOWN",
    "read_only": 1
   },
   {

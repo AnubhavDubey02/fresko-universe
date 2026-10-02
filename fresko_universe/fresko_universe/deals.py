@@ -32,12 +32,20 @@ def apply_rate_rules(deal_name: str):
     Resolved + in-band → Auto Approved (ATS re-read under lock, D3).
     Resolved + out-of-band → Approval Required (RATE_FLOOR_BREACH path).
     """
-    deal = frappe.get_doc("Fresko Deal", deal_name)
+    # Probe only to identify the stable parent lock target. All authorization,
+    # state validation and commercial reads are repeated from locking reads.
+    probe = frappe.get_doc("Fresko Deal", deal_name)
+    assert_can_apply_rate_rules(probe)
+    locked_container = probe.container
+    lock_container_for_update(locked_container)
+    deal = frappe.get_doc("Fresko Deal", deal_name, for_update=True)
+    if deal.container != locked_container:
+        frappe.throw(_("Deal container changed while acquiring rate-policy lock"))
     assert_can_apply_rate_rules(deal)
     if deal.status != "Proposed":
         frappe.throw(_("apply_rate_rules only valid from Proposed (current: {0})").format(deal.status))
 
-    container = frappe.get_doc("Fresko Container", deal.container)
+    container = frappe.get_doc("Fresko Container", locked_container, for_update=True)
     floor, ceiling = resolve_rate_band(container, deal.lot_no, deal.count_size)
     # Snapshot even when null (Gate 1: empty policy must be visible on Deal)
     deal.rate_floor = floor
@@ -78,10 +86,18 @@ def apply_rate_rules(deal_name: str):
             deal.set_status("Auto Approved")
             _maybe_open_buyer_unresolved(deal)
     else:
-        # Policy resolved but out of band — Approval Required (RATE_FLOOR_BREACH path as today)
+        # Policy resolved but out of band — Approval Required + material exception.
         deal.approval_required = 1
         # Do not assign approved_rate=None here (commercial lock / Currency coerce).
         deal.set_status("Approval Required")
+        _ensure_open_exception(
+            deal,
+            "RATE_FLOOR_BREACH",
+            f"Proposed rate {deal.proposed_rate} is outside resolved band "
+            f"{floor}..{ceiling} for lot={deal.lot_no!r} "
+            f"count_size={deal.count_size!r}",
+            severity="Material",
+        )
 
     # FSEC-001 audit: ignore_permissions AFTER assert_can_apply_rate_rules.
     # Rationale: status / approved_rate writes use Document flags that Role Permission
@@ -126,7 +142,15 @@ def accept_counter(deal_name: str):
     RC: load COUNTER Approval.decision_rate → copy to Deal.approved_rate (Countered leaves
     approved_rate NULL so amount stays on proposed_rate until accept).
     """
-    deal = frappe.get_doc("Fresko Deal", deal_name)
+    # Probe only for the stable parent lock target. Status, ownership and the
+    # linked Approval are mutable decision state and must be consumed only
+    # after the container-first locks have been acquired.
+    probe = frappe.get_doc("Fresko Deal", deal_name)
+    locked_container = probe.container
+    lock_container_for_update(locked_container)
+    deal = frappe.get_doc("Fresko Deal", deal_name, for_update=True)
+    if deal.container != locked_container:
+        frappe.throw(_("Deal container changed while acquiring counter-acceptance lock"))
     if deal.status != "Countered":
         frappe.throw(_("accept_counter only valid from Countered (current: {0})").format(deal.status))
 
@@ -140,7 +164,13 @@ def accept_counter(deal_name: str):
             _("Only the deal owner or assigned salesperson_user may accept a counter (D4)")
         )
 
-    counter_rate = _load_counter_decision_rate(deal)
+    counter_approval = _load_counter_approval(deal)
+    counter_rate = (
+        flt(counter_approval.decision_rate)
+        if counter_approval is not None
+        and getattr(counter_approval, "decision_rate", None) is not None
+        else None
+    )
     if counter_rate is None:
         frappe.throw(_("Countered deal has no COUNTER Approval.decision_rate to accept"))
 
@@ -153,33 +183,48 @@ def accept_counter(deal_name: str):
     deal.approved_rate = counter_rate
     deal.set_status("Approved")
     _maybe_open_buyer_unresolved(deal)
+    _transition_rate_floor_breach(
+        deal,
+        counter_approval,
+        "Resolved" if _rate_is_within_stored_band(deal, counter_rate) else "Waived",
+        counter_rate,
+        getattr(counter_approval, "reason", None) or "Counter accepted",
+    )
     # FSEC-001 audit: ignore_permissions AFTER D4 ownership ACL above.
     deal.save(ignore_permissions=True)
     frappe.db.commit()
     return {"name": deal.name, "status": deal.status, "approved_rate": deal.approved_rate}
 
 
-def _load_counter_decision_rate(deal):
-    """Latest/open COUNTER Approval for this deal; prefer deal.approval if it is COUNTER."""
+def _load_counter_approval(deal):
+    """Latest COUNTER Approval for this deal; prefer the Deal's explicit link."""
     if deal.approval and frappe.db.exists("Fresko Approval", deal.approval):
         row = frappe.db.get_value(
             "Fresko Approval",
             deal.approval,
-            ["decision", "decision_rate"],
+            ["name", "decision", "decision_rate", "reason", "exception"],
             as_dict=True,
         )
         if row and (row.decision or "").upper() == "COUNTER" and row.decision_rate is not None:
-            return flt(row.decision_rate)
+            return row
     rows = frappe.get_all(
         "Fresko Approval",
         filters={"deal": deal.name, "decision": "COUNTER"},
-        fields=["name", "decision_rate"],
+        fields=["name", "decision", "decision_rate", "reason", "exception"],
         order_by="creation desc",
         limit=1,
     )
     if not rows or rows[0].decision_rate is None:
         return None
-    return flt(rows[0].decision_rate)
+    return rows[0]
+
+
+def _load_counter_decision_rate(deal):
+    """Compatibility helper returning the latest COUNTER decision rate."""
+    approval = _load_counter_approval(deal)
+    if approval is None or getattr(approval, "decision_rate", None) is None:
+        return None
+    return flt(approval.decision_rate)
 
 
 @frappe.whitelist()
@@ -208,9 +253,52 @@ def cancel_deal(deal_name: str, cancel_reason: str):
 
 
 @frappe.whitelist()
-def record_dispatch(deal_name: str, dispatched_qty):
+def release_for_outward(deal_name: str):
+    """Legacy-only API compatibility alias for the Phase 1 dispatch lifecycle.
+
+    This does not record physical outward evidence and does not grant Phase 2A
+    outward authorization. New outward workflows must not infer either fact.
     """
-    Server-only dispatched_qty update (Phase 1 stub).
+    return advance_to_legacy_outward_pending(deal_name)
+
+
+def advance_to_legacy_outward_pending(deal_name: str):
+    """Canonical legacy transition into ``Outward Pending``.
+
+    Uses the operations role gate and container-first lock hierarchy. Replays
+    are idempotent, but remain legacy lifecycle transitions only.
+    """
+    deal = frappe.get_doc("Fresko Deal", deal_name)
+    assert_can_record_dispatch(deal)
+    locked_container = deal.container
+    lock_container_for_update(locked_container)
+    deal = frappe.get_doc("Fresko Deal", deal_name, for_update=True)
+    if deal.container != locked_container:
+        frappe.throw(_("Legacy outward transition: deal container changed while acquiring lock"))
+
+    if deal.status == "Outward Pending":
+        return _legacy_dispatch_result(deal)
+    if deal.status not in ("Approved", "Auto Approved"):
+        frappe.throw(
+            _("Legacy outward transition requires Approved or Auto Approved status (current: {0})").format(
+                deal.status
+            )
+        )
+    if flt(deal.dispatched_qty or 0) != 0:
+        frappe.throw(_("Legacy outward transition cannot run after dispatched_qty was recorded"))
+
+    deal.set_status("Outward Pending")
+    deal.save(ignore_permissions=True)
+    frappe.db.commit()
+    return _legacy_dispatch_result(deal)
+
+
+@frappe.whitelist()
+def record_dispatch(deal_name: str, dispatched_qty):
+    """Legacy-only monotonic cumulative dispatch transition.
+
+    This compatibility API records neither physical outward evidence nor Phase
+    2A outward authorization. It only advances the pre-Outward Deal lifecycle.
     Physical ceiling: dispatched_qty may never exceed deal qty or lot inward residual.
     """
     deal = frappe.get_doc("Fresko Deal", deal_name)
@@ -223,10 +311,27 @@ def record_dispatch(deal_name: str, dispatched_qty):
     lock_container_for_update(locked_container)
     deal = frappe.get_doc("Fresko Deal", deal_name, for_update=True)
     if deal.container != locked_container:
-        frappe.throw(_("Deal container changed while acquiring dispatch lock"))
+        frappe.throw(_("Legacy dispatch transition: deal container changed while acquiring lock"))
     qty = flt(dispatched_qty)
+    current_qty = flt(deal.dispatched_qty or 0)
     if qty < 0:
         frappe.throw(_("dispatched_qty cannot be negative"))
+    if deal.status == "Dispatched":
+        if qty == current_qty:
+            return _legacy_dispatch_result(deal, current_qty)
+        frappe.throw(_("Legacy Dispatched deal only accepts an exact idempotent quantity replay"))
+    if deal.status not in ("Outward Pending", "Partially Dispatched"):
+        frappe.throw(
+            _("Legacy record_dispatch requires Outward Pending or Partially Dispatched status (current: {0})").format(
+                deal.status
+            )
+        )
+    if qty < current_qty:
+        frappe.throw(
+            _("dispatched_qty cannot decrease from {0} to {1}").format(current_qty, qty)
+        )
+    if qty == current_qty:
+        return _legacy_dispatch_result(deal, current_qty)
     if qty > flt(deal.qty):
         frappe.throw(
             _("dispatched_qty {0} cannot exceed deal qty {1} (physical ceiling)").format(
@@ -263,25 +368,29 @@ def record_dispatch(deal_name: str, dispatched_qty):
 
     deal.flags.allow_dispatch_write = True
     deal.dispatched_qty = qty
-    if qty > 0 and qty < flt(deal.qty) and deal.status in (
-        "Approved",
-        "Auto Approved",
-        "Outward Pending",
-        "Dispatched",
-    ):
+    if qty > 0 and qty < flt(deal.qty):
         deal.set_status("Partially Dispatched")
-    elif qty >= flt(deal.qty) and deal.status in (
-        "Approved",
-        "Auto Approved",
-        "Outward Pending",
-        "Partially Dispatched",
-    ):
+    elif qty >= flt(deal.qty):
         deal.set_status("Dispatched")
     # FSEC-001 audit: ignore_permissions AFTER assert_can_record_dispatch.
     # Rationale: dispatched_qty is server-only (Desk locked); whitelist is the sole writer.
     deal.save(ignore_permissions=True)
     frappe.db.commit()
-    return {"name": deal.name, "dispatched_qty": deal.dispatched_qty, "status": deal.status}
+    return _legacy_dispatch_result(deal)
+
+
+def _legacy_dispatch_result(deal, dispatched_qty=None):
+    """Make the limitations of every successful legacy response explicit."""
+    return {
+        "name": deal.name,
+        "status": deal.status,
+        "dispatched_qty": flt(
+            deal.dispatched_qty if dispatched_qty is None else dispatched_qty
+        ),
+        "legacy_dispatch_transition": True,
+        "physical_outward_recorded": False,
+        "phase2a_outward_authorized": False,
+    }
 
 
 @frappe.whitelist()
@@ -507,6 +616,82 @@ def _maybe_open_buyer_unresolved(deal):
         "block RECONCILED until Customer mapped (D6).",
         severity="Material",
     )
+
+
+def _ensure_open_exception(
+    deal,
+    exception_type: str,
+    description: str,
+    severity: str = "Medium",
+):
+    """Reuse an existing open exception of this type, otherwise create one."""
+    existing = frappe.get_all(
+        "Fresko Exception",
+        filters={
+            "deal": deal.name,
+            "exception_type": exception_type,
+            "status": ("in", ["Open", "In Progress"]),
+        },
+        limit=1,
+    )
+    if existing:
+        row = existing[0]
+        name = row.get("name") if hasattr(row, "get") else getattr(row, "name", None)
+        return frappe.get_doc("Fresko Exception", name)
+    return _open_exception(deal, exception_type, description, severity=severity)
+
+
+def _get_open_rate_floor_breach(deal):
+    """Return the single unresolved rate-floor exception serialized by Deal locks."""
+    rows = frappe.get_all(
+        "Fresko Exception",
+        filters={
+            "deal": deal.name,
+            "exception_type": "RATE_FLOOR_BREACH",
+            "status": ("in", ["Open", "In Progress"]),
+        },
+        fields=["name"],
+        order_by="creation asc",
+        limit=1,
+    )
+    if not rows:
+        return None
+    row = rows[0]
+    name = row.get("name") if hasattr(row, "get") else getattr(row, "name", None)
+    return frappe.get_doc("Fresko Exception", name) if name else None
+
+
+def _rate_is_within_stored_band(deal, rate) -> bool:
+    """Classify a decision only against the immutable band stored on the Deal."""
+    if not policy_resolved(deal.rate_floor, deal.rate_ceiling):
+        return False
+    return rate_in_band(rate, deal.rate_floor, deal.rate_ceiling)
+
+
+def _transition_rate_floor_breach(deal, approval, status: str, rate, reason: str):
+    """Advance the open rate-floor exception with a complete commercial audit note."""
+    exception_doc = None
+    exception_name = getattr(approval, "exception", None) if approval is not None else None
+    if exception_name:
+        candidate = frappe.get_doc("Fresko Exception", exception_name)
+        if getattr(candidate, "exception_type", None) == "RATE_FLOOR_BREACH":
+            exception_doc = candidate
+    if exception_doc is None:
+        exception_doc = _get_open_rate_floor_breach(deal)
+    if exception_doc is None:
+        return None
+
+    approval_name = getattr(approval, "name", None) or getattr(deal, "approval", None)
+    decision = getattr(approval, "decision", None) or "COUNTER"
+    actor = getattr(getattr(frappe, "session", None), "user", None) or "UNKNOWN"
+    exception_doc.status = status
+    exception_doc.resolution_notes = (
+        f"approval={approval_name}; decision={decision}; decision_rate={rate}; "
+        f"stored_band={deal.rate_floor}..{deal.rate_ceiling}; actor={actor}; reason={reason}"
+    )
+    # FreskoException.validate owns resolved_at/resolved_by stamps for terminal states.
+    exception_doc.save(ignore_permissions=True)
+    return exception_doc
 
 
 def _open_exception(deal, exception_type: str, description: str, severity: str = "Medium"):

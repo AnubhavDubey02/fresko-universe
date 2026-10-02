@@ -34,18 +34,28 @@ def available_to_sell(
     if for_update:
         lock_container_for_update(container)
 
-    lot_inward = _lot_inward_qty(container, lot_no)
-    reserved = _reserved_qty(container, lot_no, exclude_deal=exclude_deal)
+    # Under InnoDB REPEATABLE READ, the caller may already have established a
+    # snapshot while probing the Deal before it waited for the container lock.
+    # Propagate current-read semantics so a waiter sees reservations committed
+    # by the transaction that held the container lock before it.
+    lot_inward = _lot_inward_qty(container, lot_no, for_update=for_update)
+    reserved = _reserved_qty(
+        container,
+        lot_no,
+        exclude_deal=exclude_deal,
+        for_update=for_update,
+    )
     return flt(lot_inward) - flt(reserved)
 
 
-def _lot_inward_qty(container: str, lot_no: str) -> float:
+def _lot_inward_qty(container: str, lot_no: str, *, for_update: bool = False) -> float:
+    lock_clause = " FOR UPDATE" if for_update else ""
     row = frappe.db.sql(
-        """
+        f"""
         SELECT inward_qty
         FROM `tabFresko Container Lot`
         WHERE parent=%s AND parenttype='Fresko Container' AND lot_no=%s
-        LIMIT 1
+        LIMIT 1{lock_clause}
         """,
         (container, lot_no),
         as_dict=True,
@@ -58,13 +68,20 @@ def _lot_inward_qty(container: str, lot_no: str) -> float:
     return flt(row[0].inward_qty)
 
 
-def _reserved_qty(container: str, lot_no: str, *, exclude_deal: Optional[str] = None) -> float:
+def _reserved_qty(
+    container: str,
+    lot_no: str,
+    *,
+    exclude_deal: Optional[str] = None,
+    for_update: bool = False,
+) -> float:
     statuses = tuple(ATS_REDUCING_STATUSES)
     params: list = [container, lot_no, statuses]
     exclude_clause = ""
     if exclude_deal:
         exclude_clause = " AND name != %s"
         params.append(exclude_deal)
+    lock_clause = " FOR UPDATE" if for_update else ""
 
     rows = frappe.db.sql(
         f"""
@@ -74,6 +91,7 @@ def _reserved_qty(container: str, lot_no: str, *, exclude_deal: Optional[str] = 
           AND lot_no=%s
           AND status IN %s
           {exclude_clause}
+        {lock_clause}
         """,
         tuple(params),
         as_dict=True,

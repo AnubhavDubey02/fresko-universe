@@ -6,9 +6,15 @@ import frappe
 from frappe import _
 from frappe.utils import flt
 
-from fresko_universe.ats import available_to_sell
+from fresko_universe.ats import available_to_sell, lock_container_for_update
 from fresko_universe.constants import OVERSELL_OVERRIDE_ROLES
-from fresko_universe.deals import _maybe_open_buyer_unresolved, _open_exception
+from fresko_universe.deals import (
+    _get_open_rate_floor_breach,
+    _maybe_open_buyer_unresolved,
+    _open_exception,
+    _rate_is_within_stored_band,
+    _transition_rate_floor_breach,
+)
 from fresko_universe.permissions import (
     assert_can_create_revision_approval,
 )
@@ -43,7 +49,15 @@ def decide(
     if "Fresko Approver" not in roles and "System Manager" not in roles:
         frappe.throw(_("Only Fresko Approver / System Manager may decide"))
 
-    deal = frappe.get_doc("Fresko Deal", deal_name)
+    # Probe only to identify the stable parent lock. Serialize every decision
+    # by Container then Deal before validating status, so concurrent approvers
+    # cannot both decide from the same stale Approval Required snapshot.
+    probe = frappe.get_doc("Fresko Deal", deal_name)
+    locked_container = probe.container
+    lock_container_for_update(locked_container)
+    deal = frappe.get_doc("Fresko Deal", deal_name, for_update=True)
+    if deal.container != locked_container:
+        frappe.throw(_("Deal container changed while acquiring approval decision lock"))
 
     # F-C1 / F-H2: decide only from Approval Required
     if deal.status != "Approval Required":
@@ -77,6 +91,7 @@ def decide(
 
     # Snapshot rates on Approval row
     rate = flt(decision_rate) if decision_rate is not None else None
+    rate_exception = _get_open_rate_floor_breach(deal)
 
     if decision == "APPROVE":
         if rate is None:
@@ -105,7 +120,7 @@ def decide(
             rate,
             reason,
             oversell_override,
-            ex,
+            ex or rate_exception,
         )
         deal.flags.allow_approval_write = True
         deal.approved_rate = rate
@@ -113,6 +128,13 @@ def decide(
         deal.approval_required = 0
         deal.set_status("Approved")
         _maybe_open_buyer_unresolved(deal)
+        _transition_rate_floor_breach(
+            deal,
+            approval,
+            "Resolved" if _rate_is_within_stored_band(deal, rate) else "Waived",
+            rate,
+            reason,
+        )
         # FSEC-001 audit: ignore_permissions AFTER Approver/SM role gate + D10 checks above.
         deal.save(ignore_permissions=True)
         frappe.db.commit()
@@ -123,10 +145,17 @@ def decide(
             frappe.throw(_("COUNTER requires decision_rate"))
         # RC: store counter on Approval.decision_rate only; Deal.approved_rate stays NULL
         # until accept_counter copies it (avoids silent commercial certainty while Countered).
-        approval = _insert_approval(deal, "COUNTER", rate, reason, 0, None)
+        approval = _insert_approval(deal, "COUNTER", rate, reason, 0, rate_exception)
         deal.flags.allow_approval_write = True
         deal.approval = approval.name
         deal.set_status("Countered")
+        _transition_rate_floor_breach(
+            deal,
+            approval,
+            "In Progress",
+            rate,
+            reason,
+        )
         deal.save(ignore_permissions=True)
         # Currency coerce may turn unset into 0.0 — force SQL NULL (same Gate 1 pattern).
         frappe.db.set_value(
@@ -140,9 +169,16 @@ def decide(
         return _result(deal, approval)
 
     if decision == "REJECT":
-        approval = _insert_approval(deal, "REJECT", rate, reason, 0, None)
+        approval = _insert_approval(deal, "REJECT", rate, reason, 0, rate_exception)
         deal.approval = approval.name
         deal.set_status("Rejected")
+        _transition_rate_floor_breach(
+            deal,
+            approval,
+            "Resolved",
+            rate,
+            reason,
+        )
         deal.save(ignore_permissions=True)
         frappe.db.commit()
         return _result(deal, approval)
