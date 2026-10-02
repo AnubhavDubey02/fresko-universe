@@ -12,6 +12,6 @@ from fresko_universe.permissions import assert_can_read_ats_snapshot
 
 @frappe.whitelist()
 def snapshot(container: str, lot_no: str | None = None):
-    """ATS / inward / approved_sold snapshot — Fresko reader roles only (FSEC-001)."""
+    """Separated physical/commercial/assertion/exception snapshot for Fresko readers."""
     assert_can_read_ats_snapshot()
     return container_snapshot(container, lot_no)

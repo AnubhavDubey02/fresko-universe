@@ -186,6 +186,8 @@ bench --site "${UPGRADE_SITE}" install-app erpnext
 bench --site "${UPGRADE_SITE}" install-app fresko_universe
 ./env/bin/python "${ROOT}/scripts/prove_evidence_attempt_link_data_migration.py" \
   --site "${UPGRADE_SITE}" seed_phase1
+./env/bin/python "${ROOT}/scripts/prove_phase2a_outward_upgrade.py" \
+  --site "${UPGRADE_SITE}" seed_phase1
 
 vendor_fresko_app "${APP_SRC}" "current-upgrade-candidate"
 diff -qr \
@@ -197,8 +199,12 @@ diff -qr \
 bench --site "${UPGRADE_SITE}" migrate
 ./env/bin/python "${ROOT}/scripts/prove_evidence_attempt_link_data_migration.py" \
   --site "${UPGRADE_SITE}" verify_first_migrate
+./env/bin/python "${ROOT}/scripts/prove_phase2a_outward_upgrade.py" \
+  --site "${UPGRADE_SITE}" verify_first_migrate
 bench --site "${UPGRADE_SITE}" migrate
 ./env/bin/python "${ROOT}/scripts/prove_evidence_attempt_link_data_migration.py" \
+  --site "${UPGRADE_SITE}" verify_second_migrate
+./env/bin/python "${ROOT}/scripts/prove_phase2a_outward_upgrade.py" \
   --site "${UPGRADE_SITE}" verify_second_migrate
 
 echo "==> CI bench OK"

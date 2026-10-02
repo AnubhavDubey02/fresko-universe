@@ -1,0 +1,23 @@
+{
+ "doctype": "DocType",
+ "name": "Fresko Outward Line",
+ "module": "Fresko Core",
+ "engine": "InnoDB",
+ "istable": 1,
+ "editable_grid": 0,
+ "fields": [
+  {"fieldname": "line_key", "fieldtype": "Data", "label": "Line Key", "reqd": 1, "read_only": 1, "in_list_view": 1},
+  {"fieldname": "raw_lot_text", "fieldtype": "Data", "label": "Raw Lot Text", "read_only": 1},
+  {"fieldname": "lot_no", "fieldtype": "Data", "label": "Mapped Lot No", "read_only": 1, "in_list_view": 1},
+  {"fieldname": "batch", "fieldtype": "Link", "label": "Mapped Batch", "options": "Batch", "read_only": 1},
+  {"fieldname": "qty", "fieldtype": "Float", "label": "Quantity", "reqd": 1, "read_only": 1, "in_list_view": 1},
+  {"fieldname": "uom", "fieldtype": "Link", "label": "UOM", "options": "UOM", "reqd": 1, "read_only": 1, "in_list_view": 1},
+  {"fieldname": "raw_qty_text", "fieldtype": "Data", "label": "Raw Quantity Text", "reqd": 1, "read_only": 1},
+  {"fieldname": "raw_uom_text", "fieldtype": "Data", "label": "Raw UOM Text", "reqd": 1, "read_only": 1},
+  {"fieldname": "raw_rate_text", "fieldtype": "Data", "label": "Raw Rate Text", "description": "Source text only. It is not an authorized commercial rate.", "read_only": 1},
+  {"fieldname": "source_line_ref", "fieldtype": "Data", "label": "Source Line Reference", "read_only": 1}
+ ],
+ "permissions": [],
+ "sort_field": "idx",
+ "sort_order": "ASC"
+}

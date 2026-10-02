@@ -72,7 +72,7 @@
    "fieldname": "operation",
    "fieldtype": "Select",
    "label": "Operation",
-   "options": "MESSAGE_INGEST\nATTACHMENT_INGEST\nATTACHMENT_VERIFY\nCORRECTION_SUPERSEDE",
+   "options": "MESSAGE_INGEST\nATTACHMENT_INGEST\nATTACHMENT_VERIFY\nCORRECTION_SUPERSEDE\nOUTWARD_CREATE",
    "reqd": 1,
    "read_only": 1
   },

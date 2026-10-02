@@ -2,9 +2,9 @@
 
 **Status:** Phase 1 closeout index
 
-**Reviewed:** 2026-10-01
+**Reviewed:** 2026-10-02
 
-**Scope:** Historical Phase 1 authority plus dated PR #7 stabilization status. Phase 2A Outward/Field Assertion remains unimplemented; this index authorizes no merge or implementation.
+**Scope:** Historical Phase 1 authority, dated PR #7 stabilization status, and the focused Phase 2A physical-Outward contract/implementation checkpoint. This index authorizes no merge.
 
 Use this index before relying on an older design memo. Historical documents remain
 in the repository as dated evidence; a later canonical decision overrides a
@@ -15,6 +15,8 @@ conflicting proposal without rewriting the historical record.
 | Subject | Canonical document | Rule |
 |---|---|---|
 | Latest stabilization and temporal acceptance status | `docs/CANONICAL_STATUS_ADDENDUM_2026-10-01.md` | Current exact-head checkpoint and dated corrections to time-bounded business examples; preserves older documents as historical evidence. |
+| Container-to-CA business contract | `docs/CONTAINER_CYCLE_TO_CA_CONTRACT.md` | Governs truth layers, cut-offs, lifecycle boundaries, Phase 2A physical movement, future ledgers, settlement, and CA-ready output without implying those future ledgers are implemented. |
+| Current coding-agent implementation handoff | `docs/AGENT_HANDOFF.md` | Dated branch/SHA/test status. The 2026-10-02 section records the first Phase 2A slice and its explicit deferrals; live GitHub checks still control exact-head claims. |
 | Locked product and architecture decisions | `docs/DECISIONS.md` | Highest authority for D1, D3-D6, D10, merge gates, dependency sovereignty, and security role. |
 | Phase 1 Container/Deal design | `docs/PHASE1_BLUEPRINT_FINAL.md` | Supersedes specialist drafts where they conflict. |
 | Remaining uncertainty | `docs/OPEN_QUESTIONS.md` | `UNKNOWN` and `PENDING` items remain open until evidence or an authorized decision closes them. |
@@ -51,4 +53,4 @@ Two important resolved conflicts are:
   superseded notice instead of silently rewriting past evidence.
 - Cite an immutable commit SHA for CI evidence and verify that exact SHA.
 - Never turn missing evidence into zero, success, matched, received, or verified.
-- Do not merge PR #2 or begin Phase 2 without explicit authorization.
+- Do not merge, retarget, or close predecessor PRs without explicit repository-owner authorization. Keep Phase 2A work on its focused branch/PR.
