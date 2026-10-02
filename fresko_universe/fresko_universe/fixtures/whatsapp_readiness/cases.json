@@ -1,0 +1,557 @@
+{
+  "schema_version": 1,
+  "confidence_vocabulary": {
+    "extraction_confidence": [
+      "CONFIRMED",
+      "REVIEWED",
+      "UNKNOWN"
+    ],
+    "identity_match_confidence": [
+      "CONFIRMED",
+      "CANDIDATE",
+      "REJECTED",
+      "UNKNOWN",
+      "NOT_APPLICABLE"
+    ],
+    "financial_verification": [
+      "VERIFIED",
+      "PENDING",
+      "REJECTED",
+      "UNKNOWN",
+      "NOT_APPLICABLE"
+    ]
+  },
+  "cases": [
+    {
+      "id": "provider-redelivery-same-message",
+      "category": "duplicate_semantics",
+      "source": {
+        "kind": "closeout_requirement",
+        "reference": "User closeout instruction 6, 2026-09-18",
+        "source_summary": "Repeated delivery of the same provider message is different from two distinct messages containing identical text.",
+        "attachment_members": []
+      },
+      "interpretation": "The provider-scoped immutable message key, not body text, determines redelivery identity.",
+      "confirmed_facts": [
+        "A transport can redeliver one provider message."
+      ],
+      "expected": {
+        "extraction_confidence": "UNKNOWN",
+        "identity_match_confidence": "UNKNOWN",
+        "provider_message_identity": "SAME_SCOPED_KEY_SYNTHETIC",
+        "financial_verification": "NOT_APPLICABLE",
+        "record_state": "IDEMPOTENT_REDELIVERY",
+        "deduplication_action": "REUSE_EVIDENCE_AND_APPEND_DELIVERY_ATTEMPT",
+        "exceptions": []
+      },
+      "expected_result_review": {
+        "status": "REVIEWED",
+        "basis": "Closeout requirement; implementation intentionally absent."
+      }
+    },
+    {
+      "id": "identical-text-distinct-message-records",
+      "category": "duplicate_semantics",
+      "source": {
+        "kind": "whatsapp_export",
+        "archive_member": "_chat.txt",
+        "transcript_line_ranges": [[362, 369], [370, 377]],
+        "source_summary": "ORDER DK sapra/Mukesh LOT 42076/ 5 CRT Lotb42074/ 10 CRT Total 15 crate Vehicle no Anil Tempo",
+        "attachment_members": []
+      },
+      "interpretation": "Two exported records contain identical text at the same displayed timestamp; the export has no provider message IDs proving redelivery.",
+      "confirmed_facts": [
+        "Two distinct transcript records exist.",
+        "Their normalized text is identical."
+      ],
+      "expected": {
+        "extraction_confidence": "CONFIRMED",
+        "identity_match_confidence": "UNKNOWN",
+        "financial_verification": "NOT_APPLICABLE",
+        "record_state": "DUPLICATE_CANDIDATE",
+        "deduplication_action": "KEEP_SEPARATE_EVIDENCE_UNTIL_PROVIDER_IDENTITY_IS_KNOWN",
+        "exceptions": ["DUPLICATE_MESSAGE_CANDIDATE"]
+      },
+      "expected_result_review": {
+        "status": "REVIEWED",
+        "basis": "Manual comparison of transcript records; no provider identity inferred."
+      }
+    },
+    {
+      "id": "same-payment-reference-distinct-message-records",
+      "category": "duplicate_semantics",
+      "source": {
+        "kind": "whatsapp_export",
+        "archive_member": "_chat.txt",
+        "transcript_line_ranges": [[397, 406], [751, 760]],
+        "source_summary": "Payment Date - 11-09-2026 Amount - ₹ 20850.00 Payment Ref # - 4RHDMB0010292127 Status - Authorization InProcess",
+        "attachment_members": []
+      },
+      "interpretation": "The same transaction reference is posted in two export records. Evidence identity and financial transaction identity are separate questions.",
+      "confirmed_facts": [
+        "The displayed payment date, amount, and reference repeat.",
+        "Both source records say Authorization InProcess."
+      ],
+      "expected": {
+        "extraction_confidence": "CONFIRMED",
+        "identity_match_confidence": "UNKNOWN",
+        "financial_verification": "PENDING",
+        "record_state": "TRANSACTION_DUPLICATE_CANDIDATE",
+        "deduplication_action": "PRESERVE_BOTH_EVIDENCE_RECORDS_AND_HOLD_POSTING_PENDING_SCOPED_TRANSACTION_MATCH",
+        "exceptions": ["PAYMENT_REFERENCE_DUPLICATE_CANDIDATE", "PAYMENT_CLEARING_PENDING"]
+      },
+      "expected_result_review": {
+        "status": "REVIEWED",
+        "basis": "Exact transcript references reviewed; no clearing receipt reviewed."
+      }
+    },
+    {
+      "id": "one-message-many-attachments",
+      "category": "attachment_cardinality",
+      "source": {
+        "kind": "closeout_requirement",
+        "reference": "User closeout instruction 6, 2026-09-18",
+        "source_summary": "One message can have multiple attachments.",
+        "attachment_members": ["fixture-attachment-a", "fixture-attachment-b"]
+      },
+      "interpretation": "Message uniqueness must not force a one-to-one relationship between Evidence and attachments.",
+      "confirmed_facts": [
+        "The readiness contract must support attachment cardinality greater than one."
+      ],
+      "expected": {
+        "extraction_confidence": "UNKNOWN",
+        "identity_match_confidence": "NOT_APPLICABLE",
+        "financial_verification": "NOT_APPLICABLE",
+        "record_state": "ONE_EVIDENCE_MANY_ATTACHMENTS",
+        "deduplication_action": "UNIQUE_ATTACHMENTS_WITHIN_MESSAGE_BY_PROVIDER_ATTACHMENT_ID_OR_ORDINAL",
+        "exceptions": []
+      },
+      "expected_result_review": {
+        "status": "REVIEWED",
+        "basis": "Schema requirement reviewed; not asserted as an observation from the export."
+      }
+    },
+    {
+      "id": "ambiguous-amendment-add-10",
+      "category": "amendment",
+      "source": {
+        "kind": "whatsapp_export",
+        "archive_member": "_chat.txt",
+        "transcript_line_ranges": [[674, 675]],
+        "source_summary": "Add 10 Crate s Lot 42088",
+        "attachment_members": []
+      },
+      "interpretation": "The amendment has quantity and lot but no validated parent order reference.",
+      "confirmed_facts": [
+        "Quantity 10 and lot 42088 are explicit.",
+        "No parent identifier is explicit."
+      ],
+      "expected": {
+        "extraction_confidence": "CONFIRMED",
+        "identity_match_confidence": "UNKNOWN",
+        "financial_verification": "NOT_APPLICABLE",
+        "record_state": "PENDING_HUMAN_LINK",
+        "parent_order": "UNKNOWN",
+        "exceptions": ["AMENDMENT_PARENT_UNRESOLVED"]
+      },
+      "expected_result_review": {
+        "status": "REVIEWED",
+        "basis": "No parent match invented from message adjacency."
+      }
+    },
+    {
+      "id": "ambiguous-amendment-add-50",
+      "category": "amendment",
+      "source": {
+        "kind": "whatsapp_export",
+        "archive_member": "_chat.txt",
+        "transcript_line_ranges": [[688, 690]],
+        "source_summary": "ADD 50 Crates Lot 42088",
+        "attachment_members": []
+      },
+      "interpretation": "The amendment has quantity and lot but no validated parent order reference.",
+      "confirmed_facts": [
+        "Quantity 50 and lot 42088 are explicit.",
+        "No parent identifier is explicit."
+      ],
+      "expected": {
+        "extraction_confidence": "CONFIRMED",
+        "identity_match_confidence": "UNKNOWN",
+        "financial_verification": "NOT_APPLICABLE",
+        "record_state": "PENDING_HUMAN_LINK",
+        "parent_order": "UNKNOWN",
+        "exceptions": ["AMENDMENT_PARENT_UNRESOLVED"]
+      },
+      "expected_result_review": {
+        "status": "REVIEWED",
+        "basis": "No parent match invented from message adjacency."
+      }
+    },
+    {
+      "id": "order-rate-missing",
+      "category": "missing_field",
+      "source": {
+        "kind": "whatsapp_export",
+        "archive_member": "_chat.txt",
+        "transcript_line_ranges": [[347, 354]],
+        "source_summary": "ORDER AZAD / SNS 20 Box Lot 42076 Vishal Tempo; request follows that sale price is needed",
+        "attachment_members": []
+      },
+      "interpretation": "Buyer alias, quantity, lot, and vehicle are extractable, but rate is absent.",
+      "confirmed_facts": [
+        "The order text contains no rate.",
+        "A later message explicitly asks for sale prices."
+      ],
+      "expected": {
+        "extraction_confidence": "CONFIRMED",
+        "identity_match_confidence": "UNKNOWN",
+        "financial_verification": "UNKNOWN",
+        "record_state": "INCOMPLETE_PROPOSAL",
+        "rate": "UNKNOWN",
+        "exceptions": ["DEAL_RATE_UNKNOWN"]
+      },
+      "expected_result_review": {
+        "status": "REVIEWED",
+        "basis": "Missing rate preserved; no rate inferred from nearby orders."
+      }
+    },
+    {
+      "id": "multi-lot-order",
+      "category": "order_extraction",
+      "source": {
+        "kind": "whatsapp_export",
+        "archive_member": "_chat.txt",
+        "transcript_line_ranges": [[362, 369]],
+        "source_summary": "ORDER DK sapra/Mukesh LOT 42076/ 5 CRT Lotb42074/ 10 CRT Total 15 crate Vehicle no Anil Tempo",
+        "attachment_members": []
+      },
+      "interpretation": "One commercial order contains two lot lines and one total quantity.",
+      "confirmed_facts": [
+        "Lot 42076 quantity 5 is explicit.",
+        "Lot 42074 quantity 10 is explicit.",
+        "Total quantity 15 is explicit."
+      ],
+      "expected": {
+        "extraction_confidence": "CONFIRMED",
+        "identity_match_confidence": "UNKNOWN",
+        "financial_verification": "UNKNOWN",
+        "record_state": "INCOMPLETE_PROPOSAL",
+        "lot_lines": [{"lot": "42076", "qty": 5}, {"lot": "42074", "qty": 10}],
+        "rate": "UNKNOWN",
+        "exceptions": ["DEAL_RATE_UNKNOWN", "BUYER_UNRESOLVED"]
+      },
+      "expected_result_review": {
+        "status": "REVIEWED",
+        "basis": "Line quantities reconcile to the explicit total; buyer identity and rate remain unresolved."
+      }
+    },
+    {
+      "id": "hold-versus-physical-outward",
+      "category": "source_conflict",
+      "source": {
+        "kind": "whatsapp_export",
+        "archive_member": "_chat.txt",
+        "transcript_line_ranges": [[162, 168]],
+        "source_summary": "Hold Gatepass contradiction: ledger marked HOLD while physical outward evidence was reported to show dispatch.",
+        "attachment_members": []
+      },
+      "interpretation": "The chat asserts a ledger/physical conflict, but the summary alone is not the underlying gatepass evidence.",
+      "confirmed_facts": [
+        "A source conflict was reported for 200 crates."
+      ],
+      "expected": {
+        "extraction_confidence": "CONFIRMED",
+        "identity_match_confidence": "UNKNOWN",
+        "financial_verification": "NOT_APPLICABLE",
+        "record_state": "SOURCE_CONFLICT",
+        "physical_dispatch_status": "UNKNOWN",
+        "exceptions": ["HOLD_OUTWARD_CONTRADICTION", "GATEPASS_EVIDENCE_REQUIRED"]
+      },
+      "expected_result_review": {
+        "status": "REVIEWED",
+        "basis": "Underlying GP rows must be matched before changing physical state."
+      }
+    },
+    {
+      "id": "by-hand-dispatch",
+      "category": "dispatch_extraction",
+      "source": {
+        "kind": "whatsapp_export",
+        "archive_member": "_chat.txt",
+        "transcript_line_ranges": [[486, 491]],
+        "source_summary": "ORDER PRAFULL S 5 Crate Lot 42076 By hand",
+        "attachment_members": ["00003309-FRESKO OUTWARD.pdf"]
+      },
+      "interpretation": "By hand is a positive dispatch mode, not a missing vehicle value.",
+      "confirmed_facts": [
+        "Quantity 5, lot 42076, and dispatch mode By hand are explicit."
+      ],
+      "expected": {
+        "extraction_confidence": "CONFIRMED",
+        "identity_match_confidence": "CANDIDATE",
+        "financial_verification": "UNKNOWN",
+        "record_state": "PENDING_GATEPASS_MATCH",
+        "dispatch_mode": "BY_HAND",
+        "vehicle": null,
+        "exceptions": ["GATEPASS_MATCH_PENDING"]
+      },
+      "expected_result_review": {
+        "status": "REVIEWED",
+        "basis": "Chat extraction exact; attachment match remains a candidate until explicitly accepted."
+      }
+    },
+    {
+      "id": "buyer-name-candidate",
+      "category": "identity_match",
+      "source": {
+        "kind": "archive_workbook",
+        "archive_member": "00003294-Fresko_Plum_SKRU9000221_Sale_Sheet_16_Sep_2026_Payments_Reconciled.xlsx",
+        "member_locator": "Sale Sheet row 67",
+        "source_summary": "AU; NAME / DATE CHECK; Candidate GP 205952: ALI MARKET, 15-Sep",
+        "attachment_members": ["00003294-Fresko_Plum_SKRU9000221_Sale_Sheet_16_Sep_2026_Payments_Reconciled.xlsx"]
+      },
+      "interpretation": "The workbook proposes a candidate alias match but does not establish identity.",
+      "confirmed_facts": [
+        "The row is explicitly marked NAME / DATE CHECK."
+      ],
+      "expected": {
+        "extraction_confidence": "REVIEWED",
+        "identity_match_confidence": "CANDIDATE",
+        "financial_verification": "UNKNOWN",
+        "record_state": "PENDING_HUMAN_MATCH",
+        "customer": "UNKNOWN",
+        "exceptions": ["BUYER_UNRESOLVED", "DATE_MATCH_PENDING"]
+      },
+      "expected_result_review": {
+        "status": "REVIEWED",
+        "basis": "Candidate label preserved; no Customer mapping inferred."
+      }
+    },
+    {
+      "id": "sale-outward-date-mismatch",
+      "category": "date_match",
+      "source": {
+        "kind": "archive_workbook",
+        "archive_member": "00003294-Fresko_Plum_SKRU9000221_Sale_Sheet_16_Sep_2026_Payments_Reconciled.xlsx",
+        "member_locator": "Sale Sheet row 64",
+        "source_summary": "Sale 14-Sep; GP 205936; OUT 15-Sep; DATE CHECK",
+        "attachment_members": ["00003294-Fresko_Plum_SKRU9000221_Sale_Sheet_16_Sep_2026_Payments_Reconciled.xlsx"]
+      },
+      "interpretation": "Commercial sale date and physical outward date may legitimately differ; neither may overwrite the other.",
+      "confirmed_facts": [
+        "The reviewed workbook records distinct sale and outward dates."
+      ],
+      "expected": {
+        "extraction_confidence": "REVIEWED",
+        "identity_match_confidence": "CANDIDATE",
+        "financial_verification": "UNKNOWN",
+        "record_state": "DATES_PRESERVED_SEPARATELY",
+        "exceptions": ["DATE_MATCH_PENDING"]
+      },
+      "expected_result_review": {
+        "status": "REVIEWED",
+        "basis": "No date normalized or silently replaced."
+      }
+    },
+    {
+      "id": "payment-container-allocation-not-receipt-split",
+      "category": "payment_allocation",
+      "source": {
+        "kind": "whatsapp_export",
+        "archive_member": "_chat.txt",
+        "transcript_line_ranges": [[813, 818]],
+        "source_summary": "Payments for plum or grapes or both? First adjust in plum then grapes. Extra amount to go into grapes account? Yes.",
+        "attachment_members": []
+      },
+      "interpretation": "The conversation confirms allocation order at container/category level, not a per-receipt allocation or bank clearing result.",
+      "confirmed_facts": [
+        "Plum-first then grapes allocation was explicitly confirmed."
+      ],
+      "expected": {
+        "extraction_confidence": "CONFIRMED",
+        "identity_match_confidence": "NOT_APPLICABLE",
+        "financial_verification": "PENDING",
+        "record_state": "ALLOCATION_RULE_CONFIRMED_RECEIPT_SPLIT_UNKNOWN",
+        "receipt_level_allocation": "UNKNOWN",
+        "exceptions": ["PAYMENT_CLEARING_PENDING", "RECEIPT_SPLIT_UNRESOLVED"]
+      },
+      "expected_result_review": {
+        "status": "REVIEWED",
+        "basis": "Confirmation scope limited to what the chat actually states."
+      }
+    },
+    {
+      "id": "bank-authorization-not-cleared-receipt",
+      "category": "financial_verification",
+      "source": {
+        "kind": "whatsapp_export",
+        "archive_member": "_chat.txt",
+        "transcript_line_ranges": [[21, 30]],
+        "source_summary": "Payment Date - 03-09-2026 Amount - ₹ 250000.00 Payment Type - RTGS Status - Authorization InProcess",
+        "attachment_members": []
+      },
+      "interpretation": "Authorization InProcess is not verified settlement or cleared receipt.",
+      "confirmed_facts": [
+        "The raw bank status is Authorization InProcess."
+      ],
+      "expected": {
+        "extraction_confidence": "CONFIRMED",
+        "identity_match_confidence": "NOT_APPLICABLE",
+        "financial_verification": "PENDING",
+        "record_state": "AUTHORIZATION_IN_PROCESS",
+        "ledger_received": false,
+        "settlement_status": "UNKNOWN",
+        "exceptions": ["PAYMENT_CLEARING_PENDING"]
+      },
+      "expected_result_review": {
+        "status": "REVIEWED",
+        "basis": "Raw status preserved; no settlement evidence inferred."
+      }
+    },
+    {
+      "id": "cold-storage-bill-missing",
+      "category": "missing_financial_document",
+      "source": {
+        "kind": "whatsapp_export",
+        "archive_member": "_chat.txt",
+        "transcript_line_ranges": [[852, 852]],
+        "source_summary": "Cold storage bills not received ussko zero kar doo we add later when we got complete sales of plum.",
+        "attachment_members": []
+      },
+      "interpretation": "A provisional display zero must not become a verified zero expense.",
+      "confirmed_facts": [
+        "The cold-storage bill was reported not received."
+      ],
+      "expected": {
+        "extraction_confidence": "CONFIRMED",
+        "identity_match_confidence": "NOT_APPLICABLE",
+        "financial_verification": "PENDING",
+        "record_state": "PENDING_DOCUMENT",
+        "verified_amount": "UNKNOWN",
+        "display_placeholder": 0,
+        "exceptions": ["COLD_STORAGE_BILL_PENDING"]
+      },
+      "expected_result_review": {
+        "status": "REVIEWED",
+        "basis": "Missing cost remains UNKNOWN even if an output view uses a provisional zero."
+      }
+    },
+    {
+      "id": "cha-excess-payment-claim",
+      "category": "cha_verification",
+      "source": {
+        "kind": "whatsapp_export",
+        "archive_member": "_chat.txt",
+        "transcript_line_ranges": [[730, 730]],
+        "source_summary": "Paid almost 80 K extra to our CHA; FSSAI and PQ charges may be automatically exempted but were said to be charged in full.",
+        "attachment_members": ["00003258-PHOTO-2026-09-16-10-05-29.jpg"]
+      },
+      "interpretation": "This is a user-reported claim requiring shipment-specific receipts and exemption checks before any recoverable amount is asserted.",
+      "confirmed_facts": [
+        "The approximately ₹80,000 claim appears in the chat.",
+        "An image is attached to the claim."
+      ],
+      "expected": {
+        "extraction_confidence": "CONFIRMED",
+        "identity_match_confidence": "UNKNOWN",
+        "financial_verification": "PENDING",
+        "record_state": "CHA_VERIFICATION_BACKLOG",
+        "exemption_status": "PENDING",
+        "recoverable_amount": "PENDING",
+        "exceptions": ["CHA_RECEIPTS_REQUIRED", "CHA_EXEMPTION_CHECK_REQUIRED"]
+      },
+      "expected_result_review": {
+        "status": "REVIEWED",
+        "basis": "Claim recorded without independent verification; no CHA module authorized."
+      }
+    },
+    {
+      "id": "same-timestamp-attachment-records",
+      "category": "attachment_identity",
+      "source": {
+        "kind": "whatsapp_export",
+        "archive_member": "_chat.txt",
+        "transcript_line_ranges": [[731, 736]],
+        "source_summary": "Six attachment records appear across two displayed timestamps.",
+        "attachment_members": [
+          "00003259-PHOTO-2026-09-16-10-43-02.jpg",
+          "00003260-PHOTO-2026-09-16-10-43-02.jpg",
+          "00003261-PHOTO-2026-09-16-10-43-02.jpg",
+          "00003262-PHOTO-2026-09-16-10-43-03.jpg",
+          "00003263-PHOTO-2026-09-16-10-43-03.jpg",
+          "00003264-PHOTO-2026-09-16-10-43-03.jpg"
+        ]
+      },
+      "interpretation": "Equal displayed timestamps do not establish one provider message or one attachment bundle.",
+      "confirmed_facts": [
+        "Six distinct archive members are referenced."
+      ],
+      "expected": {
+        "extraction_confidence": "CONFIRMED",
+        "identity_match_confidence": "UNKNOWN",
+        "financial_verification": "NOT_APPLICABLE",
+        "record_state": "ATTACHMENTS_PRESENT_CAPTURE_UNVERIFIED_MESSAGE_GROUPING_UNKNOWN",
+        "capture_status": "UNKNOWN",
+        "exceptions": ["PROVIDER_MESSAGE_ID_REQUIRED"]
+      },
+      "expected_result_review": {
+        "status": "REVIEWED",
+        "basis": "No grouping inferred from timestamp equality."
+      }
+    },
+    {
+      "id": "partial-attachment-download-retry",
+      "category": "download_reliability",
+      "source": {
+        "kind": "closeout_requirement",
+        "reference": "User closeout instruction 8, 2026-09-18",
+        "source_summary": "No incomplete attachment may be marked successfully captured.",
+        "attachment_members": ["fixture-partial-download"]
+      },
+      "interpretation": "Transport completion, expected length, byte hash, durable write, and readback are distinct checkpoints.",
+      "confirmed_facts": [
+        "Partial-download behavior is a required readiness scenario."
+      ],
+      "expected": {
+        "extraction_confidence": "UNKNOWN",
+        "identity_match_confidence": "NOT_APPLICABLE",
+        "financial_verification": "NOT_APPLICABLE",
+        "record_state": "FAILED_RETRYABLE",
+        "captured_successfully": false,
+        "retry_action": "RETRY_IDEMPOTENTLY_WITH_ATTEMPT_AUDIT",
+        "exceptions": ["ATTACHMENT_PARTIAL"]
+      },
+      "expected_result_review": {
+        "status": "REVIEWED",
+        "basis": "Failure contract reviewed; no downloader implemented."
+      }
+    },
+    {
+      "id": "human-correction-rejected-match",
+      "category": "human_review",
+      "source": {
+        "kind": "closeout_requirement",
+        "reference": "User closeout instruction 8, 2026-09-18",
+        "source_summary": "Document human correction and rejected matches.",
+        "attachment_members": []
+      },
+      "interpretation": "Corrections append reviewed provenance; they do not overwrite raw evidence or erase rejected candidates.",
+      "confirmed_facts": [
+        "Human correction and rejection behavior is a required readiness scenario."
+      ],
+      "expected": {
+        "extraction_confidence": "UNKNOWN",
+        "identity_match_confidence": "REJECTED",
+        "financial_verification": "NOT_APPLICABLE",
+        "record_state": "CORRECTED_WITH_AUDIT_TRAIL",
+        "raw_source_preserved": true,
+        "rejected_candidate_preserved": true,
+        "exceptions": []
+      },
+      "expected_result_review": {
+        "status": "REVIEWED",
+        "basis": "Correction contract reviewed; no correction workflow implemented."
+      }
+    }
+  ]
+}

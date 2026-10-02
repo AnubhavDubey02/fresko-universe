@@ -1,0 +1,11 @@
+*.pyc
+__pycache__/
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+node_modules/
+*.swp
+.DS_Store

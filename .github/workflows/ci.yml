@@ -1,0 +1,130 @@
+# Gate 2 — pinned Frappe + ERPNext v15; PR fails on install/migrate/test failure.
+# See docs/VERSIONS.md and .github/frappe-versions.json.
+name: Phase1 CI
+
+on:
+  pull_request:
+  push:
+    branches: [phase1-doctype-scaffold, main, master]
+
+concurrency:
+  group: phase1-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke-unit:
+    name: Smoke unit (Gate 1 / D4 / constants)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run offline smoke suite
+        working-directory: fresko_universe
+        run: python3 -m unittest tests.test_smoke_unit -v
+      - name: Validate Phase 2 readiness fixtures
+        run: |
+          python3 scripts/validate_phase2_readiness_fixtures.py
+          python3 -m unittest discover -s scripts -p 'test_readiness_fixture_contract.py' -v
+      - name: Assert pin file present
+        run: |
+          test -f .github/frappe-versions.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p = json.loads(Path(".github/frappe-versions.json").read_text())
+          assert p["frappe"]["sha"] == "9f8ae9cd25b6735be345da6cc12e9f5a96050c68"
+          assert p["erpnext"]["sha"] == "df8b7f9648c2ec4da12db8c4022edc8dd1018c6b"
+          print("pins OK", p["frappe"]["tag"], p["erpnext"]["tag"])
+          PY
+
+  frappe-bench:
+    name: Bench install + migrate + run-tests (pinned v15)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    needs: smoke-unit
+    services:
+      mariadb:
+        image: mariadb:10.6
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_ALLOW_EMPTY_PASSWORD: "off"
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=20
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=20
+    env:
+      DB_HOST: 127.0.0.1
+      DB_ROOT_PASSWORD: root
+      FRAPPE_SITE: test.localhost
+      BENCH_DIR: /home/runner/frappe-bench
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Runner requirements note
+        run: |
+          echo "Full ERPNext v15 bench is heavy on ubuntu-latest (disk/RAM/time)."
+          echo "See docs/VERSIONS.md. Job fails honestly on OOM/timeout — do not fake green."
+          df -h
+          free -h
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+
+      - name: System packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            git redis-tools mariadb-client \
+            libmysqlclient-dev pkg-config \
+            python3-dev build-essential \
+            libffi-dev libssl-dev wkhtmltopdf \
+            libjpeg-dev zlib1g-dev liblcms2-dev libwebp-dev
+
+      - name: Wait for MariaDB + utf8mb4
+        run: |
+          for i in $(seq 1 60); do
+            mysqladmin ping -h 127.0.0.1 -uroot -proot --silent && break
+            sleep 2
+          done
+          mysql -h 127.0.0.1 -uroot -proot -e "SET GLOBAL character_set_server='utf8mb4'; SET GLOBAL collation_server='utf8mb4_unicode_ci';"
+
+      - name: MariaDB root remote access (CI)
+        run: |
+          # Allow root@% with password for TCP from runner → service container
+          mysql -h 127.0.0.1 -uroot -proot -e "ALTER USER 'root'@'%' IDENTIFIED BY 'root'; FLUSH PRIVILEGES;" \
+            || mysql -h 127.0.0.1 -uroot -proot -e "CREATE USER IF NOT EXISTS 'root'@'%' IDENTIFIED BY 'root'; GRANT ALL ON *.* TO 'root'@'%' WITH GRANT OPTION; FLUSH PRIVILEGES;"
+
+      - name: Install frappe-bench CLI
+        run: pip install --upgrade pip wheel setuptools frappe-bench
+
+      - name: Init bench + pin SHAs + install + migrate + tests
+        run: bash scripts/ci_bench.sh
+
+      - name: Upload bench logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-logs
+          path: |
+            /home/runner/frappe-bench/logs/
+            /home/runner/frappe-bench/sites/test.localhost/logs/
+          if-no-files-found: ignore
