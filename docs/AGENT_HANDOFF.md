@@ -408,3 +408,15 @@ The new Bench suite contains 19 integration cases, including real two-connection
 - No predecessor PR was merged, retargeted, closed, rebased, or force-pushed by this work.
 
 Next: publish this branch as a draft PR targeted to `codex/integration-stabilization`, run the full pinned workflow, fix real failures without weakening race expectations, then record exact-head CI evidence. After that, the next practical increment is a small internal Desk pilot surface plus declared-shipping/inward variance capture; payments/allocations remain a separate later slice.
+
+### First exact-head GitHub verification
+
+Draft PR #8 was created against `codex/integration-stabilization`: https://github.com/AnubhavDubey02/fresko-universe/pull/8.
+
+GitHub Actions run https://github.com/AnubhavDubey02/fresko-universe/actions/runs/37019856650 passed against exact PR head `06763bafcb3f4e123aef3c17b5bade74efe3e76f`, which includes the contract, implementation, tests, migration proof, canonical-index update, and the dated checkpoint above:
+
+- `Smoke unit (Gate 1 / D4 / constants)` passed in 6 seconds.
+- `Bench install + migrate + run-tests (pinned v15)` passed in 6 minutes 12 seconds.
+- The Bench job completed fresh installation/migration, the full application tests including the Phase 2A MariaDB concurrency cases, the Phase 1-to-current upgrade, and the second idempotence migration.
+
+No runtime corrective commit was needed after this run. The documentation-only descendant that records this result still needs its own exact-head checks before it can supersede `06763ba` as the latest verified branch tip.
