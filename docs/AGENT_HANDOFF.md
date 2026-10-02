@@ -473,8 +473,9 @@ still requires its own exact-head CI before it is described as green.
 
 This is a focused local implementation checkpoint on
 `codex/real-data-shadow-replay`, based on business-decision commit
-`3998ca70ff044d48f83be4873fb3f0595336e679`. It has not yet been pushed and is
-not exact-head CI verified.
+`3998ca70ff044d48f83be4873fb3f0595336e679`. The implementation and replay
+checkpoint through `ff4002f03e7532f9d227fea74cbac81ae5e37bcc` is pushed;
+exact-head CI verification remains pending.
 
 ### Implemented
 
@@ -528,7 +529,7 @@ not exact-head CI verified.
   ledgers/portal, settlement, ERP posting, and CA output remain unimplemented.
 - Excel remains the operational source of truth during the shadow pilot.
 
-Next: commit this iteration locally, re-authenticate GitHub, push the focused
-branch, run exact-head CI/Bench, and fix real failures without weakening tests.
-Only after that gate should the Commercial Event/Alias contract become runtime
-work; Collections/Payment Allocation remains the following separate slice.
+Next: run exact-head CI/Bench on the pushed branch and fix real failures without
+weakening tests. Only after that gate should the Commercial Event/Alias contract
+become runtime work; Collections/Payment Allocation remains the following
+separate slice.
