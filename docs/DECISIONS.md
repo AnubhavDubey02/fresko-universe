@@ -1,5 +1,27 @@
 # DECISIONS — Fresko Universe
 
+## 2026-10-02 — Operational classification and access decisions (LOCKED)
+
+- **BD-101:** INR 101 is a labour payment/outflow, not a customer receipt. It is
+  excluded from customer/Sohail collections, allocations, and receivables.
+- **BD-350:** INR 350,000 was received. Preserve an earlier pending state at its
+  own cut-off, but do not describe the current classification as pending.
+  `Received`, bank `Cleared`, and customer/container allocation remain separate.
+- **BD-92-700:** the source context for 92 at INR 700 is Sohail's handwritten
+  working supplied through photos. Exact photo linkage and role approval are
+  required before the rate becomes an active commercial assertion.
+- **Buyer aliases:** Fresko Salesperson/Trader proposes, Fresko Accounts verifies,
+  and Fresko Approver approves first-time or conflicting Customer mappings. Raw
+  aliases and superseded decisions remain immutable history.
+- **Supplier access:** a future supplier-facing role sees only its own approved,
+  published supplier/container settlement view. It cannot access customers,
+  per-sale rates/amounts, internal Deals, collections, receivables, margins, or
+  internal expenses. A contract-specific Supplier Settlement Value is a separate
+  versioned fact and must never overwrite or masquerade as internal actual sales.
+- Detailed authority, controls, unresolved evidence links, acceptance tests, and
+  implementation order are in
+  `docs/CANONICAL_BUSINESS_DECISIONS_2026-10-02.md`.
+
 ## 2026-09-18 — Readiness design closeout (delegated technical decision)
 
 - Following Anubhav's delegation, MSG-UNIQ design selects a versioned canonical

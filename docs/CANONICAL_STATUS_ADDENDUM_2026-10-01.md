@@ -4,6 +4,13 @@
 
 **Scope:** PR #7 (`codex/integration-stabilization`) and the temporal interpretation of real-world acceptance examples
 
+> **Later decision notice (2026-10-02):**
+> `docs/CANONICAL_BUSINESS_DECISIONS_2026-10-02.md` now controls the current
+> operational classification of INR 101 and INR 350,000, identifies Sohail's
+> handwritten photo working as the source context for 92 at INR 700, and locks
+> buyer-alias and supplier-access rules. The 2026-10-01 text below remains the
+> historical interpretation at its recorded cut-off.
+
 ## How this addendum applies
 
 This document adds current status without rewriting the historical Phase 1, Phase 2, readiness, security, or source-review documents. Where an older document describes one of the cases below as if it were an eternal current fact, this dated addendum controls the current interpretation. The original text remains evidence of what was understood at its recorded time.

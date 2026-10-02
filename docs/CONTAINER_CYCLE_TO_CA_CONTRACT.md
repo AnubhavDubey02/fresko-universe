@@ -5,6 +5,12 @@
 **Implementation base:** `5b8641168c2ddfea5e45e09491bdcdc18a186e60`  
 **First delivery slice:** Fresko Field Assertion, Fresko Outward, and Fresko Outward Line
 
+> **Later decision notice (2026-10-02):**
+> `docs/CANONICAL_BUSINESS_DECISIONS_2026-10-02.md` supersedes the current-state
+> interpretation of the INR 101, INR 350,000, and 92-at-INR-700 cases and adds
+> locked buyer-alias approval and supplier-access boundaries. This contract's
+> original time-bounded wording remains historical context.
+
 ## 1. Purpose and authority
 
 This contract connects the operational life of a produce container to a future

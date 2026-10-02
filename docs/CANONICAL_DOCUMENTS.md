@@ -4,7 +4,9 @@
 
 **Reviewed:** 2026-10-02
 
-**Scope:** Historical Phase 1 authority, dated PR #7 stabilization status, and the focused Phase 2A physical-Outward contract/implementation checkpoint. This index authorizes no merge.
+**Scope:** Historical Phase 1 authority, dated PR #7 stabilization status, the
+focused Phase 2A physical-Outward contract/implementation checkpoint, and the
+2026-10-02 locked operational/access decisions. This index authorizes no merge.
 
 Use this index before relying on an older design memo. Historical documents remain
 in the repository as dated evidence; a later canonical decision overrides a
@@ -14,6 +16,7 @@ conflicting proposal without rewriting the historical record.
 
 | Subject | Canonical document | Rule |
 |---|---|---|
+| Current operational classifications and access boundaries | `docs/CANONICAL_BUSINESS_DECISIONS_2026-10-02.md` | Controls the INR 101, INR 350,000, and 92-at-INR-700 interpretations from 2026-10-02 forward; locks role-based buyer-alias approval and future supplier-facing data isolation without rewriting older source history. |
 | Latest stabilization and temporal acceptance status | `docs/CANONICAL_STATUS_ADDENDUM_2026-10-01.md` | Current exact-head checkpoint and dated corrections to time-bounded business examples; preserves older documents as historical evidence. |
 | Container-to-CA business contract | `docs/CONTAINER_CYCLE_TO_CA_CONTRACT.md` | Governs truth layers, cut-offs, lifecycle boundaries, Phase 2A physical movement, future ledgers, settlement, and CA-ready output without implying those future ledgers are implemented. |
 | Current coding-agent implementation handoff | `docs/AGENT_HANDOFF.md` | Dated branch/SHA/test status. The 2026-10-02 section records the first Phase 2A slice and its explicit deferrals; live GitHub checks still control exact-head claims. |

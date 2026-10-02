@@ -420,3 +420,51 @@ GitHub Actions run https://github.com/AnubhavDubey02/fresko-universe/actions/run
 - The Bench job completed fresh installation/migration, the full application tests including the Phase 2A MariaDB concurrency cases, the Phase 1-to-current upgrade, and the second idempotence migration.
 
 No runtime corrective commit was needed after this run. The documentation-only descendant that records this result still needs its own exact-head checks before it can supersede `06763ba` as the latest verified branch tip.
+
+## 2026-10-02 business-decision lock after real-data review
+
+This documentation checkpoint records repository-owner decisions made after the
+read-only comparison of the Phase 2A model with the supplied Plum, Grapes, CA,
+and operations-handover evidence. It does not claim runtime implementation,
+authorize a merge, or rewrite the earlier evidence cut-offs.
+
+Canonical detail is in
+`docs/CANONICAL_BUSINESS_DECISIONS_2026-10-02.md`; the locked summary is in
+`docs/DECISIONS.md`.
+
+### Decisions locked
+
+- INR 101 is a labour payment/outflow, not a customer receipt, and stays outside
+  customer/Sohail collections, allocations, and receivables.
+- INR 350,000 was received. Earlier pending evidence remains historical;
+  received, bank-cleared, and allocated are still distinct states.
+- The source context for 92 at INR 700 is Sohail's handwritten working supplied
+  through photos. The exact photo must be linked and the rate role-approved
+  before activation; the physical Outward is never rewritten.
+- Buyer-alias mapping is role based: Trader/Salesperson proposes, Accounts
+  verifies, and Fresko Approver approves first-time or conflicting mappings.
+  Raw aliases and superseded mappings remain immutable history.
+- A future supplier-facing user sees only its own approved published
+  supplier/container settlement view. Per-sale rate/amount, customers, internal
+  Deals, collections, receivables, margins, and internal expenses remain denied
+  server side.
+- A contract-specific Supplier Settlement Value, when authorized, is separate
+  from internal actual sales and may never overwrite or masquerade as them.
+
+### Implementation status and next step
+
+No runtime, schema, permission, migration, fixture, or test behavior is changed
+by this documentation checkpoint. PR #8 remains the focused physical-Outward
+slice.
+
+The next best implementation slice is a real-data shadow-replay gate: first add
+the P0 fact boundaries needed to reproduce the Plum/Grapes cut-offs without
+inference, then role-based alias approval, then Collection/Payment Allocation.
+Excel remains the operational source of truth during the shadow pilot. Supplier
+portal implementation stays after internal Supplier Invoice/Remittance/
+Settlement ledgers and server-side isolation tests exist.
+
+The pre-change branch tip for this documentation checkpoint was
+`5e407a99d51c7d589022a64413c56e47867306cb`, whose exact-head GitHub Actions run
+was green as previously recorded. Any commit containing this new documentation
+still requires its own exact-head CI before it is described as green.
