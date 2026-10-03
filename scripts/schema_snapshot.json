@@ -1,5 +1,148 @@
 {
  "doctypes": {
+  "Fresko Adjustment Application": {
+   "autoname": "naming_series:",
+   "engine": "InnoDB",
+   "fields": {
+    "active_application_key": {
+     "fieldtype": "Data",
+     "unique": 1
+    },
+    "amount": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "approved_at": {
+     "fieldtype": "Datetime"
+    },
+    "approved_by": {
+     "fieldtype": "Link",
+     "options": "User"
+    },
+    "company": {
+     "fieldtype": "Link",
+     "options": "Company",
+     "reqd": 1
+    },
+    "currency": {
+     "default": "INR",
+     "fieldtype": "Link",
+     "options": "Currency",
+     "reqd": 1
+    },
+    "customer": {
+     "fieldtype": "Link",
+     "options": "Customer",
+     "reqd": 1
+    },
+    "decision_history": {
+     "fieldtype": "Long Text",
+     "reqd": 1
+    },
+    "effective_at": {
+     "fieldtype": "Datetime"
+    },
+    "evidence": {
+     "fieldtype": "Link",
+     "options": "Fresko Evidence",
+     "reqd": 1
+    },
+    "evidence_file": {
+     "fieldtype": "Link",
+     "options": "File"
+    },
+    "evidence_sha256": {
+     "fieldtype": "Data"
+    },
+    "evidence_snapshot": {
+     "fieldtype": "Long Text"
+    },
+    "last_operation_id": {
+     "fieldtype": "Data"
+    },
+    "naming_series": {
+     "default": "ADJA-.YYYY.-",
+     "fieldtype": "Data"
+    },
+    "payload_sha256": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "prepared_at": {
+     "fieldtype": "Datetime"
+    },
+    "prepared_by": {
+     "fieldtype": "Link",
+     "options": "User"
+    },
+    "reason": {
+     "fieldtype": "Small Text"
+    },
+    "receivable_adjustment": {
+     "fieldtype": "Link",
+     "options": "Fresko Receivable Adjustment",
+     "reqd": 1
+    },
+    "reversed_at": {
+     "fieldtype": "Datetime"
+    },
+    "reversed_by": {
+     "fieldtype": "Link",
+     "options": "User"
+    },
+    "sale": {
+     "fieldtype": "Link",
+     "options": "Fresko Commercial Sale",
+     "reqd": 1
+    },
+    "source_event_id": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "source_event_key": {
+     "fieldtype": "Data",
+     "unique": 1
+    },
+    "source_namespace": {
+     "default": "ADJUSTMENT_APPLICATION",
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "source_payload": {
+     "fieldtype": "Long Text",
+     "reqd": 1
+    },
+    "status": {
+     "default": "DRAFT",
+     "fieldtype": "Select",
+     "options": "DRAFT\nREVIEW_PENDING\nVERIFIED\nAPPROVED\nREJECTED\nREVERSED\nSUPERSEDED",
+     "reqd": 1
+    },
+    "superseded_at": {
+     "fieldtype": "Datetime"
+    },
+    "superseded_by": {
+     "fieldtype": "Link",
+     "options": "Fresko Adjustment Application"
+    },
+    "supersedes": {
+     "fieldtype": "Link",
+     "options": "Fresko Adjustment Application"
+    },
+    "verified_at": {
+     "fieldtype": "Datetime"
+    },
+    "verified_by": {
+     "fieldtype": "Link",
+     "options": "User"
+    },
+    "version": {
+     "default": 1,
+     "fieldtype": "Int"
+    }
+   },
+   "module": "Fresko Core"
+  },
   "Fresko Approval": {
    "autoname": "hash",
    "engine": "InnoDB",
@@ -55,6 +198,197 @@
     "revision": {
      "fieldtype": "Link",
      "options": "Fresko Revision"
+    }
+   },
+   "module": "Fresko Core"
+  },
+  "Fresko Collection": {
+   "autoname": "naming_series:",
+   "engine": "InnoDB",
+   "fields": {
+    "active_transaction_key": {
+     "fieldtype": "Data",
+     "unique": 1
+    },
+    "allocated_amount": {
+     "default": "0.00",
+     "fieldtype": "Data"
+    },
+    "amount": {
+     "fieldtype": "Data"
+    },
+    "amount_state": {
+     "default": "KNOWN",
+     "fieldtype": "Select",
+     "options": "KNOWN\nUNKNOWN",
+     "reqd": 1
+    },
+    "approved_at": {
+     "fieldtype": "Datetime"
+    },
+    "approved_by": {
+     "fieldtype": "Link",
+     "options": "User"
+    },
+    "bank_account": {
+     "fieldtype": "Link",
+     "options": "Bank Account"
+    },
+    "bank_reference": {
+     "fieldtype": "Data"
+    },
+    "bank_state": {
+     "default": "NONE",
+     "fieldtype": "Select",
+     "options": "NONE\nAUTHORIZATION_INPROCESS\nPENDING\nBANK_CLEARED\nUNKNOWN",
+     "reqd": 1
+    },
+    "cash_custodian": {
+     "fieldtype": "Link",
+     "options": "User"
+    },
+    "company": {
+     "fieldtype": "Link",
+     "options": "Company",
+     "reqd": 1
+    },
+    "container_parked_amount": {
+     "default": "0.00",
+     "fieldtype": "Data"
+    },
+    "currency": {
+     "default": "INR",
+     "fieldtype": "Link",
+     "options": "Currency",
+     "reqd": 1
+    },
+    "customer": {
+     "fieldtype": "Link",
+     "options": "Customer"
+    },
+    "decision_history": {
+     "fieldtype": "Long Text",
+     "reqd": 1
+    },
+    "direction": {
+     "default": "INFLOW",
+     "fieldtype": "Select",
+     "options": "INFLOW\nOUTFLOW\nINTERNAL_TRANSFER\nUNKNOWN",
+     "reqd": 1
+    },
+    "effective_at": {
+     "fieldtype": "Datetime"
+    },
+    "evidence_file": {
+     "fieldtype": "Link",
+     "options": "File"
+    },
+    "evidence_sha256": {
+     "fieldtype": "Data"
+    },
+    "evidence_snapshot": {
+     "fieldtype": "Long Text"
+    },
+    "last_operation_id": {
+     "fieldtype": "Data"
+    },
+    "naming_series": {
+     "default": "COLL-.YYYY.-",
+     "fieldtype": "Data"
+    },
+    "payer_raw": {
+     "fieldtype": "Data"
+    },
+    "payload_sha256": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "payment_channel": {
+     "default": "BANK",
+     "fieldtype": "Select",
+     "options": "BANK\nCASH\nUNKNOWN",
+     "reqd": 1
+    },
+    "prepared_at": {
+     "fieldtype": "Datetime"
+    },
+    "prepared_by": {
+     "fieldtype": "Link",
+     "options": "User"
+    },
+    "rail": {
+     "fieldtype": "Data"
+    },
+    "reason": {
+     "fieldtype": "Small Text"
+    },
+    "receipt_state": {
+     "fieldtype": "Select",
+     "options": "UNKNOWN\nRECEIVED",
+     "reqd": 1
+    },
+    "reversed_at": {
+     "fieldtype": "Datetime"
+    },
+    "reversed_by": {
+     "fieldtype": "Link",
+     "options": "User"
+    },
+    "source_classification": {
+     "default": "NONE",
+     "fieldtype": "Select",
+     "options": "NONE\nBANK_RECEIPT\nBANK_CREDIT_CONFIRMATION\nRTGS_NEFT\nCASH_DECLARATION\nOTHER"
+    },
+    "source_event_id": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "source_event_key": {
+     "fieldtype": "Data",
+     "unique": 1
+    },
+    "source_evidence": {
+     "fieldtype": "Link",
+     "options": "Fresko Evidence"
+    },
+    "source_namespace": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "source_payload": {
+     "fieldtype": "Long Text",
+     "reqd": 1
+    },
+    "status": {
+     "default": "DRAFT",
+     "fieldtype": "Select",
+     "options": "DRAFT\nREVIEW_PENDING\nVERIFIED\nAPPROVED\nREJECTED\nREVERSED\nSUPERSEDED",
+     "reqd": 1
+    },
+    "superseded_at": {
+     "fieldtype": "Datetime"
+    },
+    "superseded_by": {
+     "fieldtype": "Link",
+     "options": "Fresko Collection"
+    },
+    "supersedes": {
+     "fieldtype": "Link",
+     "options": "Fresko Collection"
+    },
+    "unallocated_amount": {
+     "fieldtype": "Data"
+    },
+    "verified_at": {
+     "fieldtype": "Datetime"
+    },
+    "verified_by": {
+     "fieldtype": "Link",
+     "options": "User"
+    },
+    "version": {
+     "default": 1,
+     "fieldtype": "Int"
     }
    },
    "module": "Fresko Core"
@@ -974,6 +1308,10 @@
     "as_of_recorded_at": {
      "fieldtype": "Datetime"
     },
+    "collection": {
+     "fieldtype": "Link",
+     "options": "Fresko Collection"
+    },
     "commercial_scope_key": {
      "fieldtype": "Data",
      "unique": 1
@@ -996,8 +1334,16 @@
     },
     "exception_type": {
      "fieldtype": "Select",
-     "options": "BUYER_UNRESOLVED\nDUPLICATE_MESSAGE\nOVERSELL_OVERRIDE\nSTOCK_SHORTFALL\nRATE_FLOOR_BREACH\nRATE_POLICY_MISSING\nOUTWARD_UNPRICED\nOUTWARD_WITHOUT_DEAL\nLOT_UNRESOLVED\nDUPLICATE_GATEPASS\nPHYSICAL_VARIANCE\nDATA_INTEGRITY\nOTHER\nALIAS_UNRESOLVED\nALIAS_CONFLICT\nRATE_UNKNOWN\nRATE_EVIDENCE_MISSING\nPRICE_BUCKET_UNALLOCATED\nLOT_UNKNOWN\nPARTY_UNKNOWN\nMOVEMENT_TIME_UNKNOWN\nSALE_WITHOUT_OUTWARD\nOUTWARD_WITHOUT_SALE\nALLOCATION_OVERDRAW\nIDEMPOTENCY_PAYLOAD_CONFLICT\nCONCURRENT_STATE_CONFLICT",
+     "options": "BUYER_UNRESOLVED\nDUPLICATE_MESSAGE\nOVERSELL_OVERRIDE\nSTOCK_SHORTFALL\nRATE_FLOOR_BREACH\nRATE_POLICY_MISSING\nOUTWARD_UNPRICED\nOUTWARD_WITHOUT_DEAL\nLOT_UNRESOLVED\nDUPLICATE_GATEPASS\nPHYSICAL_VARIANCE\nDATA_INTEGRITY\nOTHER\nALIAS_UNRESOLVED\nALIAS_CONFLICT\nRATE_UNKNOWN\nRATE_EVIDENCE_MISSING\nPRICE_BUCKET_UNALLOCATED\nLOT_UNKNOWN\nPARTY_UNKNOWN\nMOVEMENT_TIME_UNKNOWN\nSALE_WITHOUT_OUTWARD\nOUTWARD_WITHOUT_SALE\nALLOCATION_OVERDRAW\nIDEMPOTENCY_PAYLOAD_CONFLICT\nCONCURRENT_STATE_CONFLICT\nMONEY_UNALLOCATED\nBANK_PENDING\nRECEIPT_AMOUNT_UNKNOWN\nRECEIPT_DIRECTION_UNKNOWN",
      "reqd": 1
+    },
+    "money_company": {
+     "fieldtype": "Link",
+     "options": "Company"
+    },
+    "money_scope_key": {
+     "fieldtype": "Data",
+     "unique": 1
     },
     "opened_at": {
      "default": "Now",
@@ -1486,6 +1832,304 @@
    },
    "module": "Fresko Core"
   },
+  "Fresko Payment Allocation": {
+   "autoname": "naming_series:",
+   "engine": "InnoDB",
+   "fields": {
+    "active_allocation_key": {
+     "fieldtype": "Data",
+     "unique": 1
+    },
+    "allocation_type": {
+     "fieldtype": "Select",
+     "options": "SALE\nCONTAINER_UNAPPLIED",
+     "reqd": 1
+    },
+    "amount": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "approved_at": {
+     "fieldtype": "Datetime"
+    },
+    "approved_by": {
+     "fieldtype": "Link",
+     "options": "User"
+    },
+    "collection": {
+     "fieldtype": "Link",
+     "options": "Fresko Collection",
+     "reqd": 1
+    },
+    "company": {
+     "fieldtype": "Link",
+     "options": "Company",
+     "reqd": 1
+    },
+    "container": {
+     "fieldtype": "Link",
+     "options": "Fresko Container"
+    },
+    "currency": {
+     "default": "INR",
+     "fieldtype": "Link",
+     "options": "Currency",
+     "reqd": 1
+    },
+    "customer": {
+     "fieldtype": "Link",
+     "options": "Customer"
+    },
+    "decision_history": {
+     "fieldtype": "Long Text",
+     "reqd": 1
+    },
+    "effective_at": {
+     "fieldtype": "Datetime"
+    },
+    "evidence": {
+     "fieldtype": "Link",
+     "options": "Fresko Evidence",
+     "reqd": 1
+    },
+    "evidence_file": {
+     "fieldtype": "Link",
+     "options": "File"
+    },
+    "evidence_sha256": {
+     "fieldtype": "Data"
+    },
+    "evidence_snapshot": {
+     "fieldtype": "Long Text"
+    },
+    "last_operation_id": {
+     "fieldtype": "Data"
+    },
+    "naming_series": {
+     "default": "PAL-.YYYY.-",
+     "fieldtype": "Data"
+    },
+    "payload_sha256": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "prepared_at": {
+     "fieldtype": "Datetime"
+    },
+    "prepared_by": {
+     "fieldtype": "Link",
+     "options": "User"
+    },
+    "reason": {
+     "fieldtype": "Small Text"
+    },
+    "reversed_at": {
+     "fieldtype": "Datetime"
+    },
+    "reversed_by": {
+     "fieldtype": "Link",
+     "options": "User"
+    },
+    "sale": {
+     "fieldtype": "Link",
+     "options": "Fresko Commercial Sale"
+    },
+    "source_event_id": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "source_event_key": {
+     "fieldtype": "Data",
+     "unique": 1
+    },
+    "source_namespace": {
+     "default": "PAYMENT_ALLOCATION",
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "source_payload": {
+     "fieldtype": "Long Text",
+     "reqd": 1
+    },
+    "status": {
+     "default": "DRAFT",
+     "fieldtype": "Select",
+     "options": "DRAFT\nREVIEW_PENDING\nVERIFIED\nAPPROVED\nREJECTED\nREVERSED\nSUPERSEDED",
+     "reqd": 1
+    },
+    "superseded_at": {
+     "fieldtype": "Datetime"
+    },
+    "superseded_by": {
+     "fieldtype": "Link",
+     "options": "Fresko Payment Allocation"
+    },
+    "supersedes": {
+     "fieldtype": "Link",
+     "options": "Fresko Payment Allocation"
+    },
+    "verified_at": {
+     "fieldtype": "Datetime"
+    },
+    "verified_by": {
+     "fieldtype": "Link",
+     "options": "User"
+    },
+    "version": {
+     "default": 1,
+     "fieldtype": "Int"
+    }
+   },
+   "module": "Fresko Core"
+  },
+  "Fresko Receivable Adjustment": {
+   "autoname": "naming_series:",
+   "engine": "InnoDB",
+   "fields": {
+    "active_adjustment_key": {
+     "fieldtype": "Data",
+     "unique": 1
+    },
+    "adjustment_type": {
+     "fieldtype": "Select",
+     "options": "DISCOUNT\nCOMMISSION_SETOFF\nCUSTOMER_PAID_EXPENSE_SETOFF\nUNCLASSIFIED",
+     "reqd": 1
+    },
+    "agreement_reference": {
+     "fieldtype": "Data"
+    },
+    "amount": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "applied_amount": {
+     "default": "0.00",
+     "fieldtype": "Data"
+    },
+    "approved_at": {
+     "fieldtype": "Datetime"
+    },
+    "approved_by": {
+     "fieldtype": "Link",
+     "options": "User"
+    },
+    "company": {
+     "fieldtype": "Link",
+     "options": "Company",
+     "reqd": 1
+    },
+    "currency": {
+     "default": "INR",
+     "fieldtype": "Link",
+     "options": "Currency",
+     "reqd": 1
+    },
+    "customer": {
+     "fieldtype": "Link",
+     "options": "Customer",
+     "reqd": 1
+    },
+    "decision_history": {
+     "fieldtype": "Long Text",
+     "reqd": 1
+    },
+    "effective_at": {
+     "fieldtype": "Datetime"
+    },
+    "evidence": {
+     "fieldtype": "Link",
+     "options": "Fresko Evidence",
+     "reqd": 1
+    },
+    "evidence_file": {
+     "fieldtype": "Link",
+     "options": "File"
+    },
+    "evidence_sha256": {
+     "fieldtype": "Data"
+    },
+    "evidence_snapshot": {
+     "fieldtype": "Long Text"
+    },
+    "last_operation_id": {
+     "fieldtype": "Data"
+    },
+    "naming_series": {
+     "default": "ADJ-.YYYY.-",
+     "fieldtype": "Data"
+    },
+    "payload_sha256": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "prepared_at": {
+     "fieldtype": "Datetime"
+    },
+    "prepared_by": {
+     "fieldtype": "Link",
+     "options": "User"
+    },
+    "reason": {
+     "fieldtype": "Small Text"
+    },
+    "reversed_at": {
+     "fieldtype": "Datetime"
+    },
+    "reversed_by": {
+     "fieldtype": "Link",
+     "options": "User"
+    },
+    "source_event_id": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "source_event_key": {
+     "fieldtype": "Data",
+     "unique": 1
+    },
+    "source_namespace": {
+     "default": "RECEIVABLE_ADJUSTMENT",
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "source_payload": {
+     "fieldtype": "Long Text",
+     "reqd": 1
+    },
+    "status": {
+     "default": "DRAFT",
+     "fieldtype": "Select",
+     "options": "DRAFT\nREVIEW_PENDING\nVERIFIED\nAPPROVED\nREJECTED\nREVERSED\nSUPERSEDED",
+     "reqd": 1
+    },
+    "superseded_at": {
+     "fieldtype": "Datetime"
+    },
+    "superseded_by": {
+     "fieldtype": "Link",
+     "options": "Fresko Receivable Adjustment"
+    },
+    "supersedes": {
+     "fieldtype": "Link",
+     "options": "Fresko Receivable Adjustment"
+    },
+    "unapplied_amount": {
+     "fieldtype": "Data"
+    },
+    "verified_at": {
+     "fieldtype": "Datetime"
+    },
+    "verified_by": {
+     "fieldtype": "Link",
+     "options": "User"
+    },
+    "version": {
+     "default": 1,
+     "fieldtype": "Int"
+    }
+   },
+   "module": "Fresko Core"
+  },
   "Fresko Revision": {
    "autoname": "hash",
    "engine": "InnoDB",
@@ -1673,10 +2317,11 @@
   "phase2a_physical_ledger",
   "physical_variance_exception",
   "integrity_seal_ledger",
-  "commercial_sale_ledger"
+  "commercial_sale_ledger",
+  "money_reconciliation_ledger"
  ],
  "schema_sources": {
-  "install.py": "eeec6e427414a7812cd74792aec552acb267d1052fdad96fda1f48046db1bed4",
+  "install.py": "7440fe0db2e91ecae3feea8097b055a0d7474fafefd45f506087e721bd81d509",
   "patches.txt": "dcd5839e194d054215b6e71e1a57ccc3e025a917bebb56ef1eb8d2dc33dba3bc",
   "patches/v1_0/backfill_evidence_attempt_durability_state.py": "82c40e75f3305e83674bc2edf98a531964740952084b20cce2fc88b5665e0677",
   "patches/v1_0/backfill_evidence_capture_status.py": "408dc1b30a9eb3f1512c8b7dc00e9420cd32aa5e778a9fea1cc64edf751e18bd"

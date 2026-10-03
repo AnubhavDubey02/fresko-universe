@@ -18,6 +18,9 @@ QUANTITY_SCOPE_FIELDS = (
 
 class FreskoException(Document):
     def validate(self):
+        if self.get("money_scope_key") or self.get("collection") or self.get("money_company") or self.exception_type in {"MONEY_UNALLOCATED", "BANK_PENDING", "RECEIPT_AMOUNT_UNKNOWN", "RECEIPT_DIRECTION_UNKNOWN"}:
+            from fresko_universe.fresko_core.services import money_service
+            money_service.validate_money_exception(self)
         self._validate_commercial_scope()
         # Audit fields (opened_by/opened_at/resolved_*) live on the DocType JSON.
         # getattr keeps validate safe if a site is mid-migrate.
@@ -191,6 +194,8 @@ class FreskoException(Document):
             )
 
     def on_trash(self):
+        if self.get("money_scope_key"):
+            frappe.throw("Money Exceptions cannot be deleted", frappe.PermissionError)
         if self.get("commercial_scope_key") or self.get("sale"):
             frappe.throw("Commercial Exceptions cannot be deleted", frappe.PermissionError)
         # Deleting would silently clear the Container close gate; resolve or waive instead.

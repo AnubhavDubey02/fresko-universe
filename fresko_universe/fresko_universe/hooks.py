@@ -32,8 +32,12 @@ fixtures = [
 
 # FSEC-003 — row-level + document ACL (Salesperson owner/salesperson scoped)
 permission_query_conditions = {
+    "Fresko Adjustment Application": "fresko_universe.fresko_core.services.money_service.adjustment_application_permission_query",
+    "Fresko Receivable Adjustment": "fresko_universe.fresko_core.services.money_service.receivable_adjustment_permission_query",
+    "Fresko Payment Allocation": "fresko_universe.fresko_core.services.money_service.payment_allocation_permission_query",
+    "Fresko Collection": "fresko_universe.fresko_core.services.money_service.collection_permission_query",
     "Customer": "fresko_universe.permissions.customer_internal_permission_query",
-    "Fresko Exception": "fresko_universe.fresko_core.services.commercial_service.commercial_exception_permission_query",
+    "Fresko Exception": "fresko_universe.fresko_core.services.money_service.exception_permission_query",
     "Fresko Sale Outward Allocation": "fresko_universe.fresko_core.services.commercial_service.allocation_permission_query",
     "Fresko Party Alias Mapping": "fresko_universe.fresko_core.services.commercial_service.alias_permission_query",
     "Fresko Commercial Sale": "fresko_universe.fresko_core.services.commercial_service.sale_permission_query",
@@ -47,8 +51,12 @@ permission_query_conditions = {
 }
 
 has_permission = {
+    "Fresko Adjustment Application": "fresko_universe.fresko_core.services.money_service.money_has_permission",
+    "Fresko Receivable Adjustment": "fresko_universe.fresko_core.services.money_service.money_has_permission",
+    "Fresko Payment Allocation": "fresko_universe.fresko_core.services.money_service.money_has_permission",
+    "Fresko Collection": "fresko_universe.fresko_core.services.money_service.money_has_permission",
     "Customer": "fresko_universe.permissions.customer_internal_has_permission",
-    "Fresko Exception": "fresko_universe.fresko_core.services.commercial_service.commercial_exception_has_permission",
+    "Fresko Exception": "fresko_universe.fresko_core.services.money_service.exception_has_permission",
     "Fresko Sale Outward Allocation": "fresko_universe.fresko_core.services.commercial_service.commercial_has_permission",
     "Fresko Party Alias Mapping": "fresko_universe.fresko_core.services.commercial_service.commercial_has_permission",
     "Fresko Commercial Sale": "fresko_universe.fresko_core.services.commercial_service.commercial_has_permission",
@@ -64,8 +72,8 @@ has_permission = {
 # FSEC-004 / FSEC-005 — Protect captured original files and evidence records
 doc_events = {
     "File": {
-        "on_trash": "fresko_universe.fresko_core.services.evidence_service.prevent_captured_file_deletion",
-        "before_save": "fresko_universe.fresko_core.services.evidence_service.prevent_captured_file_modification",
+        "on_trash": ["fresko_universe.fresko_core.services.evidence_service.prevent_captured_file_deletion", "fresko_universe.fresko_core.services.money_service.protect_money_file_on_trash"],
+        "before_save": ["fresko_universe.fresko_core.services.evidence_service.prevent_captured_file_modification", "fresko_universe.fresko_core.services.money_service.protect_money_file_before_save"],
     },
     "Fresko Evidence": {
         "on_trash": "fresko_universe.fresko_core.services.evidence_service.prevent_captured_evidence_deletion",

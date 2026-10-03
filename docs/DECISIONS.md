@@ -139,3 +139,12 @@ Implemented on `phase1-doctype-scaffold` without merge / without Phase 2:
 - **FSEC-006** = before production (CI SAST / secret scan / dependency advisory).
 
 Gate1 / D4 / D10 unchanged.
+
+
+## 2026-10-04 — Money runtime and receipt-policy clarification
+
+The user authorizes the Money/Reconciliation and native Frappe UX milestone following the merged Commercial Sale slice. Bank receipt or RTGS evidence records a received assertion; explicit pending authorization remains a separate bank fact. Final bank allocation requires independently reviewed bank clearance. An authenticated cash declaration records receipt; an available slip is optional, and approval can make cash available without a bank deposit.
+
+Four persisted ledgers extend the existing commercial model: Collection, Payment Allocation, Receivable Adjustment and Adjustment Application. Container-unapplied attribution consumes receipt capacity but does not discharge a Sale or Customer receivable. Noncash adjustment approval requires explicit evidence of agreed debt discharge; an expense or commission calculation alone cannot establish it. Three distinct authorized actors prepare, verify and approve financial records. Supplier roles are denied, including mixed-role users. Technical System Manager alone has no routine money access or authority.
+
+Corrections retain original source and decisions, require reviewed successors, and compensate financial applications atomically with commercial supersession or alias remapping. No implicit FIFO, same-amount transaction identity, guessed Sale attribution, ERP posting, FX conversion, refunds, or live ingestion is introduced. Sanitized fixtures are acceptance scenarios, not production financial truth. The canonical INR 101 labour source, distinct INR 350,000 source events, 92@700 uncertainty and 3060/3056 quantities remain separate.

@@ -1,0 +1,335 @@
+/* Fresko Workspace Page Styles */
+
+.fresko-workspace-container {
+    padding: 16px;
+    max-width: 1400px;
+    margin: 0 auto;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--text-color, #1f272e);
+}
+
+/* Header & Metadata Banner */
+.fresko-header-card {
+    background: var(--card-bg, #ffffff);
+    border: 1px solid var(--border-color, #d1d8dd);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-bottom: 20px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+}
+
+.fresko-header-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--heading-color, #1f272e);
+    margin: 0;
+}
+
+.fresko-header-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 16px;
+    font-size: 13px;
+    color: var(--text-muted, #6c7680);
+}
+
+.fresko-meta-item strong {
+    color: var(--text-color, #1f272e);
+}
+
+/* Navigation Tabs */
+.fresko-nav-tabs {
+    display: flex;
+    gap: 8px;
+    border-bottom: 2px solid var(--border-color, #d1d8dd);
+    margin-bottom: 20px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 2px;
+}
+
+.fresko-tab-btn {
+    background: transparent;
+    border: none;
+    border-bottom: 3px solid transparent;
+    padding: 10px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-muted, #6c7680);
+    cursor: pointer;
+    white-space: nowrap;
+    min-height: 42px;
+    transition: all 0.2s ease;
+}
+
+.fresko-tab-btn:hover {
+    color: var(--text-color, #1f272e);
+}
+
+.fresko-tab-btn.active {
+    color: var(--primary-color, #1b66c9);
+    border-bottom-color: var(--primary-color, #1b66c9);
+}
+
+/* Cards & Sections */
+.fresko-section-card {
+    background: var(--card-bg, #ffffff);
+    border: 1px solid var(--border-color, #d1d8dd);
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+.fresko-card-title {
+    font-size: 16px;
+    font-weight: 600;
+    margin-top: 0;
+    margin-bottom: 16px;
+    color: var(--heading-color, #1f272e);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+/* Grid Layouts */
+.fresko-grid-2 {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.fresko-summary-box {
+    background: var(--bg-light-gray, #f8f9fa);
+    border: 1px solid var(--border-color, #e2e6ea);
+    border-radius: 6px;
+    padding: 14px;
+}
+
+.fresko-summary-label {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted, #6c7680);
+    margin-bottom: 4px;
+}
+
+.fresko-summary-value {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--heading-color, #1f272e);
+}
+
+/* Badges */
+.fresko-badge {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.fresko-badge-confirmed, .fresko-badge-approved, .fresko-badge-final {
+    background: #e6f4ea;
+    color: #137333;
+    border: 1px solid #ceead6;
+}
+
+.fresko-badge-pending, .fresko-badge-proposed, .fresko-badge-review_pending {
+    background: #fef7e0;
+    color: #b06000;
+    border: 1px solid #feefc3;
+}
+
+.fresko-badge-draft {
+    background: #f1f3f4;
+    color: #5f6368;
+    border: 1px solid #dadce0;
+}
+
+.fresko-badge-verified {
+    background: #e8f0fe;
+    color: #1a73e8;
+    border: 1px solid #d2e3fc;
+}
+
+.fresko-badge-rejected, .fresko-badge-cancelled {
+    background: #fce8e6;
+    color: #c5221f;
+    border: 1px solid #fad2cf;
+}
+
+.fresko-badge-superseded, .fresko-badge-reversed {
+    background: #f3e8fd;
+    color: #8430ce;
+    border: 1px solid #e9d2fd;
+}
+
+.fresko-badge-exception {
+    background: #fff0f0;
+    color: #d93025;
+    border: 1px solid #f9d8d6;
+    margin-right: 6px;
+    margin-bottom: 6px;
+}
+
+/* Tables */
+.fresko-table-responsive {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.fresko-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin-bottom: 0;
+}
+
+.fresko-table th {
+    background: var(--bg-light-gray, #f8f9fa);
+    color: var(--text-muted, #6c7680);
+    font-weight: 600;
+    padding: 10px 12px;
+    border-bottom: 2px solid var(--border-color, #d1d8dd);
+    text-align: left;
+    white-space: nowrap;
+}
+
+.fresko-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border-color, #e9edf0);
+    vertical-align: middle;
+}
+
+.fresko-table tr:hover td {
+    background-color: var(--row-hover-bg, #fcfdfe);
+}
+
+.fresko-table tr.selected td {
+    background-color: #f0f7ff;
+}
+
+/* Raw Alias Formatting - Exact spacing preserved */
+.fresko-raw-alias {
+    white-space: pre-wrap;
+    font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    background: var(--bg-light-gray, #f1f3f4);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+    border: 1px solid #e0e0e0;
+    display: inline-block;
+}
+
+/* Touch-friendly buttons and actions */
+.fresko-btn-sm {
+    min-height: 36px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 4px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border: 1px solid transparent;
+}
+
+.fresko-btn-primary {
+    background: var(--primary-color, #1b66c9);
+    color: #ffffff;
+}
+
+.fresko-btn-primary:hover {
+    background: #1558b0;
+}
+
+.fresko-btn-secondary {
+    background: #ffffff;
+    color: var(--text-color, #1f272e);
+    border-color: var(--border-color, #d1d8dd);
+}
+
+.fresko-btn-secondary:hover {
+    background: #f8f9fa;
+}
+
+.fresko-btn-danger {
+    background: #ffffff;
+    color: #c5221f;
+    border-color: #fad2cf;
+}
+
+.fresko-btn-danger:hover {
+    background: #fce8e6;
+}
+
+/* Extension point card */
+.fresko-extension-box {
+    border: 1px dashed #b0bec5;
+    background: #f8fafc;
+    border-radius: 6px;
+    padding: 16px;
+    color: #546e7a;
+    font-size: 13px;
+    margin-top: 16px;
+}
+
+.fresko-extension-box strong {
+    color: #37474f;
+    display: block;
+    margin-bottom: 4px;
+}
+
+/* Empty & Loading states */
+.fresko-state-container {
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--text-muted, #6c7680);
+}
+
+.fresko-state-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--heading-color, #1f272e);
+    margin-bottom: 8px;
+}
+
+.fresko-link {
+    color: var(--primary-color, #1b66c9);
+    text-decoration: none;
+}
+
+.fresko-link:hover {
+    text-decoration: underline;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .fresko-workspace-container {
+        padding: 8px;
+    }
+    .fresko-header-card {
+        padding: 12px;
+    }
+    .fresko-section-card {
+        padding: 14px;
+    }
+    .fresko-tab-btn {
+        padding: 8px 12px;
+        font-size: 13px;
+    }
+    .fresko-grid-2 {
+        grid-template-columns: 1fr;
+    }
+}

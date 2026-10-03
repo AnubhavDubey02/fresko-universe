@@ -12,6 +12,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 APP_ROOT = ROOT / "fresko_universe" / "fresko_universe"
 PROTECTED_DOCTYPES = {
+    "Fresko Collection",
+    "Fresko Payment Allocation",
+    "Fresko Receivable Adjustment",
+    "Fresko Adjustment Application",
     "Fresko Outward",
     "Fresko Field Assertion",
     "Fresko Container Quantity Assertion",

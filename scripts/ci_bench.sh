@@ -227,4 +227,31 @@ bench --site "${COMMERCIAL_UPGRADE_SITE}" migrate
 bench --site "${COMMERCIAL_UPGRADE_SITE}" migrate
 ./env/bin/python "${COMMERCIAL_PROOF}" --site "${COMMERCIAL_UPGRADE_SITE}" verify_second_migrate
 
+# Upgrade the exact merged commercial baseline separately for money-ledger
+# preservation. Synthetic baseline values are migration sentinels only.
+MONEY_BASELINE_SHA="b140b800b021c4317931e37a723a140740b2fc4c"
+MONEY_UPGRADE_SITE="money-upgrade.localhost"
+MONEY_PROOF="${ROOT}/scripts/prove_money_upgrade.py"
+git -C "${ROOT}" merge-base --is-ancestor "${MONEY_BASELINE_SHA}" HEAD
+mkdir -p "${UPGRADE_TMP}/money-main"
+git -C "${ROOT}" archive "${MONEY_BASELINE_SHA}" fresko_universe | tar -x -C "${UPGRADE_TMP}/money-main"
+vendor_fresko_app "${UPGRADE_TMP}/money-main/fresko_universe" "money-main-${MONEY_BASELINE_SHA}"
+if [[ -d "sites/${MONEY_UPGRADE_SITE}" ]]; then
+  echo "Money upgrade proof site already exists: ${MONEY_UPGRADE_SITE}" >&2
+  exit 1
+fi
+bench new-site "${MONEY_UPGRADE_SITE}" \
+  --mariadb-root-password "${DB_ROOT_PASSWORD}" \
+  --admin-password "${ADMIN_PASSWORD}" \
+  --no-mariadb-socket --db-host "${DB_HOST}"
+bench --site "${MONEY_UPGRADE_SITE}" install-app erpnext
+bench --site "${MONEY_UPGRADE_SITE}" install-app fresko_universe
+./env/bin/python "${MONEY_PROOF}" --site "${MONEY_UPGRADE_SITE}" seed_current_main
+vendor_fresko_app "${APP_SRC}" "money-upgrade-candidate"
+diff -qr --exclude='.git' --exclude='*.egg-info' --exclude='__pycache__' "${APP_SRC}" apps/fresko_universe
+bench --site "${MONEY_UPGRADE_SITE}" migrate
+./env/bin/python "${MONEY_PROOF}" --site "${MONEY_UPGRADE_SITE}" verify_first_migrate
+bench --site "${MONEY_UPGRADE_SITE}" migrate
+./env/bin/python "${MONEY_PROOF}" --site "${MONEY_UPGRADE_SITE}" verify_second_migrate
+
 echo "==> CI bench OK"
