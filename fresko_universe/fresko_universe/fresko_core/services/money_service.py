@@ -173,15 +173,32 @@ def _linked(doctype: str, name: str):
     return doc
 
 
+def _evidence_file(evidence):
+    """Resolve a URL to its source attachment without choosing an unrelated File.
+
+    Frappe can retain several File documents for a shared content URL. The
+    Evidence attachment is the identity; a lone URL record is a legacy fallback.
+    Multiple candidates without a unique attachment remain ambiguous.
+    """
+    if not evidence.file:
+        return None
+    rows = frappe.get_all("File", filters={"file_url": evidence.file},
+        fields=["name", "attached_to_doctype", "attached_to_name"])
+    attached = [row for row in rows if row.attached_to_doctype == "Fresko Evidence"
+        and row.attached_to_name == evidence.name]
+    candidates = attached or rows
+    if len(candidates) > 1:
+        _fail("Evidence File identity is ambiguous")
+    return _linked("File", candidates[0].name) if candidates else None
+
+
 def _evidence(name: str, container: str | None = None) -> str | None:
     doc = _linked("Fresko Evidence", name)
     if not permissions.evidence_has_permission(doc, "read"):
         _fail("Access denied to supporting Evidence", True)
     if container and doc.container and doc.container != container:
         _fail("Evidence must belong to the same Container")
-    if doc.file:
-        for row in frappe.get_all("File", filters={"file_url": doc.file}, fields=["name"]):
-            _linked("File", row.name)
+    _evidence_file(doc)
     if doc.container:
         parent = _linked("Fresko Container", doc.container)
         return parent.company
@@ -198,16 +215,14 @@ def _inspect_evidence(name: str | None, container: str | None = None):
         _fail("Evidence must belong to the same Container")
     file_doc_name = None
     file_sha256 = None
-    if evidence.file:
-        file_rows = frappe.get_all("File", filters={"file_url": evidence.file}, fields=["name", "file_url"])
-        if file_rows:
-            fdoc = _linked("File", file_rows[0].name)
-            file_doc_name = fdoc.name
-            content = fdoc.get_content()
-            if isinstance(content, str):
-                content = content.encode("utf-8")
-            if content is not None:
-                file_sha256 = hashlib.sha256(content).hexdigest()
+    fdoc = _evidence_file(evidence)
+    if fdoc:
+        file_doc_name = fdoc.name
+        content = fdoc.get_content()
+        if isinstance(content, str):
+            content = content.encode("utf-8")
+        if content is not None:
+            file_sha256 = hashlib.sha256(content).hexdigest()
     snapshot = {
         "evidence": evidence.name,
         "evidence_type": evidence.get("evidence_type"),

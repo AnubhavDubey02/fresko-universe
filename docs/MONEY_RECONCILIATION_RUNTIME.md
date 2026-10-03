@@ -71,7 +71,9 @@ Keep source statements, interpretations, operational receipt classification,
 bank clearance, and allocation separate. Bind a source record to its supporting
 Fresko Evidence. The service stores an evidence snapshot, including available
 file identity and byte hash, with the source record and each decision that cites
-Evidence. Referenced money evidence files cannot be modified or deleted through
+Evidence. A shared URL is resolved to the unique File attached to that Evidence;
+a lone URL record is a legacy fallback, while multiple ambiguous candidates are
+rejected. Referenced money evidence files cannot be modified or deleted through
 the application. A snapshot establishes what the application observed; it does
 not independently establish completeness or bank truth.
 

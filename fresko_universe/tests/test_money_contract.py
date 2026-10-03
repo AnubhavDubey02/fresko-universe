@@ -108,6 +108,58 @@ class MoneyContractOfflineTest(unittest.TestCase):
                 self.service.protect_money_file_before_save(file_doc, "before_save")
                 self.service.protect_money_file_on_trash(file_doc, "on_trash")
 
+    def test_evidence_file_prefers_attached_identity_over_shared_url_candidates(self):
+        evidence = types.SimpleNamespace(name="EVID-1", file="/files/shared.pdf")
+        unrelated = types.SimpleNamespace(
+            name="FILE-OTHER", attached_to_doctype="Customer", attached_to_name="CUST-1"
+        )
+        attached = types.SimpleNamespace(
+            name="FILE-EVIDENCE", attached_to_doctype="Fresko Evidence", attached_to_name="EVID-1"
+        )
+        selected_file = types.SimpleNamespace(name="FILE-EVIDENCE")
+        self.frappe.has_permission = MagicMock(return_value=True)
+        with patch.object(self.frappe, "get_all", create=True, return_value=[unrelated, attached]):
+            with patch.object(self.frappe.db, "exists", return_value=True):
+                with patch.object(self.frappe, "get_doc", create=True, return_value=selected_file):
+                    result = self.service._evidence_file(evidence)
+        self.assertIs(result, selected_file)
+        self.frappe.has_permission.assert_called_once_with("File", "read", doc=selected_file)
+
+    def test_evidence_file_rejects_ambiguous_attached_or_unbound_candidates(self):
+        evidence = types.SimpleNamespace(name="EVID-1", file="/files/shared.pdf")
+        rows = [
+            types.SimpleNamespace(name="FILE-1", attached_to_doctype="Fresko Evidence", attached_to_name="EVID-1"),
+            types.SimpleNamespace(name="FILE-2", attached_to_doctype="Fresko Evidence", attached_to_name="EVID-1"),
+        ]
+        self.frappe.has_permission = MagicMock(return_value=True)
+        for candidates in (rows, [
+            types.SimpleNamespace(name="FILE-1", attached_to_doctype=None, attached_to_name=None),
+            types.SimpleNamespace(name="FILE-2", attached_to_doctype="Customer", attached_to_name="CUST-1"),
+        ]):
+            with self.subTest(candidates=candidates):
+                with patch.object(self.frappe, "get_all", create=True, return_value=candidates):
+                    with self.assertRaisesRegex(ValueError, "Evidence File identity is ambiguous"):
+                        self.service._evidence_file(evidence)
+        self.frappe.has_permission.assert_not_called()
+
+    def test_evidence_file_allows_unique_url_fallback_but_checks_file_acl(self):
+        evidence = types.SimpleNamespace(name="EVID-1", file="/files/legacy.pdf")
+        row = types.SimpleNamespace(name="FILE-LEGACY", attached_to_doctype=None, attached_to_name=None)
+        selected_file = types.SimpleNamespace(name="FILE-LEGACY")
+        with patch.object(self.frappe, "get_all", create=True, return_value=[row]):
+            with patch.object(self.frappe.db, "exists", return_value=True):
+                with patch.object(self.frappe, "get_doc", create=True, return_value=selected_file):
+                    self.frappe.has_permission = MagicMock(return_value=True)
+                    self.assertIs(self.service._evidence_file(evidence), selected_file)
+                    self.frappe.has_permission.assert_called_once_with("File", "read", doc=selected_file)
+
+        with patch.object(self.frappe, "get_all", create=True, return_value=[row]):
+            with patch.object(self.frappe.db, "exists", return_value=True):
+                with patch.object(self.frappe, "get_doc", create=True, return_value=selected_file):
+                    self.frappe.has_permission = MagicMock(return_value=False)
+                    with self.assertRaisesRegex(PermissionError, "Access denied to linked File"):
+                        self.service._evidence_file(evidence)
+
     def test_unclassified_adjustment_ineligible_for_approval(self):
         money_service = self.service
         doc = MagicMock(

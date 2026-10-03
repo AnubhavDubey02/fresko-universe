@@ -732,15 +732,32 @@ class TestMoneyReconciliation(FrappeTestCase):
 
     def test_source_binding_hashes_persisted_bytes_and_protects_original_file(self):
         frappe.set_user("Administrator")
-        source_bytes = b"Synthetic source: bank credit, INR 1000; no real transaction data.\n"
+        source_bytes = f"Synthetic source {self.token}: bank credit, INR 1000; no real transaction data.\n".encode()
+        other_evidence = frappe.get_doc({
+            "doctype": "Fresko Evidence", "container": self.container.name,
+            "evidence_type": "Note", "notes": f"Synthetic duplicate attachment {self.token}",
+        }).insert(ignore_permissions=True)
+        file_names = []
+        self.addCleanup(self._cleanup_test_files, file_names, [self.evidence.name, other_evidence.name])
         file_doc = save_file(f"money-{self.token}.txt", source_bytes, "Fresko Evidence", self.evidence.name, is_private=1)
-        self.addCleanup(self._cleanup_test_file, file_doc.name)
+        file_names.append(file_doc.name)
+        duplicate = save_file(f"money-duplicate-{self.token}.txt", source_bytes, "Fresko Evidence", other_evidence.name, is_private=1)
+        file_names.append(duplicate.name)
+        self.assertNotEqual(file_doc.name, duplicate.name)
+        self.assertEqual(file_doc.file_url, duplicate.file_url)
+        self.assertEqual(file_doc.attached_to_name, self.evidence.name)
+        self.assertEqual(duplicate.attached_to_name, other_evidence.name)
+        self.assertEqual(frappe.db.count("File", {"file_url": file_doc.file_url}), 2)
         self.evidence.file = file_doc.file_url
         self.evidence.save(ignore_permissions=True)
+        other_evidence.file = duplicate.file_url
+        other_evidence.save(ignore_permissions=True)
         receipt = self._collection()
         self.assertEqual(receipt.evidence_file, file_doc.name)
         self.assertEqual(receipt.evidence_sha256, hashlib.sha256(source_bytes).hexdigest())
-        self.assertEqual(json.loads(receipt.evidence_snapshot)["file_sha256"], receipt.evidence_sha256)
+        snapshot = json.loads(receipt.evidence_snapshot)
+        self.assertEqual(snapshot["file_sha256"], receipt.evidence_sha256)
+        self.assertEqual(snapshot["file_name"], file_doc.name)
         frappe.set_user("Administrator")
         file_doc.file_name = "forged-replacement.txt"
         with self.assertRaises((frappe.PermissionError, frappe.ValidationError)):
@@ -748,15 +765,28 @@ class TestMoneyReconciliation(FrappeTestCase):
         with self.assertRaises((frappe.PermissionError, frappe.ValidationError)):
             frappe.delete_doc("File", file_doc.name, ignore_permissions=True)
         file_doc.reload()
-        self.assertEqual(file_doc.get_content(), source_bytes)
+        retained = file_doc.get_content()
+        retained_bytes = retained.encode("utf-8") if isinstance(retained, str) else retained
+        self.assertEqual(retained_bytes, source_bytes)
 
     @staticmethod
-    def _cleanup_test_file(file_name):
-        # Only synthetic fixtures; remove the test's own immutable reference first.
+    def _cleanup_test_files(file_names, evidence_names):
+        # Scope by this test's Evidence identity even if a faulty binding chose
+        # the other duplicate File. Removing entire owned rows clears snapshots.
         frappe.set_user("Administrator")
-        frappe.db.delete(COLLECTION, {"evidence_file": file_name})
-        if frappe.db.exists("File", file_name):
-            frappe.delete_doc("File", file_name, ignore_permissions=True)
+        collections = frappe.get_all(COLLECTION, filters={"source_evidence": ("in", evidence_names)}, pluck="name")
+        if collections:
+            frappe.db.delete("Fresko Exception", {"collection": ("in", collections)})
+            frappe.db.delete(COLLECTION, {"name": ("in", collections)})
+        for evidence_name in evidence_names:
+            if frappe.db.exists("Fresko Evidence", evidence_name):
+                frappe.db.set_value("Fresko Evidence", evidence_name, "file", None, update_modified=False)
+        for file_name in set(file_names):
+            if frappe.db.exists("File", file_name):
+                attached_to = frappe.db.get_value("File", file_name, ["attached_to_doctype", "attached_to_name"])
+                if attached_to[0] != "Fresko Evidence" or attached_to[1] not in evidence_names:
+                    raise AssertionError("Refusing to clean a File outside the synthetic test Evidence")
+                frappe.delete_doc("File", file_name, ignore_permissions=True)
 
     def _cleanup_committed_rows(self):
         """Surgical cleanup of fixture rows committed for real worker connections."""
