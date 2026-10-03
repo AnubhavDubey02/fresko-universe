@@ -633,3 +633,30 @@ CONFIRMED, starting commercial/accounting runtime work, deploying, touching a
 real database, deleting branches, rewriting history, force-pushing, changing
 repository settings, or weakening a failing test. UNKNOWN/PENDING must remain
 truthful rather than be converted into certainty.
+
+## 2026-10-03 reusable migration harness completion (continuation step 1)
+
+This section supersedes only the "Paused worktree state" above. The draft was
+reviewed as untrusted work in progress and then completed on
+`codex/reusable-migration-harness`.
+
+- The review found that the draft's "fail the stage atomically" claim was false.
+  Both proofs commit inside their own stages, so the harness now documents the
+  real behavior: fail-fast in registry order, with a disposable upgrade site.
+  Proof behavior is unchanged.
+- `--validate-only` now also checks statically, without importing Frappe, that
+  each proof defines all three stage functions. It fails when a
+  `scripts/prove_*.py` module is unregistered or a path is registered twice.
+- The draft's path-escape test wrote a file outside its temporary directory.
+  It is now contained.
+- `scripts/ci_bench.sh` makes one harness call per stage, replacing the six
+  per-proof calls. The Smoke job runs the offline validation and its tests.
+- The schema-changing-PR rule lives in `docs/SCHEMA_MIGRATION_PROOFS.md`.
+- Local offline evidence covers Smoke, all four `scripts` suites, and every
+  validator, run on an LF checkout with Python 3.10. On a Windows
+  `core.autocrlf=true` checkout, the shadow-fixture repository-decision hash
+  check fails because of CRLF conversion. That is an environment artifact, not
+  a regression. `ci_bench.sh` was not run locally. Exact-head GitHub Smoke and
+  pinned Bench remain the merge gate.
+
+Continuation steps 2-4 above are unchanged.

@@ -1,14 +1,22 @@
 """Run every registered seeded schema-migration proof through one site session.
 
-Schema-changing pull requests add a focused proof module to
-``schema_migration_proofs.json``.  Each module exposes the three stage
-functions used by the exact Phase 1-to-current upgrade gate.  Non-schema
-changes do not need to add a proof.
+Schema-changing pull requests add a focused ``scripts/prove_*.py`` module and
+register it in ``schema_migration_proofs.json``.  Each module exposes the three
+stage functions used by the exact Phase 1-to-current upgrade gate.  Non-schema
+changes do not need to add a proof.  ``--validate-only`` is the offline gate:
+it checks the registry, the stage contract of every proof, and that no
+``prove_*.py`` module is left unregistered.
+
+A stage is fail-fast, not atomic across proofs: proofs own their commits, so a
+failure stops later proofs but does not undo an earlier proof's committed seed
+or snapshot.  The upgrade site is disposable and must be recreated after any
+failure.
 """
 
 from __future__ import annotations
 
 import argparse
+import ast
 import importlib.util
 import json
 import os
@@ -23,6 +31,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_REGISTRY = Path(__file__).with_name("schema_migration_proofs.json")
 STAGES = ("seed_phase1", "verify_first_migrate", "verify_second_migrate")
 PROOF_ID_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
+PROOF_GLOB = "prove_*.py"
 
 
 @dataclass(frozen=True)
@@ -54,6 +63,7 @@ def load_registry(
 
     specs: list[ProofSpec] = []
     seen_ids: set[str] = set()
+    seen_paths: set[Path] = set()
     for index, entry in enumerate(entries):
         _require(isinstance(entry, dict), f"Proof entry {index} must be a JSON object")
         proof_id = entry.get("id")
@@ -73,10 +83,42 @@ def load_registry(
             f"Proof {proof_id} escapes the repository root: {relative_path}",
         )
         _require(candidate.is_file(), f"Proof {proof_id} is missing: {candidate}")
+        _require(candidate not in seen_paths, f"Proof {proof_id} registers a duplicate path: {relative_path}")
         specs.append(ProofSpec(proof_id=proof_id, path=candidate))
         seen_ids.add(proof_id)
+        seen_paths.add(candidate)
 
     return tuple(specs)
+
+
+def validate_proof_source(spec: ProofSpec) -> None:
+    """Statically require every stage as a top-level function, without importing Frappe."""
+    tree = ast.parse(spec.path.read_text(encoding="utf-8"), filename=str(spec.path))
+    defined = {node.name for node in tree.body if isinstance(node, ast.FunctionDef)}
+    missing = [stage for stage in STAGES if stage not in defined]
+    _require(not missing, f"Proof {spec.proof_id} does not define stage(s): {', '.join(missing)}")
+
+
+def check_registry_coverage(specs: Sequence[ProofSpec], scripts_dir: Path) -> None:
+    """Fail when a seeded proof module exists but would be silently skipped."""
+    registered = {spec.path for spec in specs}
+    unregistered = sorted(
+        path.name for path in scripts_dir.resolve().glob(PROOF_GLOB) if path.resolve() not in registered
+    )
+    _require(not unregistered, "Unregistered schema migration proof(s): " + ", ".join(unregistered))
+
+
+def validate_registry(
+    registry_path: Path = DEFAULT_REGISTRY,
+    *,
+    repository_root: Path = REPOSITORY_ROOT,
+) -> tuple[ProofSpec, ...]:
+    """Run every offline check that the Bench stage would otherwise discover late."""
+    specs = load_registry(registry_path, repository_root=repository_root)
+    for spec in specs:
+        validate_proof_source(spec)
+    check_registry_coverage(specs, repository_root / "scripts")
+    return specs
 
 
 def load_proof_module(spec: ProofSpec) -> ModuleType:
@@ -100,8 +142,8 @@ def execute_stage(stage: str, proofs: Sequence[tuple[ProofSpec, ModuleType]]) ->
 
 
 def run_site_stage(site: str, stage: str, registry_path: Path) -> None:
-    """Connect once, run all registered proofs, and fail the stage atomically."""
-    specs = load_registry(registry_path)
+    """Connect once and run all registered proofs in order, stopping at the first failure."""
+    specs = validate_registry(registry_path)
 
     cwd = Path.cwd()
     sites_path = cwd / "sites" if (cwd / "sites").is_dir() else cwd
@@ -132,13 +174,13 @@ def main() -> None:
     parser.add_argument(
         "--validate-only",
         action="store_true",
-        help="Validate the registry and proof files without importing Frappe",
+        help="Validate the registry, proof stage contracts, and coverage without importing Frappe",
     )
     parser.add_argument("stage", nargs="?", choices=STAGES)
     args = parser.parse_args()
 
     if args.validate_only:
-        specs = load_registry(args.registry)
+        specs = validate_registry(args.registry)
         print("Registered schema migration proofs: " + ", ".join(spec.proof_id for spec in specs))
         return
     if not args.site or not args.stage:
