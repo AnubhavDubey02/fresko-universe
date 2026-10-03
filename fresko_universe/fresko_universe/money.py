@@ -170,7 +170,7 @@ def refresh_money_reconciliation(company: str, **unexpected):
     _reject_unexpected(unexpected)
     return service.refresh_money_reconciliation(company=company)
 
-@frappe.whitelist(methods=['GET'])
+@frappe.whitelist(methods=['GET', 'POST'])
 def get_open_money_exceptions(company: str, **unexpected):
     _reject_unexpected(unexpected)
     return service.get_open_money_exceptions(company)

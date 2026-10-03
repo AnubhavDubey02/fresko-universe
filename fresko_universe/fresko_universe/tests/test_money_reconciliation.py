@@ -368,6 +368,58 @@ class TestMoneyReconciliation(FrappeTestCase):
         self.assertEqual(replay.name, correction.name)
         self.assertEqual(json.loads(park.decision_history)[-1]["recorded_at"], json.loads(correction.decision_history)[-1]["recorded_at"])
 
+    def test_payment_proposal_replay_after_collection_reversal_preserves_reversed_record(self):
+        receipt = self._approve(self._collection(), "collection")
+        sale = self._sale()
+        original = self._approve(self._allocation(receipt, "400", sale=sale), "payment_allocation")
+        frappe.set_user(self.approver)
+        money.reverse_collection(receipt.name, reason="Receipt source establishes reversal", evidence=self.evidence.name)
+        original.reload()
+        digest, history, version = original.payload_sha256, original.decision_history, original.version
+        replay = self._allocation(receipt, "400", sale=sale)
+        self.assertEqual(replay.name, original.name)
+        self.assertEqual(replay.status, "REVERSED")
+        self.assertEqual((replay.payload_sha256, replay.decision_history, replay.version), (digest, history, version))
+        self.assertEqual(self._receivable(sale)["cash_applied_amount"], "0.00")
+        with self.assertRaisesRegex(frappe.ValidationError, "IDEMPOTENCY_PAYLOAD_CONFLICT"):
+            self._allocation(receipt, "401", sale=sale)
+        self.assertEqual(frappe.db.count(ALLOCATION, {"collection": receipt.name}), 1)
+
+    def test_ui_blank_optional_fields_replay_reversed_sale_and_park_allocations(self):
+        sale = self._sale()
+        for index, target in enumerate((sale, None)):
+            with self.subTest(allocation_type="SALE" if target else "CONTAINER_UNAPPLIED"):
+                receipt = self._approve(self._collection(event=f"blank-receipt-{index}"), "collection")
+                event = f"blank-allocation-{index}"
+                original = self._approve(self._allocation(receipt, "100", sale=target, event=event), "payment_allocation")
+                frappe.set_user(self.approver)
+                money.reverse_collection(receipt.name, reason="Receipt reversal before UI redelivery", evidence=self.evidence.name)
+                original.reload()
+                history, version = original.decision_history, original.version
+                frappe.set_user(self.maker)
+                result = money.propose_payment_allocation(
+                    collection=receipt.name, allocation_type="SALE" if target else "CONTAINER_UNAPPLIED",
+                    amount="100.00", currency=self.masters["currency"], evidence=self.evidence.name,
+                    source_event_id=f"{self.token}:{event}", sale=target.name if target else "",
+                    container="" if target else self.container.name, customer="", supersedes="", reason="",
+                )
+                self.assertEqual(result["name"], original.name)
+                self.assertEqual(result["status"], "REVERSED")
+                original.reload()
+                self.assertEqual((original.decision_history, original.version), (history, version))
+                self.assertEqual(frappe.db.count(ALLOCATION, {"collection": receipt.name}), 1)
+        self.assertEqual(self._receivable(sale)["cash_applied_amount"], "0.00")
+
+    def test_allocation_cannot_silently_replace_caller_container_with_sale_container(self):
+        receipt = self._approve(self._collection(), "collection")
+        sale = self._sale()
+        frappe.set_user("Administrator")
+        other_container = make_container(self.masters, lot_no="OTHER-MONEY-LOT")
+        with self.assertRaises(frappe.ValidationError):
+            self._allocation(receipt, "100", sale=sale, container=other_container.name)
+        self.assertEqual(frappe.db.count(ALLOCATION, {"collection": receipt.name}), 0)
+        self.assertEqual(self._receivable(sale)["outstanding_receivable"], "1000.00")
+
     def test_allocations_reject_unknown_channel_or_undeclared_cash(self):
         for index, changes in enumerate((
             {"payment_channel": "UNKNOWN", "source_classification": "NONE"},
@@ -449,6 +501,68 @@ class TestMoneyReconciliation(FrappeTestCase):
         self.assertEqual(self._receivable(first)["adjustment_applied_amount"], "0.00")
         self.assertEqual(self._receivable(second)["adjustment_applied_amount"], "50.00")
 
+    def test_adjustment_successor_replay_after_prior_supersession_preserves_decision(self):
+        original = self._approve(self._adjustment("100"), "adjustment")
+        reason = "Exact discharge agreement corrects the setoff amount"
+        successor = self._approve(self._adjustment(
+            "200", event="adjustment-correction", supersedes=original.name, reason=reason,
+        ), "adjustment")
+        original.reload()
+        self.assertEqual(original.status, "SUPERSEDED")
+        history, version = successor.decision_history, successor.version
+        replay = self._adjustment("200", event="adjustment-correction", supersedes=original.name, reason=reason)
+        self.assertEqual(replay.name, successor.name)
+        self.assertEqual(replay.status, "APPROVED")
+        self.assertEqual((replay.decision_history, replay.version), (history, version))
+        with self.assertRaisesRegex(frappe.ValidationError, "IDEMPOTENCY_PAYLOAD_CONFLICT"):
+            self._adjustment("201", event="adjustment-correction", supersedes=original.name, reason=reason)
+        self.assertEqual(frappe.db.count(ADJUSTMENT, {"supersedes": original.name}), 1)
+        self.assertEqual(frappe.db.count(COLLECTION, {"source_evidence": self.evidence.name}), 0)
+
+    def test_adjustment_parent_supersession_reverses_application_without_child_successor(self):
+        sale = self._sale()
+        original = self._approve(self._adjustment("100"), "adjustment")
+        application = self._approve(self._application(original, sale, "60"), "adjustment_application")
+        cutoff = json.loads(application.decision_history)[-1]["recorded_at"]
+        reason = "Exact discharge agreement corrects the parent adjustment"
+        successor = self._adjustment("200", event="parent-adjustment-correction", supersedes=original.name, reason=reason)
+        self.assertEqual(self._receivable(sale)["adjustment_applied_amount"], "60.00")
+        self._approve(successor, "adjustment")
+        original.reload()
+        application.reload()
+        self.assertEqual(original.status, "SUPERSEDED")
+        self.assertEqual(original.superseded_by, successor.name)
+        self.assertEqual(successor.supersedes, original.name)
+        self.assertEqual(application.status, "REVERSED")
+        self.assertFalse(application.superseded_by)
+        self.assertEqual(application.receivable_adjustment, original.name)
+        self.assertIn(successor.name, json.loads(application.decision_history)[-1]["reason"])
+        self.assertEqual(frappe.db.count(APPLICATION, {"sale": sale.name}), 1)
+        self.assertEqual(self._receivable(sale)["adjustment_applied_amount"], "0.00")
+        self.assertEqual(self._receivable(sale)["outstanding_receivable"], "1000.00")
+        self.assertEqual(self._receivable(sale, cutoff)["adjustment_applied_amount"], "60.00")
+        events = [json.loads(doc.decision_history)[-1] for doc in (original, application, successor)]
+        self.assertEqual(len({event["recorded_at"] for event in events}), 1)
+        self.assertEqual(len({event["operation_id"] for event in events}), 1)
+
+    def test_application_replay_after_parent_adjustment_reversal_does_not_restore_setoff(self):
+        sale = self._sale()
+        adjustment = self._approve(self._adjustment(), "adjustment")
+        original = self._approve(self._application(adjustment, sale, "100"), "adjustment_application")
+        frappe.set_user(self.approver)
+        money.reverse_adjustment(adjustment.name, reason="Discharge agreement revoked", evidence=self.evidence.name)
+        original.reload()
+        history, version = original.decision_history, original.version
+        replay = self._application(adjustment, sale, "100")
+        self.assertEqual(replay.name, original.name)
+        self.assertEqual(replay.status, "REVERSED")
+        self.assertEqual((replay.decision_history, replay.version), (history, version))
+        self.assertEqual(self._receivable(sale)["adjustment_applied_amount"], "0.00")
+        self.assertEqual(self._receivable(sale)["outstanding_receivable"], "1000.00")
+        with self.assertRaisesRegex(frappe.ValidationError, "IDEMPOTENCY_PAYLOAD_CONFLICT"):
+            self._application(adjustment, sale, "101")
+        self.assertEqual(frappe.db.count(APPLICATION, {"receivable_adjustment": adjustment.name}), 1)
+
     def test_reversing_collection_reverses_all_applications_with_one_timestamp(self):
         sale = self._sale()
         receipt = self._approve(self._collection(), "collection")
@@ -486,6 +600,9 @@ class TestMoneyReconciliation(FrappeTestCase):
         self.assertEqual(original.source_payload, payload)
         self.assertEqual(original.payload_sha256, digest)
         self.assertEqual(allocation.status, "REVERSED")
+        self.assertFalse(allocation.superseded_by)
+        self.assertEqual(allocation.collection, original.name)
+        self.assertEqual(successor.supersedes, original.name)
         self.assertEqual(self._receivable(sale)["cash_applied_amount"], "0.00")
         self.assertEqual(self._position(successor)["unallocated_amount"], "900.00")
         self.assertEqual(json.loads(original.decision_history)[-1]["recorded_at"], json.loads(successor.decision_history)[-1]["recorded_at"])

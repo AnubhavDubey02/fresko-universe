@@ -398,6 +398,29 @@ def _existing(doctype: str, key: str, digest: str):
     return _response(doc, True)
 
 
+def _replay_proposal(doctype, key, supplied, derived=()):
+    """A redelivery reads its immutable event even after parents are corrected.
+
+    Check original record ACL and every caller-controlled source field before
+    returning. Optional server-derived Customer/Container values are recovered
+    from the original payload, never recomputed from a later commercial state.
+    """
+    rows = frappe.db.sql(f"SELECT name FROM `tab{doctype}` WHERE source_event_key=%s FOR UPDATE", (key,), as_dict=True)
+    if not rows:
+        return None
+    doc = frappe.get_doc(doctype, rows[0].name, for_update=True)
+    _access(doc)
+    payload = json.loads(doc.source_payload)
+    if _hash(payload) != doc.payload_sha256:
+        _fail("Money source payload hash mismatch")
+    for field, value in supplied.items():
+        if field in derived and value in (None, ""):
+            continue
+        if payload.get(field) != value:
+            _fail("IDEMPOTENCY_PAYLOAD_CONFLICT")
+    return _response(doc, True)
+
+
 def _insert(doctype: str, payload: dict[str, Any], key: str, extras: dict[str, Any]):
     digest = _hash(payload)
     replay = _existing(doctype, key, digest)
@@ -500,12 +523,12 @@ def _reverse_payment_allocation(alloc, reason: str | None, evidence: str | None,
     _save(alloc, "REVERSE", reason=reason, evidence=evidence, operation_id=operation_id)
 
 
-def _reverse_collection_allocations(coll, reason: str | None, evidence: str | None, successor: str | None = None, operation_id: str | None = None):
+def _reverse_collection_allocations(coll, reason: str | None, evidence: str | None, operation_id: str | None = None):
     rows = frappe.db.sql(f"SELECT name FROM `tab{ALLOCATION}` WHERE collection=%s AND status='APPROVED' ORDER BY name FOR UPDATE", (coll.name,), as_dict=True)
     for row in rows:
         alloc = frappe.get_doc(ALLOCATION, row.name, for_update=True)
         _access(alloc)
-        _reverse_payment_allocation(alloc, reason, evidence, successor=successor, operation_id=operation_id)
+        _reverse_payment_allocation(alloc, reason, evidence, operation_id=operation_id)
     coll.allocated_amount = "0.00"
     coll.container_parked_amount = "0.00"
     if coll.amount_state == "KNOWN" and coll.amount is not None:
@@ -523,12 +546,12 @@ def _reverse_adjustment_application(app, reason: str | None, evidence: str | Non
     _save(app, "REVERSE", reason=reason, evidence=evidence, operation_id=operation_id)
 
 
-def _reverse_adjustment_applications(adj, reason: str | None, evidence: str | None, successor: str | None = None, operation_id: str | None = None):
+def _reverse_adjustment_applications(adj, reason: str | None, evidence: str | None, operation_id: str | None = None):
     rows = frappe.db.sql(f"SELECT name FROM `tab{APPLICATION}` WHERE receivable_adjustment=%s AND status='APPROVED' ORDER BY name FOR UPDATE", (adj.name,), as_dict=True)
     for row in rows:
         app = frappe.get_doc(APPLICATION, row.name, for_update=True)
         _access(app)
-        _reverse_adjustment_application(app, reason, evidence, successor=successor, operation_id=operation_id)
+        _reverse_adjustment_application(app, reason, evidence, operation_id=operation_id)
     adj.applied_amount = "0.00"
     adj.unapplied_amount = adj.amount
 
@@ -743,7 +766,7 @@ def approve_collection(collection_name: str, expected_version: Any = None):
         _fail("CONCURRENT_STATE_CONFLICT: active collection already exists for this transaction identity")
 
     if prior:
-        _reverse_collection_allocations(prior, reason=f"Superseded by {doc.name}: {doc.reason}", evidence=doc.source_evidence, successor=doc.name)
+        _reverse_collection_allocations(prior, reason=f"Superseded by {doc.name}: {doc.reason}", evidence=doc.source_evidence)
         prior.status = "SUPERSEDED"
         prior.superseded_by = doc.name
         prior.superseded_at = _now()
@@ -828,6 +851,17 @@ def propose_payment_allocation(
 ):
     _actor("maker")
     coll = _load(COLLECTION, collection)
+    sale, container, customer, supersedes = (value or None for value in (sale, container, customer, supersedes))
+    if allocation_type == "CONTAINER_UNAPPLIED" and (sale or customer):
+        _fail("Container parking cannot identify a Sale or Customer")
+    amount = _decimal(amount, "amount", 2, positive=True)
+    replay = _replay_proposal(ALLOCATION, _key(coll.company, "allocation", source_event_id), {
+        "collection": collection, "allocation_type": allocation_type, "amount": amount,
+        "currency": currency, "evidence": evidence, "source_event_id": source_event_id,
+        "sale": sale, "container": container, "customer": customer, "supersedes": supersedes,
+        "reason": reason if supersedes else None}, derived={"container", "customer"})
+    if replay:
+        return replay
     _locks(coll.company, [container] if container else [])
     if allocation_type not in ("SALE", "CONTAINER_UNAPPLIED"):
         _fail("Invalid allocation_type")
@@ -841,10 +875,6 @@ def propose_payment_allocation(
     if currency != coll.currency:
         _fail("Allocation currency must match Collection currency")
 
-    file_name, file_sha256, evidence_snapshot, ev_co = _inspect_evidence(evidence, container)
-    if ev_co and ev_co != coll.company:
-        _fail("Evidence company mismatch")
-
     if allocation_type == "SALE":
         if not sale:
             _fail("SALE allocation requires a sale")
@@ -853,6 +883,8 @@ def propose_payment_allocation(
             _fail("Sale company mismatch")
         if sale_doc.status != "APPROVED":
             _fail("Payment allocation requires APPROVED Sale")
+        if container and container != sale_doc.container:
+            _fail("Allocation Container must match Sale Container")
         container = sale_doc.container
         if not sale_doc.customer:
             _fail("Sale customer must be resolved before payment allocation")
@@ -867,6 +899,10 @@ def propose_payment_allocation(
             _fail("Container company mismatch")
         customer = None
         sale = None
+
+    file_name, file_sha256, evidence_snapshot, ev_co = _inspect_evidence(evidence, container)
+    if ev_co and ev_co != coll.company:
+        _fail("Evidence company mismatch")
 
     if supersedes:
         prior = _load(ALLOCATION, supersedes)
@@ -1036,6 +1072,15 @@ def propose_adjustment(
 ):
     _actor("maker")
     _locks(company)
+    supersedes = supersedes or None
+    amount = _decimal(amount, "amount", 2, positive=True)
+    replay = _replay_proposal(ADJUSTMENT, _key(company, "adjustment", source_event_id), {
+        "company": company, "customer": customer, "adjustment_type": adjustment_type,
+        "amount": amount, "currency": currency, "evidence": evidence,
+        "source_event_id": source_event_id, "agreement_reference": agreement_reference,
+        "supersedes": supersedes, "reason": reason if supersedes else None})
+    if replay:
+        return replay
     _linked("Company", company)
     _linked("Customer", customer)
     _linked("Currency", currency)
@@ -1135,7 +1180,7 @@ def approve_adjustment(adjustment_name: str, expected_version: Any = None):
         if prior.status not in ("APPROVED", "REVERSED") or prior.superseded_by:
             _fail("CONCURRENT_STATE_CONFLICT")
         if prior.status == "APPROVED":
-            _reverse_adjustment_applications(prior, reason=doc.reason, evidence=doc.evidence, successor=doc.name)
+            _reverse_adjustment_applications(prior, reason=f"Superseded by {doc.name}: {doc.reason}", evidence=doc.evidence)
             prior.status = "SUPERSEDED"
             prior.superseded_by = doc.name
             prior.superseded_at = _now()
@@ -1193,6 +1238,14 @@ def propose_adjustment_application(
 ):
     _actor("maker")
     adj = _load(ADJUSTMENT, receivable_adjustment)
+    supersedes = supersedes or None
+    amount = _decimal(amount, "amount", 2, positive=True)
+    replay = _replay_proposal(APPLICATION, _key(adj.company, "adjustment_application", source_event_id), {
+        "receivable_adjustment": receivable_adjustment, "sale": sale, "amount": amount,
+        "currency": currency, "evidence": evidence, "source_event_id": source_event_id,
+        "supersedes": supersedes, "reason": reason if supersedes else None})
+    if replay:
+        return replay
     sale_doc = _linked(SALE, sale)
     if sale_doc.company != adj.company:
         _fail("Sale and Adjustment company mismatch")
@@ -1411,7 +1464,7 @@ def _check_file_not_money_evidence(file_name: str, file_url: str | None = None):
                 frappe.throw(f"File {file_name} is referenced by immutable money record and cannot be modified or deleted", frappe.ValidationError)
 
 
-def protect_money_file_before_save(doc):
+def protect_money_file_before_save(doc, method=None):
     if doc.doctype != "File":
         return
     old = doc.get_doc_before_save()
@@ -1419,7 +1472,7 @@ def protect_money_file_before_save(doc):
         _check_file_not_money_evidence(doc.name, doc.file_url)
 
 
-def protect_money_file_on_trash(doc):
+def protect_money_file_on_trash(doc, method=None):
     if doc.doctype != "File":
         return
     _check_file_not_money_evidence(doc.name, doc.file_url)
@@ -1745,9 +1798,10 @@ def get_container_receivable(container: str, as_of: str | None = None) -> dict[s
             continue
         curr = sr["currency"]
         sales_receivables.append(sr)
-        if sr.get("gross_commercial_amount") is not None:
-            gross_known_by_curr[curr] = gross_known_by_curr.get(curr, Decimal(0)) + Decimal(sr["gross_commercial_amount"])
-        else:
+        known_gross = sr.get("known_commercial_amount")
+        if known_gross is not None:
+            gross_known_by_curr[curr] = gross_known_by_curr.get(curr, Decimal(0)) + Decimal(known_gross)
+        if sr.get("gross_commercial_amount") is None:
             gross_unknown_counts[curr] = gross_unknown_counts.get(curr, 0) + 1
             unresolved_sales_count += 1
 
@@ -1829,9 +1883,10 @@ def get_customer_receivable(customer: str, company: str, as_of: str | None = Non
             continue
         curr = sr["currency"]
         sales.append(sr)
-        if sr.get("gross_commercial_amount") is not None:
-            gross_known_by_curr[curr] = gross_known_by_curr.get(curr, Decimal(0)) + Decimal(sr["gross_commercial_amount"])
-        else:
+        known_gross = sr.get("known_commercial_amount")
+        if known_gross is not None:
+            gross_known_by_curr[curr] = gross_known_by_curr.get(curr, Decimal(0)) + Decimal(known_gross)
+        if sr.get("gross_commercial_amount") is None:
             gross_unknown_counts[curr] = gross_unknown_counts.get(curr, 0) + 1
 
         cash_by_curr[curr] = cash_by_curr.get(curr, Decimal(0)) + Decimal(sr["cash_applied_amount"])

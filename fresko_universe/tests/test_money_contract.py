@@ -97,8 +97,16 @@ class MoneyContractOfflineTest(unittest.TestCase):
         file_doc.get_doc_before_save.return_value = MagicMock()
         with patch("frappe.db.sql", return_value=[{"name": "COLL-001"}]):
             with self.assertRaises(Exception) as ctx:
-                money_service.protect_money_file_before_save(file_doc)
+                money_service.protect_money_file_before_save(file_doc, "before_save")
             self.assertIn("referenced by immutable money record", str(ctx.exception))
+
+    def test_file_hooks_accept_frappe_doc_and_method_arguments(self):
+        file_doc = MagicMock(doctype="File", name="FILE-001", file_url="/files/unreferenced.pdf")
+        file_doc.get_doc_before_save.return_value = MagicMock()
+        with patch.object(self.frappe.db, "table_exists", return_value=True):
+            with patch.object(self.frappe.db, "sql", return_value=[]):
+                self.service.protect_money_file_before_save(file_doc, "before_save")
+                self.service.protect_money_file_on_trash(file_doc, "on_trash")
 
     def test_unclassified_adjustment_ineligible_for_approval(self):
         money_service = self.service
@@ -152,3 +160,99 @@ class EligibilityRegressionTest(unittest.TestCase):
         self.assertEqual(self.service._state_at(doc, datetime(2026, 9, 18))["status"], "APPROVED")
         self.assertEqual(self.service._state_at(doc, datetime(2026, 9, 23))["status"], "REVERSED")
         self.assertIsNone(self.service._state_at(doc, datetime(2026, 9, 1)))
+
+    def test_allocation_replay_treats_blank_derived_links_as_omitted(self):
+        payload = {
+            "collection": "COLL-1", "allocation_type": "SALE", "amount": "10.00",
+            "currency": "INR", "evidence": "EV-1", "source_event_id": "opaque-1",
+            "sale": "SALE-1", "container": "CONT-1", "customer": "CUST-1",
+            "supersedes": None, "reason": None,
+        }
+        doc = types.SimpleNamespace(
+            source_payload=json.dumps(payload),
+            payload_sha256=self.service._hash(payload),
+        )
+        with patch.object(self.frappe.db, "sql", return_value=[types.SimpleNamespace(name="PAL-1")]):
+            with patch.object(self.frappe, "get_doc", create=True, return_value=doc):
+                with patch.object(self.service, "_access"):
+                    with patch.object(self.service, "_response", return_value={"name": "PAL-1", "replayed": True}):
+                        result = self.service._replay_proposal(
+                            self.service.ALLOCATION,
+                            "same-event-key",
+                            {**payload, "container": "", "customer": ""},
+                            derived={"container", "customer"},
+                        )
+        self.assertEqual(result, {"name": "PAL-1", "replayed": True})
+
+    def test_collection_compensation_does_not_link_parent_as_allocation_successor(self):
+        child = types.SimpleNamespace(name="PAL-1")
+        collection = types.SimpleNamespace(name="COLL-OLD", amount_state="KNOWN", amount="100.00")
+        with patch.object(self.frappe.db, "sql", return_value=[types.SimpleNamespace(name=child.name)]):
+            with patch.object(self.frappe, "get_doc", create=True, return_value=child):
+                with patch.object(self.service, "_access"):
+                    with patch.object(self.service, "_reverse_payment_allocation") as reverse:
+                        self.service._reverse_collection_allocations(
+                            collection, "Superseded by COLL-NEW: corrected receipt", "EV-1"
+                        )
+        self.assertNotIn("successor", reverse.call_args.kwargs)
+        self.assertIn("COLL-NEW", reverse.call_args.args[1])
+
+    def test_adjustment_compensation_does_not_link_parent_as_application_successor(self):
+        child = types.SimpleNamespace(name="ADJA-1")
+        adjustment = types.SimpleNamespace(name="ADJ-OLD", amount="100.00")
+        with patch.object(self.frappe.db, "sql", return_value=[types.SimpleNamespace(name=child.name)]):
+            with patch.object(self.frappe, "get_doc", create=True, return_value=child):
+                with patch.object(self.service, "_access"):
+                    with patch.object(self.service, "_reverse_adjustment_application") as reverse:
+                        self.service._reverse_adjustment_applications(
+                            adjustment, "Superseded by ADJ-NEW: corrected adjustment", "EV-1"
+                        )
+        self.assertNotIn("successor", reverse.call_args.kwargs)
+        self.assertIn("ADJ-NEW", reverse.call_args.args[1])
+
+    def test_container_and_customer_rollups_keep_known_partial_gross_subtotals(self):
+        partial_sale = {
+            "exists": True,
+            "sale": "SALE-1",
+            "company": "COMPANY-1",
+            "container": "CONT-1",
+            "customer": "CUSTOMER-1",
+            "currency": "INR",
+            "gross_commercial_amount": None,
+            "known_commercial_amount": "70.00",
+            "cash_applied_amount": "0.00",
+            "adjustment_applied_amount": "0.00",
+            "outstanding_receivable": None,
+        }
+
+        def query(sql, *args, **kwargs):
+            if "Fresko Commercial Sale" in sql:
+                return [types.SimpleNamespace(name="SALE-1")]
+            return []
+
+        with patch.object(self.service, "_linked", side_effect=lambda dt, name: types.SimpleNamespace(company="COMPANY-1")):
+            with patch.object(self.service, "_locks"):
+                with patch.object(self.service, "get_sale_receivable", return_value=partial_sale):
+                    with patch.object(self.frappe.db, "sql", side_effect=query):
+                        container_view = self.service.get_container_receivable(
+                            "CONT-1", as_of="2026-10-03 11:00:00"
+                        )
+
+        def query(sql, *args, **kwargs):
+            if "Fresko Commercial Sale" in sql:
+                return [types.SimpleNamespace(name="SALE-1")]
+            return []
+
+        with patch.object(self.service, "_linked", return_value=types.SimpleNamespace(company="COMPANY-1")):
+            with patch.object(self.service, "_locks"):
+                with patch.object(self.service, "get_sale_receivable", return_value=partial_sale):
+                    with patch.object(self.frappe.db, "sql", side_effect=query):
+                        customer_view = self.service.get_customer_receivable(
+                            "CUSTOMER-1", "COMPANY-1", as_of="2026-10-03 11:00:00"
+                        )
+
+        for view in (container_view, customer_view):
+            self.assertIsNone(view["gross_sales_by_currency"]["INR"])
+            self.assertEqual(view["gross_sales_known_subtotal_by_currency"]["INR"], "70.00")
+            self.assertEqual(view["gross_sales_unknown_count_by_currency"]["INR"], 1)
+            self.assertIsNone(view["outstanding_receivable_by_currency"]["INR"])
