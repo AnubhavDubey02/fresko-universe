@@ -59,6 +59,231 @@
    },
    "module": "Fresko Core"
   },
+  "Fresko Commercial Sale": {
+   "autoname": "naming_series:",
+   "engine": "InnoDB",
+   "fields": {
+    "alias_mapping": {
+     "fieldtype": "Link",
+     "options": "Fresko Party Alias Mapping"
+    },
+    "alias_resolution": {
+     "default": "UNKNOWN",
+     "fieldtype": "Select",
+     "options": "UNKNOWN\nREVIEW_PENDING\nVERIFIED\nREJECTED\nSUPERSEDED",
+     "reqd": 1
+    },
+    "approved_at": {
+     "fieldtype": "Datetime"
+    },
+    "approved_by": {
+     "fieldtype": "Link",
+     "options": "User"
+    },
+    "as_of_recorded_at": {
+     "fieldtype": "Datetime",
+     "reqd": 1
+    },
+    "company": {
+     "fieldtype": "Link",
+     "options": "Company",
+     "reqd": 1
+    },
+    "container": {
+     "fieldtype": "Link",
+     "options": "Fresko Container",
+     "reqd": 1
+    },
+    "correction_reason": {
+     "fieldtype": "Small Text"
+    },
+    "currency": {
+     "fieldtype": "Link",
+     "options": "Currency",
+     "reqd": 1
+    },
+    "customer": {
+     "fieldtype": "Link",
+     "options": "Customer"
+    },
+    "deal": {
+     "fieldtype": "Link",
+     "options": "Fresko Deal"
+    },
+    "decision_history": {
+     "fieldtype": "Long Text",
+     "reqd": 1
+    },
+    "lines": {
+     "fieldtype": "Table",
+     "options": "Fresko Commercial Sale Line",
+     "reqd": 1
+    },
+    "movement_status": {
+     "default": "UNKNOWN",
+     "fieldtype": "Select",
+     "options": "UNKNOWN\nNOT_EVIDENCED\nPARTIAL\nEVIDENCED",
+     "reqd": 1
+    },
+    "naming_series": {
+     "default": "SALE-.YYYY.-.",
+     "fieldtype": "Select",
+     "options": "SALE-.YYYY.-.",
+     "reqd": 1
+    },
+    "party_state": {
+     "default": "UNKNOWN",
+     "fieldtype": "Select",
+     "options": "KNOWN\nUNKNOWN\nCONTRADICTED",
+     "reqd": 1
+    },
+    "payload_sha256": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "prepared_at": {
+     "fieldtype": "Datetime",
+     "reqd": 1
+    },
+    "prepared_by": {
+     "fieldtype": "Link",
+     "options": "User",
+     "reqd": 1
+    },
+    "raw_movement_at": {
+     "fieldtype": "Datetime"
+    },
+    "raw_party_alias": {
+     "fieldtype": "Data"
+    },
+    "rejection_reason": {
+     "fieldtype": "Small Text"
+    },
+    "sale_at": {
+     "fieldtype": "Datetime",
+     "reqd": 1
+    },
+    "source_event_id": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "source_event_key": {
+     "fieldtype": "Data",
+     "reqd": 1,
+     "unique": 1
+    },
+    "source_evidence": {
+     "fieldtype": "Link",
+     "options": "Fresko Evidence",
+     "reqd": 1
+    },
+    "source_payload": {
+     "fieldtype": "Long Text",
+     "reqd": 1
+    },
+    "status": {
+     "default": "DRAFT",
+     "fieldtype": "Select",
+     "options": "DRAFT\nREVIEW_PENDING\nVERIFIED\nAPPROVED\nREJECTED\nSUPERSEDED\nCANCELLED",
+     "reqd": 1
+    },
+    "superseded_at": {
+     "fieldtype": "Datetime"
+    },
+    "superseded_by": {
+     "fieldtype": "Link",
+     "options": "Fresko Commercial Sale"
+    },
+    "supersedes": {
+     "fieldtype": "Link",
+     "options": "Fresko Commercial Sale"
+    },
+    "verified_at": {
+     "fieldtype": "Datetime"
+    },
+    "verified_by": {
+     "fieldtype": "Link",
+     "options": "User"
+    },
+    "version": {
+     "default": 1,
+     "fieldtype": "Int"
+    }
+   },
+   "module": "Fresko Core"
+  },
+  "Fresko Commercial Sale Line": {
+   "engine": "InnoDB",
+   "fields": {
+    "amount": {
+     "fieldtype": "Data"
+    },
+    "bucket_key": {
+     "fieldtype": "Data"
+    },
+    "container_lot": {
+     "fieldtype": "Link",
+     "options": "Fresko Container Lot"
+    },
+    "evidence": {
+     "fieldtype": "Link",
+     "options": "Fresko Evidence",
+     "reqd": 1
+    },
+    "item": {
+     "fieldtype": "Link",
+     "options": "Item",
+     "reqd": 1
+    },
+    "line_key": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "lot_state": {
+     "default": "UNKNOWN",
+     "fieldtype": "Select",
+     "options": "KNOWN\nUNKNOWN\nCONTRADICTED",
+     "reqd": 1
+    },
+    "price_state": {
+     "default": "UNKNOWN",
+     "fieldtype": "Select",
+     "options": "UNKNOWN\nPROPOSED\nFINAL\nREJECTED",
+     "reqd": 1
+    },
+    "qty": {
+     "fieldtype": "Data"
+    },
+    "qty_state": {
+     "default": "UNKNOWN",
+     "fieldtype": "Select",
+     "options": "KNOWN\nUNKNOWN\nCONTRADICTED",
+     "reqd": 1
+    },
+    "rate": {
+     "fieldtype": "Data"
+    },
+    "rate_basis": {
+     "default": "NONE",
+     "fieldtype": "Select",
+     "options": "RATE_ASSERTION\nPRICE_BUCKET\nNONE",
+     "reqd": 1
+    },
+    "raw_lot_text": {
+     "fieldtype": "Data"
+    },
+    "source_line_ref": {
+     "fieldtype": "Data"
+    },
+    "uom": {
+     "fieldtype": "Link",
+     "options": "UOM",
+     "reqd": 1
+    }
+   },
+   "istable": 1,
+   "module": "Fresko Core"
+  },
   "Fresko Container": {
    "autoname": "naming_series:",
    "engine": "InnoDB",
@@ -746,6 +971,13 @@
    "autoname": "hash",
    "engine": "InnoDB",
    "fields": {
+    "as_of_recorded_at": {
+     "fieldtype": "Datetime"
+    },
+    "commercial_scope_key": {
+     "fieldtype": "Data",
+     "unique": 1
+    },
     "container": {
      "fieldtype": "Link",
      "options": "Fresko Container"
@@ -764,7 +996,7 @@
     },
     "exception_type": {
      "fieldtype": "Select",
-     "options": "BUYER_UNRESOLVED\nDUPLICATE_MESSAGE\nOVERSELL_OVERRIDE\nSTOCK_SHORTFALL\nRATE_FLOOR_BREACH\nRATE_POLICY_MISSING\nOUTWARD_UNPRICED\nOUTWARD_WITHOUT_DEAL\nLOT_UNRESOLVED\nDUPLICATE_GATEPASS\nPHYSICAL_VARIANCE\nDATA_INTEGRITY\nOTHER",
+     "options": "BUYER_UNRESOLVED\nDUPLICATE_MESSAGE\nOVERSELL_OVERRIDE\nSTOCK_SHORTFALL\nRATE_FLOOR_BREACH\nRATE_POLICY_MISSING\nOUTWARD_UNPRICED\nOUTWARD_WITHOUT_DEAL\nLOT_UNRESOLVED\nDUPLICATE_GATEPASS\nPHYSICAL_VARIANCE\nDATA_INTEGRITY\nOTHER\nALIAS_UNRESOLVED\nALIAS_CONFLICT\nRATE_UNKNOWN\nRATE_EVIDENCE_MISSING\nPRICE_BUCKET_UNALLOCATED\nLOT_UNKNOWN\nPARTY_UNKNOWN\nMOVEMENT_TIME_UNKNOWN\nSALE_WITHOUT_OUTWARD\nOUTWARD_WITHOUT_SALE\nALLOCATION_OVERDRAW\nIDEMPOTENCY_PAYLOAD_CONFLICT\nCONCURRENT_STATE_CONFLICT",
      "reqd": 1
     },
     "opened_at": {
@@ -797,6 +1029,10 @@
     "resolved_by": {
      "fieldtype": "Link",
      "options": "User"
+    },
+    "sale": {
+     "fieldtype": "Link",
+     "options": "Fresko Commercial Sale"
     },
     "severity": {
      "default": "Medium",
@@ -1143,6 +1379,113 @@
    "istable": 1,
    "module": "Fresko Core"
   },
+  "Fresko Party Alias Mapping": {
+   "autoname": "hash",
+   "engine": "InnoDB",
+   "fields": {
+    "active_alias_key": {
+     "fieldtype": "Data",
+     "unique": 1
+    },
+    "approved_at": {
+     "fieldtype": "Datetime"
+    },
+    "approved_by": {
+     "fieldtype": "Link",
+     "options": "User"
+    },
+    "as_of_recorded_at": {
+     "fieldtype": "Datetime",
+     "reqd": 1
+    },
+    "company": {
+     "fieldtype": "Link",
+     "options": "Company",
+     "reqd": 1
+    },
+    "decision_history": {
+     "fieldtype": "Long Text",
+     "reqd": 1
+    },
+    "evidence": {
+     "fieldtype": "Link",
+     "options": "Fresko Evidence",
+     "reqd": 1
+    },
+    "normalization_scope": {
+     "default": "EXACT_COMPANY_V1",
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "normalized_alias": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "payload_sha256": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "proposed_at": {
+     "fieldtype": "Datetime",
+     "reqd": 1
+    },
+    "proposed_by": {
+     "fieldtype": "Link",
+     "options": "User",
+     "reqd": 1
+    },
+    "proposed_customer": {
+     "fieldtype": "Link",
+     "options": "Customer",
+     "reqd": 1
+    },
+    "raw_alias": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "reason": {
+     "fieldtype": "Small Text"
+    },
+    "source_event_key": {
+     "fieldtype": "Data",
+     "reqd": 1,
+     "unique": 1
+    },
+    "source_payload": {
+     "fieldtype": "Long Text",
+     "reqd": 1
+    },
+    "status": {
+     "default": "PROPOSED",
+     "fieldtype": "Select",
+     "options": "PROPOSED\nVERIFIED\nAPPROVED\nREJECTED\nSUPERSEDED",
+     "reqd": 1
+    },
+    "superseded_at": {
+     "fieldtype": "Datetime"
+    },
+    "superseded_by": {
+     "fieldtype": "Link",
+     "options": "Fresko Party Alias Mapping"
+    },
+    "supersedes": {
+     "fieldtype": "Link",
+     "options": "Fresko Party Alias Mapping"
+    },
+    "verified_at": {
+     "fieldtype": "Datetime"
+    },
+    "verified_by": {
+     "fieldtype": "Link",
+     "options": "User"
+    },
+    "version": {
+     "default": 1,
+     "fieldtype": "Int"
+    }
+   },
+   "module": "Fresko Core"
+  },
   "Fresko Revision": {
    "autoname": "hash",
    "engine": "InnoDB",
@@ -1198,16 +1541,142 @@
     }
    },
    "module": "Fresko Core"
+  },
+  "Fresko Sale Outward Allocation": {
+   "autoname": "hash",
+   "engine": "InnoDB",
+   "fields": {
+    "active_allocation_key": {
+     "fieldtype": "Data",
+     "unique": 1
+    },
+    "approved_at": {
+     "fieldtype": "Datetime"
+    },
+    "approved_by": {
+     "fieldtype": "Link",
+     "options": "User"
+    },
+    "as_of_recorded_at": {
+     "fieldtype": "Datetime",
+     "reqd": 1
+    },
+    "company": {
+     "fieldtype": "Link",
+     "options": "Company",
+     "reqd": 1
+    },
+    "container": {
+     "fieldtype": "Link",
+     "options": "Fresko Container",
+     "reqd": 1
+    },
+    "decision_history": {
+     "fieldtype": "Long Text",
+     "reqd": 1
+    },
+    "evidence": {
+     "fieldtype": "Link",
+     "options": "Fresko Evidence",
+     "reqd": 1
+    },
+    "outward": {
+     "fieldtype": "Link",
+     "options": "Fresko Outward",
+     "reqd": 1
+    },
+    "outward_line_key": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "payload_sha256": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "prepared_at": {
+     "fieldtype": "Datetime",
+     "reqd": 1
+    },
+    "prepared_by": {
+     "fieldtype": "Link",
+     "options": "User",
+     "reqd": 1
+    },
+    "qty": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "reason": {
+     "fieldtype": "Small Text"
+    },
+    "reversed_at": {
+     "fieldtype": "Datetime"
+    },
+    "reversed_by": {
+     "fieldtype": "Link",
+     "options": "User"
+    },
+    "sale": {
+     "fieldtype": "Link",
+     "options": "Fresko Commercial Sale",
+     "reqd": 1
+    },
+    "sale_line_key": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "source_event_key": {
+     "fieldtype": "Data",
+     "reqd": 1,
+     "unique": 1
+    },
+    "source_payload": {
+     "fieldtype": "Long Text",
+     "reqd": 1
+    },
+    "state": {
+     "default": "PROPOSED",
+     "fieldtype": "Select",
+     "options": "PROPOSED\nAPPROVED\nREJECTED\nREVERSED",
+     "reqd": 1
+    },
+    "superseded_by": {
+     "fieldtype": "Link",
+     "options": "Fresko Sale Outward Allocation"
+    },
+    "supersedes": {
+     "fieldtype": "Link",
+     "options": "Fresko Sale Outward Allocation"
+    },
+    "uom": {
+     "fieldtype": "Link",
+     "options": "UOM",
+     "reqd": 1
+    },
+    "verified_at": {
+     "fieldtype": "Datetime"
+    },
+    "verified_by": {
+     "fieldtype": "Link",
+     "options": "User"
+    },
+    "version": {
+     "default": 1,
+     "fieldtype": "Int"
+    }
+   },
+   "module": "Fresko Core"
   }
  },
  "migration_proofs": [
   "evidence_attempt_link_to_data",
   "phase2a_physical_ledger",
   "physical_variance_exception",
-  "integrity_seal_ledger"
+  "integrity_seal_ledger",
+  "commercial_sale_ledger"
  ],
  "schema_sources": {
-  "install.py": "6ed6ee1c49fb1482c9d15ffe98bb60419e0ec4afe47ffb0fe372bcf08f5a9004",
+  "install.py": "eeec6e427414a7812cd74792aec552acb267d1052fdad96fda1f48046db1bed4",
   "patches.txt": "dcd5839e194d054215b6e71e1a57ccc3e025a917bebb56ef1eb8d2dc33dba3bc",
   "patches/v1_0/backfill_evidence_attempt_durability_state.py": "82c40e75f3305e83674bc2edf98a531964740952084b20cce2fc88b5665e0677",
   "patches/v1_0/backfill_evidence_capture_status.py": "408dc1b30a9eb3f1512c8b7dc00e9420cd32aa5e778a9fea1cc64edf751e18bd"

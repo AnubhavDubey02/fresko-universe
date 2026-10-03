@@ -16,6 +16,10 @@ PROTECTED_DOCTYPES = {
     "Fresko Field Assertion",
     "Fresko Container Quantity Assertion",
     "Fresko Integrity Seal",
+    "Fresko Commercial Sale",
+    "Fresko Commercial Sale Line",
+    "Fresko Party Alias Mapping",
+    "Fresko Sale Outward Allocation",
 }
 PROTECTED_TABLES = {f"tab{name}" for name in PROTECTED_DOCTYPES}
 WRITE_SQL = re.compile(

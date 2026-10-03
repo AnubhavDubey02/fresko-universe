@@ -128,7 +128,9 @@ class TestIntegritySealStaticContract(unittest.TestCase):
         registry = json.loads(PROOFS_JSON.read_text(encoding="utf-8"))
         ids = [p["id"] for p in registry["proofs"]]
         self.assertIn("integrity_seal_ledger", ids)
-        self.assertEqual(ids[-1], "integrity_seal_ledger")
+        self.assertEqual(ids.count("integrity_seal_ledger"), 1)
+        proof = next(row for row in registry["proofs"] if row["id"] == "integrity_seal_ledger")
+        self.assertEqual(proof["path"], "scripts/prove_integrity_seal_upgrade.py")
 
 
 if __name__ == "__main__":

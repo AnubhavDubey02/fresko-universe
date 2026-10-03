@@ -262,6 +262,8 @@ def assert_can_activate_quantity_assertion() -> None:
 def deal_permission_query(user: str | None = None) -> str:
     """Row filter: Salesperson sees own / assigned deals; others unrestricted by this hook."""
     user = user or frappe.session.user
+    if user != "Administrator" and any("supplier" in role.casefold() for role in current_roles(user)):
+        return "1=0"
     if user == "Administrator" or is_system_manager(current_roles(user)):
         return ""
     roles = current_roles(user)
@@ -287,6 +289,8 @@ def deal_has_permission(doc, ptype: str | None = None, user: str | None = None) 
     Locked statuses (COMMERCIAL_LOCK including Cancelled/Rejected/Disputed): non-SM Desk write denied.
     """
     user = user or frappe.session.user
+    if user != "Administrator" and any("supplier" in role.casefold() for role in current_roles(user)):
+        return False
     ptype = ptype or "read"
     if user == "Administrator":
         return True
@@ -359,6 +363,8 @@ def _deal_status(doc) -> str | None:
 def evidence_permission_query(user: str | None = None) -> str:
     """Salesperson: evidence linked to own deals; Approver/Accounts/SM: unrestricted."""
     user = user or frappe.session.user
+    if user != "Administrator" and any("supplier" in role.casefold() for role in current_roles(user)):
+        return "1=0"
     if user == "Administrator" or is_system_manager(current_roles(user)):
         return ""
     roles = current_roles(user)
@@ -377,6 +383,8 @@ def evidence_permission_query(user: str | None = None) -> str:
 
 def evidence_has_permission(doc, ptype: str | None = None, user: str | None = None) -> bool:
     user = user or frappe.session.user
+    if user != "Administrator" and any("supplier" in role.casefold() for role in current_roles(user)):
+        return False
     ptype = ptype or "read"
     if user == "Administrator" or is_system_manager(current_roles(user)):
         return True
@@ -482,6 +490,8 @@ def evidence_attempt_has_permission(doc, ptype: str | None = None, user: str | N
 def outward_permission_query(user: str | None = None) -> str:
     """Salesperson sees their prepared Outwards; checker/accounts roles see all."""
     user = user or frappe.session.user
+    if user != "Administrator" and any("supplier" in role.casefold() for role in current_roles(user)):
+        return "1=0"
     roles = current_roles(user)
     if user == "Administrator" or is_system_manager(roles):
         return ""
@@ -495,6 +505,8 @@ def outward_permission_query(user: str | None = None) -> str:
 def outward_has_permission(doc, ptype: str | None = None, user: str | None = None) -> bool:
     """All Outward mutation is service-only; reads follow the maker/checker boundary."""
     user = user or frappe.session.user
+    if user != "Administrator" and any("supplier" in role.casefold() for role in current_roles(user)):
+        return False
     ptype = ptype or "read"
     if ptype == "delete":
         return False
@@ -518,6 +530,8 @@ def outward_has_permission(doc, ptype: str | None = None, user: str | None = Non
 def field_assertion_permission_query(user: str | None = None) -> str:
     """Assertion visibility inherits the linked Outward maker scope."""
     user = user or frappe.session.user
+    if user != "Administrator" and any("supplier" in role.casefold() for role in current_roles(user)):
+        return "1=0"
     roles = current_roles(user)
     if user == "Administrator" or is_system_manager(roles):
         return ""
@@ -538,6 +552,8 @@ def field_assertion_has_permission(
 ) -> bool:
     """All assertion mutation is service-only; reads inherit the parent Outward."""
     user = user or frappe.session.user
+    if user != "Administrator" and any("supplier" in role.casefold() for role in current_roles(user)):
+        return False
     ptype = ptype or "read"
     if ptype == "delete":
         return False
@@ -600,3 +616,17 @@ def _phase2a_linked_value(doc, doctype: str, fieldname: str):
     return getattr(doc, fieldname, None) or (
         doc.get(fieldname) if hasattr(doc, "get") else None
     )
+
+
+def customer_internal_permission_query(user=None):
+    user = user or frappe.session.user
+    if user != "Administrator" and any("supplier" in role.casefold() for role in current_roles(user)):
+        return "1=0"
+    return ""
+
+
+def customer_internal_has_permission(doc, ptype=None, user=None):
+    user = user or frappe.session.user
+    if user != "Administrator" and any("supplier" in role.casefold() for role in current_roles(user)):
+        return False
+    return None  # Preserve ERPNext permissions for every other role.

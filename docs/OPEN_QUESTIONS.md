@@ -18,6 +18,15 @@ D1, D3, D4, D5, D6, D10 — see DECISIONS.md.
 
 See `docs/CANONICAL_BUSINESS_DECISIONS_2026-10-02.md`.
 
+## 2026-10-03 Commercial Sale operational evidence and boundary status
+
+- **Role workflow technical controls:** **IMPLEMENTED** in `commercial_service.py` with strict distinct-user checks across maker, verifier (Accounts), and approver. System Manager excluded from routine approvals.
+- **BD-101 (INR 101):** Confirmed labour payment, excluded from customer collections and commercial sale accounting.
+- **BD-350 (INR 350,000):** **PENDING_EVIDENCE_BINDING**; owner-stated receipt awaits exact bank Evidence outside Git. Not recognized as cleared or allocated cash.
+- **BD-92-700 (92 @ INR 700):** **PENDING**; requires exact handwritten photo attachment and multi-role approval before establishing active commercial price (INR 64,400).
+- **Physical allocation boundaries:** 3,060 declared vs 3,056 operating physical capacity handled separately.
+- **Deferred scopes:** Collections/payments, frontend UI, live WhatsApp ingestion, ERP accounting/GL posting, and production deployment remain entirely deferred.
+
 ## Still open
 | ID | Question | Notes |
 |---|---|---|

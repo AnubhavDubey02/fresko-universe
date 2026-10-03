@@ -15,7 +15,7 @@
    "label": "Exception Type",
    "reqd": 1,
    "in_list_view": 1,
-   "options": "BUYER_UNRESOLVED\nDUPLICATE_MESSAGE\nOVERSELL_OVERRIDE\nSTOCK_SHORTFALL\nRATE_FLOOR_BREACH\nRATE_POLICY_MISSING\nOUTWARD_UNPRICED\nOUTWARD_WITHOUT_DEAL\nLOT_UNRESOLVED\nDUPLICATE_GATEPASS\nPHYSICAL_VARIANCE\nDATA_INTEGRITY\nOTHER"
+   "options": "BUYER_UNRESOLVED\nDUPLICATE_MESSAGE\nOVERSELL_OVERRIDE\nSTOCK_SHORTFALL\nRATE_FLOOR_BREACH\nRATE_POLICY_MISSING\nOUTWARD_UNPRICED\nOUTWARD_WITHOUT_DEAL\nLOT_UNRESOLVED\nDUPLICATE_GATEPASS\nPHYSICAL_VARIANCE\nDATA_INTEGRITY\nOTHER\nALIAS_UNRESOLVED\nALIAS_CONFLICT\nRATE_UNKNOWN\nRATE_EVIDENCE_MISSING\nPRICE_BUCKET_UNALLOCATED\nLOT_UNKNOWN\nPARTY_UNKNOWN\nMOVEMENT_TIME_UNKNOWN\nSALE_WITHOUT_OUTWARD\nOUTWARD_WITHOUT_SALE\nALLOCATION_OVERDRAW\nIDEMPOTENCY_PAYLOAD_CONFLICT\nCONCURRENT_STATE_CONFLICT"
   },
   {
    "fieldname": "severity",
@@ -133,6 +133,26 @@
    "fieldname": "resolved_at",
    "fieldtype": "Datetime",
    "label": "Resolved At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sale",
+   "fieldtype": "Link",
+   "label": "Commercial Sale",
+   "options": "Fresko Commercial Sale",
+   "read_only": 1
+  },
+  {
+   "fieldname": "commercial_scope_key",
+   "fieldtype": "Data",
+   "label": "Commercial Scope Key",
+   "unique": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "as_of_recorded_at",
+   "fieldtype": "Datetime",
+   "label": "Commercial Exception Recorded At",
    "read_only": 1
   }
  ],

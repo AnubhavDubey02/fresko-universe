@@ -29,7 +29,9 @@ jobs:
           python-version: "3.11"
       - name: Run offline smoke suite
         working-directory: fresko_universe
-        run: python3 -m unittest tests.test_smoke_unit -v
+        run: |
+          python3 -m unittest tests.test_smoke_unit -v
+          python3 -m unittest tests.test_commercial_contract -v
       - name: Validate Phase 2 readiness fixtures
         run: |
           python3 scripts/validate_phase2_readiness_fixtures.py
@@ -159,4 +161,5 @@ jobs:
             /home/runner/frappe-bench/logs/
             /home/runner/frappe-bench/sites/test.localhost/logs/
             /home/runner/frappe-bench/sites/upgrade.localhost/logs/
+            /home/runner/frappe-bench/sites/commercial-upgrade.localhost/logs/
           if-no-files-found: ignore

@@ -200,4 +200,31 @@ bench --site "${UPGRADE_SITE}" migrate
 bench --site "${UPGRADE_SITE}" migrate
 ./env/bin/python "${MIGRATION_HARNESS}" --site "${UPGRADE_SITE}" verify_second_migrate
 
+# Independently exercise the exact merged pre-commercial baseline. The older
+# registered Phase 1 proof remains intact; it cannot substitute for this path.
+COMMERCIAL_BASELINE_SHA="579a8465f363105eb6e78c15cb173156e2c0df93"
+COMMERCIAL_UPGRADE_SITE="commercial-upgrade.localhost"
+COMMERCIAL_PROOF="${ROOT}/scripts/prove_commercial_sale_upgrade.py"
+git -C "${ROOT}" merge-base --is-ancestor "${COMMERCIAL_BASELINE_SHA}" HEAD
+mkdir -p "${UPGRADE_TMP}/commercial-main"
+git -C "${ROOT}" archive "${COMMERCIAL_BASELINE_SHA}" fresko_universe | tar -x -C "${UPGRADE_TMP}/commercial-main"
+vendor_fresko_app "${UPGRADE_TMP}/commercial-main/fresko_universe" "commercial-main-${COMMERCIAL_BASELINE_SHA}"
+if [[ -d "sites/${COMMERCIAL_UPGRADE_SITE}" ]]; then
+  echo "Commercial upgrade proof site already exists: ${COMMERCIAL_UPGRADE_SITE}" >&2
+  exit 1
+fi
+bench new-site "${COMMERCIAL_UPGRADE_SITE}" \
+  --mariadb-root-password "${DB_ROOT_PASSWORD}" \
+  --admin-password "${ADMIN_PASSWORD}" \
+  --no-mariadb-socket --db-host "${DB_HOST}"
+bench --site "${COMMERCIAL_UPGRADE_SITE}" install-app erpnext
+bench --site "${COMMERCIAL_UPGRADE_SITE}" install-app fresko_universe
+./env/bin/python "${COMMERCIAL_PROOF}" --site "${COMMERCIAL_UPGRADE_SITE}" seed_current_main
+vendor_fresko_app "${APP_SRC}" "commercial-upgrade-candidate"
+diff -qr --exclude='.git' --exclude='*.egg-info' --exclude='__pycache__' "${APP_SRC}" apps/fresko_universe
+bench --site "${COMMERCIAL_UPGRADE_SITE}" migrate
+./env/bin/python "${COMMERCIAL_PROOF}" --site "${COMMERCIAL_UPGRADE_SITE}" verify_first_migrate
+bench --site "${COMMERCIAL_UPGRADE_SITE}" migrate
+./env/bin/python "${COMMERCIAL_PROOF}" --site "${COMMERCIAL_UPGRADE_SITE}" verify_second_migrate
+
 echo "==> CI bench OK"

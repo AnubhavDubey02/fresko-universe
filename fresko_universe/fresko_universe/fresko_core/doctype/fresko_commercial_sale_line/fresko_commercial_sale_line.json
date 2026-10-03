@@ -1,0 +1,30 @@
+{
+ "doctype": "DocType",
+ "name": "Fresko Commercial Sale Line",
+ "module": "Fresko Core",
+ "engine": "InnoDB",
+ "istable": 1,
+ "editable_grid": 0,
+ "track_changes": 0,
+ "allow_rename": 0,
+ "sort_field": "idx",
+ "sort_order": "ASC",
+ "fields": [
+  {"fieldname": "line_key", "fieldtype": "Data", "label": "Line Key", "reqd": 1, "read_only": 1, "in_list_view": 1},
+  {"fieldname": "item", "fieldtype": "Link", "label": "Item", "options": "Item", "reqd": 1, "read_only": 1, "in_list_view": 1},
+  {"fieldname": "container_lot", "fieldtype": "Link", "label": "Container Lot", "options": "Fresko Container Lot", "description": "Authorized mapping only.", "read_only": 1, "in_list_view": 1},
+  {"fieldname": "raw_lot_text", "fieldtype": "Data", "label": "Raw Lot Text", "description": "Null only with lot_state=UNKNOWN.", "read_only": 1},
+  {"fieldname": "lot_state", "fieldtype": "Select", "label": "Lot State", "options": "KNOWN\nUNKNOWN\nCONTRADICTED", "default": "UNKNOWN", "reqd": 1, "read_only": 1, "in_list_view": 1},
+  {"fieldname": "qty", "fieldtype": "Data", "label": "Quantity", "description": "Canonical decimal text; nullable (UNKNOWN never zero).", "read_only": 1, "in_list_view": 1},
+  {"fieldname": "uom", "fieldtype": "Link", "label": "UOM", "options": "UOM", "reqd": 1, "read_only": 1, "in_list_view": 1},
+  {"fieldname": "qty_state", "fieldtype": "Select", "label": "Quantity State", "options": "KNOWN\nUNKNOWN\nCONTRADICTED", "default": "UNKNOWN", "reqd": 1, "read_only": 1, "in_list_view": 1},
+  {"fieldname": "price_state", "fieldtype": "Select", "label": "Price State", "options": "UNKNOWN\nPROPOSED\nFINAL\nREJECTED", "default": "UNKNOWN", "reqd": 1, "read_only": 1, "in_list_view": 1},
+  {"fieldname": "rate", "fieldtype": "Data", "label": "Rate", "description": "Canonical decimal text; only proposed/final.", "read_only": 1, "in_list_view": 1},
+  {"fieldname": "rate_basis", "fieldtype": "Select", "label": "Rate Basis", "options": "RATE_ASSERTION\nPRICE_BUCKET\nNONE", "default": "NONE", "reqd": 1, "read_only": 1},
+  {"fieldname": "amount", "fieldtype": "Data", "label": "Amount", "description": "Server-derived Decimal product.", "read_only": 1, "in_list_view": 1},
+  {"fieldname": "bucket_key", "fieldtype": "Data", "label": "Bucket Key", "description": "Required for PRICE_BUCKET; unique per Sale.", "read_only": 1},
+  {"fieldname": "source_line_ref", "fieldtype": "Data", "label": "Source Line Reference", "description": "Raw source row.", "read_only": 1},
+  {"fieldname": "evidence", "fieldtype": "Link", "label": "Evidence", "options": "Fresko Evidence", "description": "Line/rate evidence.", "reqd": 1, "read_only": 1}
+ ],
+ "permissions": []
+}
