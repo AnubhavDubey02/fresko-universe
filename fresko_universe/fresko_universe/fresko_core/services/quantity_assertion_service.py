@@ -177,7 +177,7 @@ def quantity_reconciliation_projection(container: str) -> dict[str, Any]:
     if not operating or operating.quantity is None:
         return {"container": container, "declared_assertion": declared.name, "reconciliation_status": "UNRESOLVED", "reason": "no same-UOM active operating inward assertion", "todo": "PHYSICAL_VARIANCE exception creation requires an Outward-linked service and is intentionally not invoked"}
     variance = format(Decimal(declared.quantity) - Decimal(operating.quantity), "f")
-    return {"container": container, "declared_assertion": declared.name, "operating_assertion": operating.name, "uom": declared.uom, "declared_quantity": declared.quantity, "operating_quantity": operating.quantity, "operating_basis": "COMPATIBILITY_OPERATIONAL_INWARD" if compatibility else "OPERATING_INWARD", "variance": variance, "reconciliation_status": "OPEN_VARIANCE" if Decimal(variance) else "MATCH", "todo": "PHYSICAL_VARIANCE exception creation requires an Outward-linked service and is intentionally not invoked"}
+    return {"container": container, "declared_assertion": declared.name, "operating_assertion": operating.name, "uom": declared.uom, "declared_quantity": declared.quantity, "operating_quantity": operating.quantity, "operating_basis": "LEGACY_UNVERIFIED" if compatibility else "OPERATING_INWARD", "variance": variance, "reconciliation_status": "OPEN_VARIANCE" if Decimal(variance) else "MATCH", "todo": "PHYSICAL_VARIANCE exception creation requires an Outward-linked service and is intentionally not invoked"}
 
 
 def _latest(container: str, basis: str, uom: str | None = None):

@@ -280,7 +280,7 @@
         "archive_member": "_chat.txt",
         "transcript_line_ranges": [[486, 491]],
         "source_summary": "ORDER PRAFULL S 5 Crate Lot 42076 By hand",
-        "attachment_members": ["00003309-FRESKO OUTWARD.pdf"]
+        "attachment_members": ["fixture-document-a.pdf"]
       },
       "interpretation": "By hand is a positive dispatch mode, not a missing vehicle value.",
       "confirmed_facts": [
@@ -305,10 +305,10 @@
       "category": "identity_match",
       "source": {
         "kind": "archive_workbook",
-        "archive_member": "00003294-Fresko_Plum_SKRU9000221_Sale_Sheet_16_Sep_2026_Payments_Reconciled.xlsx",
-        "member_locator": "Sale Sheet row 67",
+        "archive_member": "fixture-workbook-a.xlsx",
+        "member_locator": "fixture row A",
         "source_summary": "AU; NAME / DATE CHECK; Candidate GP 205952: ALI MARKET, 15-Sep",
-        "attachment_members": ["00003294-Fresko_Plum_SKRU9000221_Sale_Sheet_16_Sep_2026_Payments_Reconciled.xlsx"]
+        "attachment_members": ["fixture-workbook-a.xlsx"]
       },
       "interpretation": "The workbook proposes a candidate alias match but does not establish identity.",
       "confirmed_facts": [
@@ -332,10 +332,10 @@
       "category": "date_match",
       "source": {
         "kind": "archive_workbook",
-        "archive_member": "00003294-Fresko_Plum_SKRU9000221_Sale_Sheet_16_Sep_2026_Payments_Reconciled.xlsx",
-        "member_locator": "Sale Sheet row 64",
+        "archive_member": "fixture-workbook-a.xlsx",
+        "member_locator": "fixture row B",
         "source_summary": "Sale 14-Sep; GP 205936; OUT 15-Sep; DATE CHECK",
-        "attachment_members": ["00003294-Fresko_Plum_SKRU9000221_Sale_Sheet_16_Sep_2026_Payments_Reconciled.xlsx"]
+        "attachment_members": ["fixture-workbook-a.xlsx"]
       },
       "interpretation": "Commercial sale date and physical outward date may legitimately differ; neither may overwrite the other.",
       "confirmed_facts": [
@@ -444,7 +444,7 @@
         "archive_member": "_chat.txt",
         "transcript_line_ranges": [[730, 730]],
         "source_summary": "Paid almost 80 K extra to our CHA; FSSAI and PQ charges may be automatically exempted but were said to be charged in full.",
-        "attachment_members": ["00003258-PHOTO-2026-09-16-10-05-29.jpg"]
+        "attachment_members": ["fixture-photo-a.jpg"]
       },
       "interpretation": "This is a user-reported claim requiring shipment-specific receipts and exemption checks before any recoverable amount is asserted.",
       "confirmed_facts": [
@@ -474,12 +474,12 @@
         "transcript_line_ranges": [[731, 736]],
         "source_summary": "Six attachment records appear across two displayed timestamps.",
         "attachment_members": [
-          "00003259-PHOTO-2026-09-16-10-43-02.jpg",
-          "00003260-PHOTO-2026-09-16-10-43-02.jpg",
-          "00003261-PHOTO-2026-09-16-10-43-02.jpg",
-          "00003262-PHOTO-2026-09-16-10-43-03.jpg",
-          "00003263-PHOTO-2026-09-16-10-43-03.jpg",
-          "00003264-PHOTO-2026-09-16-10-43-03.jpg"
+          "fixture-photo-b.jpg",
+          "fixture-photo-c.jpg",
+          "fixture-photo-d.jpg",
+          "fixture-photo-e.jpg",
+          "fixture-photo-f.jpg",
+          "fixture-photo-g.jpg"
         ]
       },
       "interpretation": "Equal displayed timestamps do not establish one provider message or one attachment bundle.",

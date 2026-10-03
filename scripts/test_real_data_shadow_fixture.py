@@ -9,16 +9,16 @@ class T(unittest.TestCase):
  def test_combined_total_drift(self):self.bad(lambda m:m['replays'][2].__setitem__('combined_sales',1),'combined total')
  def test_101(self):self.bad(lambda m:m['business_examples']['inr101'].__setitem__('customer_collections',101),'INR101')
  def test_350(self):self.bad(lambda m:m['business_examples']['inr350000'].__setitem__('bank_cleared',True),'INR350')
- def test_92(self):self.bad(lambda m:m['business_examples']['sohail_92_at_700'].__setitem__('activation_status','ACTIVE'),'92 activation')
+ def test_92(self):self.bad(lambda m:m['business_examples']['pending_92_at_700'].__setitem__('activation_status','ACTIVE'),'92 activation')
  def test_92_photo_only(self):
   def mutate(m):
-   m['business_examples']['sohail_92_at_700']['exact_photo_linked']=True
-   m['business_examples']['sohail_92_at_700']['activation_status']='ACTIVE'
+   m['business_examples']['pending_92_at_700']['exact_photo_linked']=True
+   m['business_examples']['pending_92_at_700']['activation_status']='ACTIVE'
   self.bad(mutate,'92 activation')
  def test_92_approval_only(self):
   def mutate(m):
-   m['business_examples']['sohail_92_at_700']['role_approved']=True
-   m['business_examples']['sohail_92_at_700']['activation_status']='ACTIVE'
+   m['business_examples']['pending_92_at_700']['role_approved']=True
+   m['business_examples']['pending_92_at_700']['activation_status']='ACTIVE'
   self.bad(mutate,'92 activation')
  def test_wrong_source_hash(self):self.bad(lambda m:m['sources'][1].__setitem__('sha256','0'*63),'source pointers/hash')
  def test_malformed_source_range(self):self.bad(lambda m:m['sources'][1]['ranges'].__setitem__(0,'Current Position 21-Sep'), 'source pointers/hash')

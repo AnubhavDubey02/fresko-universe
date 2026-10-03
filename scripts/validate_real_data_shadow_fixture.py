@@ -51,11 +51,11 @@ def validate(m):
  if sum(x['qty'] for x in ca['grapes']['rate_buckets'])!=180 or g['sales']+ca['grapes']['later_rate_total']!=ca['grapes']['sales']:fail('later Grapes rate total mismatch')
  if ca['grapes']['later_rate_total']!=sum(x['qty']*x['rate'] for x in ca['grapes']['rate_buckets']):fail('rate bucket arithmetic mismatch')
  if any('gp' in x for x in ca['grapes']['rate_buckets']):fail('rate buckets must not be force-mapped to GPs')
- b=m['business_examples']; one,three,ninety=b['inr101'],b['inr350000'],b['sohail_92_at_700']
+ b=m['business_examples']; one,three,ninety=b['inr101'],b['inr350000'],b['pending_92_at_700']
  validate_ref(one.get('source_ref'),sources);validate_ref(one.get('decision_ref'),sources)
  validate_ref(three.get('source_ref'),sources);validate_ref(three.get('decision_ref'),sources)
  if one.get('provenance')!='USER_CONFIRMED' or one.get('classification')!='labour_outflow' or one.get('customer_collections')!=0:fail('INR101 entered collections')
- if three.get('received') is not True or three.get('bank_cleared') is True or three.get('allocated') is True:fail('INR350 received conflated with cleared/allocation')
+ if three.get('transaction_reference_alias')!='BANK-REF-A' or three.get('provenance')!='PENDING' or three.get('received')!='PENDING_EVIDENCE_BINDING' or three.get('bank_cleared')!='UNKNOWN' or three.get('allocated')!='PENDING':fail('INR350 evidence-bound states conflated')
  if ninety['derived_amount']!=ninety['quantity']*ninety['rate']:fail('92 arithmetic mismatch')
  photo=validate_ref(ninety.get('source_ref'),sources,require_verified=False)
  if photo.get('kind')!='photo':fail('92 source must be a photo')

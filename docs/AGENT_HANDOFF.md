@@ -533,3 +533,39 @@ Next: run exact-head CI/Bench on the pushed branch and fix real failures without
 weakening tests. Only after that gate should the Commercial Event/Alias contract
 become runtime work; Collections/Payment Allocation remains the following
 separate slice.
+
+## 2026-10-03 PR #9 assurance correction iteration
+
+This section supersedes only the over-broad current-state claims in the two
+preceding 2026-10-02/03 sections. Historical source cut-offs remain preserved.
+
+- ATS now caps aggregate commercial capacity at the lower of legacy Container
+  inward and an active same-UOM `OPERATING_INWARD` assertion. It does not invent
+  a lot-level shortage allocation; a cross-UOM operating fact fails closed.
+- Compatibility fallback is labelled `LEGACY_UNVERIFIED`.
+- `DUPLICATE_GATEPASS` is a review Exception, not a posting rejection. Raw
+  values are preserved, normalized comparison is Container-scoped, the two
+  Outwards are linked, and self/multi-line/reversal cases are excluded.
+- CI now guards protected immutable DocTypes from direct `db.set_value`,
+  `db_set`, and protected/dynamic write-SQL bypasses in runtime code.
+- Bench coverage includes a sanitized Plum aggregate through real quantity and
+  Outward services, System Manager maker/checker denial, and concurrent
+  quantity activation versus Outward posting under the shared Container-first
+  lock order.
+- Fixtures use synthetic non-resolving source/member identifiers. The INR
+  350,000 fixture remains `PENDING_EVIDENCE_BINDING`; no raw bank reference is
+  committed. The 92-at-700 photo context remains pending.
+- Role-based alias approval and supplier isolation are accepted principles;
+  exact role transitions and supplier-visible fields remain **PROPOSED**.
+- Structured QC is formally deferred. The interim shadow-pilot control is one
+  dated photo folder per Container, which does not create structured QC facts.
+- `PHYSICAL_VARIANCE` persistence, reusable schema-migration harness, and the
+  periodic integrity checker are separate owner-authorized post-PR #9 PRs.
+- Server Scripts disabled on a target site remains **UNKNOWN** because no
+  deployment or real-data site is authorized or in scope.
+
+The shadow manifest and INR examples are fixture-validator/decision behavior,
+not Collection, Payment Allocation, accounting, bank-clearance, or runtime
+financial behavior. Exact-head GitHub CI remains the merge gate for this
+iteration; CI history is the record and no green-status ceremony commit is
+required.

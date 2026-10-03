@@ -216,7 +216,10 @@ class TestATS(unittest.TestCase):
         frappe.db.sql.reset_mock()
         frappe.db.sql.side_effect = [
             [],
-            [types.SimpleNamespace(inward_qty=100)],
+            [types.SimpleNamespace(inward_qty=100, uom="Crate")],
+            [],
+            [types.SimpleNamespace(inward_qty=100, uom="Crate")],
+            [],
             [],
         ]
         try:
@@ -230,17 +233,18 @@ class TestATS(unittest.TestCase):
             frappe.db.sql.return_value = []
             frappe.db.sql.reset_mock()
 
-        self.assertEqual(len(queries), 3)
-        self.assertIn("FOR UPDATE", queries[0].upper())
-        self.assertIn("FOR UPDATE", queries[1].upper())
-        self.assertIn("FOR UPDATE", queries[2].upper())
+        self.assertEqual(len(queries), 6)
+        self.assertTrue(all("FOR UPDATE" in query.upper() for query in queries))
 
     def test_display_ats_keeps_nonlocking_reads(self):
         import frappe
 
         frappe.db.sql.reset_mock()
         frappe.db.sql.side_effect = [
-            [types.SimpleNamespace(inward_qty=100)],
+            [types.SimpleNamespace(inward_qty=100, uom="Crate")],
+            [],
+            [types.SimpleNamespace(inward_qty=100, uom="Crate")],
+            [],
             [],
         ]
         try:
@@ -251,8 +255,26 @@ class TestATS(unittest.TestCase):
             frappe.db.sql.return_value = []
             frappe.db.sql.reset_mock()
 
-        self.assertEqual(len(queries), 2)
+        self.assertEqual(len(queries), 5)
         self.assertTrue(all("FOR UPDATE" not in query.upper() for query in queries))
+
+    def test_active_operating_assertion_caps_legacy_inward(self):
+        import frappe
+
+        frappe.db.sql.reset_mock()
+        frappe.db.sql.side_effect = [
+            [types.SimpleNamespace(inward_qty=100, uom="Crate")],
+            [],
+            [types.SimpleNamespace(inward_qty=100, uom="Crate")],
+            [types.SimpleNamespace(name="QTY-1", quantity="96", uom="Crate")],
+            [],
+        ]
+        try:
+            self.assertEqual(available_to_sell("CON-CAPPED", "LOT-A"), 96)
+        finally:
+            frappe.db.sql.side_effect = None
+            frappe.db.sql.return_value = []
+            frappe.db.sql.reset_mock()
 
 
 class TestD4(unittest.TestCase):
@@ -528,6 +550,7 @@ class TestPhase2AContracts(unittest.TestCase):
         _, exception = self._doctype("fresko_exception")
         outward_fields = {row["fieldname"]: row for row in outward["fields"]}
         assertion_fields = {row["fieldname"]: row for row in assertion["fields"]}
+        exception_fields = {row["fieldname"]: row for row in exception["fields"]}
         exception_options = next(
             row["options"]
             for row in exception["fields"]
@@ -542,6 +565,9 @@ class TestPhase2AContracts(unittest.TestCase):
         self.assertIn("rate_uom", assertion_fields)
         self.assertEqual(assertion_fields["rate_uom"].get("options"), "UOM")
         self.assertIn("OUTWARD_WITHOUT_DEAL", exception_options)
+        self.assertIn("DUPLICATE_GATEPASS", exception_options)
+        self.assertIn("gatepass_comparison_key", outward_fields)
+        self.assertEqual(exception_fields["related_outward"].get("options"), "Fresko Outward")
 
     def test_physical_service_has_raw_uom_capacity_and_current_read_guards(self):
         sources = dict(self._implementation_sources())

@@ -191,8 +191,8 @@ def main() -> int:
         fail("unsupported fixture schema version")
 
     archive = manifest.get("archive", {})
-    if archive.get("drive_id") != "1JYTZvKROdcy2tRMbbgfiRaVb7qZ4drxS":
-        fail("unexpected Drive source id")
+    if archive.get("drive_id") != "SYNTHETIC-NON-RESOLVING-ID":
+        fail("fixture source id must remain synthetic and non-resolving")
     if len(archive.get("sha256", "")) != 64:
         fail("manifest SHA-256 must be 64 hexadecimal characters")
     int(archive["sha256"], 16)

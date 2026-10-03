@@ -10,9 +10,11 @@ import threading
 from queue import Queue
 from frappe.tests.utils import FrappeTestCase
 
-from fresko_universe import quantity_assertion
+from fresko_universe import outward, quantity_assertion
+from fresko_universe.deals import apply_rate_rules
+from fresko_universe.fresko_core.ats import available_to_sell
 from fresko_universe.tests.test_phase2a_outward import _ensure_user
-from fresko_universe.tests.utils import ensure_masters, make_container
+from fresko_universe.tests.utils import ensure_masters, make_container, make_deal
 
 
 class TestContainerQuantityAssertion(FrappeTestCase):
@@ -111,6 +113,158 @@ class TestContainerQuantityAssertion(FrappeTestCase):
         self._submit(cross_operating["name"]); self._activate(cross_operating["name"])
         frappe.set_user("Administrator")
         self.assertEqual(quantity_assertion.reconciliation_projection(cross_container.name)["reconciliation_status"], "UNRESOLVED")
+
+    def test_legacy_fallback_is_explicitly_unverified(self):
+        container = make_container(
+            self.masters,
+            container_no=f"QTY-{frappe.generate_hash(length=6)}",
+            inward_qty=3056,
+        )
+        evidence = self._evidence(container, "legacy compatibility")
+        declared = self._create(container, evidence, "shipping-legacy", quantity="3060")
+        self._submit(declared["name"])
+        self._activate(declared["name"])
+        frappe.set_user("Administrator")
+        projection = quantity_assertion.reconciliation_projection(container.name)
+        self.assertEqual(projection["operating_basis"], "LEGACY_UNVERIFIED")
+        self.assertIsNone(projection["operating_assertion"])
+
+    def test_active_operating_inward_caps_container_wide_ats(self):
+        container = make_container(
+            self.masters,
+            container_no=f"QTY-{frappe.generate_hash(length=6)}",
+            inward_qty=3060,
+        )
+        evidence = self._evidence(container, "operating ATS cap")
+        operating = self._create(
+            container,
+            evidence,
+            "operating-ats-3056",
+            basis="OPERATING_INWARD",
+            quantity="3056",
+        )
+        self._submit(operating["name"])
+        self._activate(operating["name"])
+        frappe.set_user("Administrator")
+        self.assertEqual(available_to_sell(container.name, "LOT-A"), 3056)
+
+        excessive = make_deal(container, qty=3057, proposed_rate=120)
+        excessive_result = apply_rate_rules(excessive.name)
+        excessive.reload()
+        self.assertEqual(excessive_result["status"], "Approval Required")
+        self.assertEqual(excessive.status, "Approval Required")
+        self.assertEqual(
+            frappe.db.count(
+                "Fresko Exception",
+                {"deal": excessive.name, "exception_type": "STOCK_SHORTFALL"},
+            ),
+            1,
+        )
+
+        allowed = make_deal(container, qty=3056, proposed_rate=120)
+        result = apply_rate_rules(allowed.name)
+        self.assertEqual(result["status"], "Auto Approved")
+
+    def test_system_manager_cannot_review_own_quantity_assertion(self):
+        container = make_container(
+            self.masters,
+            container_no=f"QTY-{frappe.generate_hash(length=6)}",
+            inward_qty=1,
+        )
+        evidence = self._evidence(container, "system manager separation")
+        frappe.set_user("Administrator")
+        created = quantity_assertion.create(
+            container=container.name,
+            basis="DECLARED_SHIPPING",
+            raw_value="1",
+            quantity="1",
+            uom=self.masters["uom"],
+            raw_uom=self.masters["uom"],
+            evidence=evidence.name,
+            effective_at="2026-10-03 10:00:00",
+            provenance="SOURCE_EXTRACTED",
+            reason="system manager maker/checker regression",
+            source_fact_id="system-manager-self-review",
+        )
+        quantity_assertion.submit(created["name"])
+        with self.assertRaises(frappe.PermissionError):
+            quantity_assertion.review(created["name"], "ACTIVATE")
+        self.assertEqual(
+            frappe.db.get_value(
+                "Fresko Container Quantity Assertion", created["name"], "status"
+            ),
+            "Review Pending",
+        )
+
+    def test_quantity_activation_and_outward_post_share_container_first_lock(self):
+        container = make_container(
+            self.masters,
+            container_no=f"QTY-LOCK-{frappe.generate_hash(length=6)}",
+            inward_qty=20,
+        )
+        evidence = self._evidence(container, "cross-service lock")
+        assertion = self._create(container, evidence, "cross-service-quantity", quantity="20")
+        self._submit(assertion["name"])
+        frappe.set_user(self.maker)
+        outward_result = outward.create(
+            container=container.name,
+            movement_at="2026-10-03 10:00:00",
+            source_evidence=evidence.name,
+            source_event_id="cross-service-outward",
+            lines=[{
+                "source_line_ref": "1",
+                "raw_lot_text": "LOT-A",
+                "lot_no": "LOT-A",
+                "qty": 10,
+                "uom": self.masters["uom"],
+                "raw_qty_text": "10",
+                "raw_uom_text": self.masters["uom"],
+                "raw_rate_text": None,
+            }],
+        )
+        outward.submit_for_review(outward_result["name"])
+        frappe.db.commit()
+
+        site = frappe.local.site
+        barrier = threading.Barrier(2)
+        outcomes = Queue()
+
+        def run(action):
+            frappe.init(site=site)
+            frappe.connect()
+            try:
+                frappe.set_user(self.checker)
+                barrier.wait(timeout=20)
+                if action == "assertion":
+                    quantity_assertion.review(assertion["name"], "ACTIVATE")
+                else:
+                    outward.post(outward_result["name"])
+                frappe.db.commit()
+                outcomes.put((action, "OK"))
+            except Exception as exc:
+                frappe.db.rollback()
+                outcomes.put((action, f"ERROR:{exc}"))
+            finally:
+                frappe.destroy()
+
+        threads = [threading.Thread(target=run, args=(action,)) for action in ("assertion", "outward")]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=40)
+        results = dict(outcomes.get(timeout=5) for _ in threads)
+        self.assertEqual(results, {"assertion": "OK", "outward": "OK"})
+
+        frappe.set_user("Administrator")
+        frappe.db.rollback()
+        frappe.db.delete("Fresko Exception", {"outward": outward_result["name"]})
+        frappe.db.delete("Fresko Outward Line", {"parent": outward_result["name"]})
+        frappe.db.delete("Fresko Outward", {"name": outward_result["name"]})
+        frappe.db.delete("Fresko Container Quantity Assertion", {"name": assertion["name"]})
+        frappe.db.delete("Fresko Evidence", {"name": evidence.name})
+        frappe.db.delete("Fresko Container Lot", {"parent": container.name})
+        frappe.db.delete("Fresko Container", {"name": container.name})
+        frappe.db.commit()
 
     def test_two_connection_competing_activation_leaves_one_active(self):
         container = make_container(self.masters, container_no=f"QTY-{frappe.generate_hash(length=6)}", inward_qty=1)

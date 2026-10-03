@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
+import unicodedata
 from collections import defaultdict
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -60,6 +62,14 @@ def _raw_text(value: Any, label: str, *, required: bool = False) -> str | None:
     if required and not text.strip():
         frappe.throw(_("{0} is required").format(label))
     return text
+
+
+def _gatepass_comparison_key(value: Any) -> str | None:
+    """Normalize only for duplicate comparison; raw source text is untouched."""
+    if value is None or not str(value).strip():
+        return None
+    normalized = unicodedata.normalize("NFKC", str(value)).casefold()
+    return re.sub(r"[^0-9a-z]+", "", normalized).upper() or None
 
 
 def _identity_text(value: Any, label: str) -> str:
@@ -248,13 +258,15 @@ def create_outward(
         )
     )
     normalised_lines = _normalise_lines(source_event_key, lines)
+    raw_gatepass = _raw_text(gatepass_no, "gatepass_no")
     payload = {
         "version": OUTWARD_PAYLOAD_VERSION,
         "company": company,
         "container": container,
         "deal": deal,
         # These are raw logistics context, not Customer/buyer resolution inputs.
-        "gatepass_no": _raw_text(gatepass_no, "gatepass_no"),
+        "gatepass_no": raw_gatepass,
+        "gatepass_comparison_key": _gatepass_comparison_key(raw_gatepass),
         "vehicle_no": _raw_text(vehicle_no, "vehicle_no"),
         "raw_party_name": _raw_text(raw_party_name, "raw_party_name"),
         "movement_type": "OUTWARD",
@@ -428,6 +440,7 @@ def post_outward(outward_name: str) -> dict[str, Any]:
                     severity="Material",
                 )
             )
+        opened.extend(_ensure_duplicate_gatepass_exceptions(doc))
     elif reversed_outward is not None:
         _resolve_reversed_outward_exceptions(reversed_outward, doc)
     response = _outward_response(doc)
@@ -486,6 +499,7 @@ def create_outward_reversal(
         # Preserve the source-reported context on a compensating movement;
         # these fields remain raw context and are never resolved to Customer.
         "gatepass_no": original.gatepass_no,
+        "gatepass_comparison_key": _gatepass_comparison_key(original.gatepass_no),
         "vehicle_no": original.vehicle_no,
         "raw_party_name": original.raw_party_name,
         "movement_type": "REVERSAL",
@@ -924,3 +938,63 @@ def _ensure_open_exception(
     exception.flags.in_outward_service = True
     exception.insert(ignore_permissions=True)
     return exception.name
+
+
+def _ensure_duplicate_gatepass_exceptions(outward) -> list[str]:
+    """Open pairwise review exceptions without rejecting physical truth.
+
+    One multi-line Outward is one record and cannot conflict with itself.
+    Reversals never call this helper, so their copied raw gatepass is exempt.
+    """
+    key = getattr(outward, "gatepass_comparison_key", None)
+    if not key:
+        return []
+    prior_rows = frappe.db.sql(
+        """
+        SELECT name
+        FROM `tabFresko Outward`
+        WHERE container=%s
+          AND movement_type='OUTWARD'
+          AND status='Posted'
+          AND gatepass_comparison_key=%s
+          AND name<>%s
+        ORDER BY posted_at, creation, name
+        FOR UPDATE
+        """,
+        (outward.container, key, outward.name),
+        as_dict=True,
+    )
+    opened: list[str] = []
+    for row in prior_rows:
+        existing = frappe.get_all(
+            "Fresko Exception",
+            filters={
+                "exception_type": "DUPLICATE_GATEPASS",
+                "outward": outward.name,
+                "related_outward": row.name,
+            },
+            pluck="name",
+            limit=1,
+        )
+        if existing:
+            opened.append(existing[0])
+            continue
+        exception = frappe.get_doc(
+            {
+                "doctype": "Fresko Exception",
+                "exception_type": "DUPLICATE_GATEPASS",
+                "severity": "Material",
+                "status": "Open",
+                "container": outward.container,
+                "outward": outward.name,
+                "related_outward": row.name,
+                "description": (
+                    "Two posted Outwards in this Container share the same "
+                    "normalized gatepass; review both preserved raw values"
+                ),
+            }
+        )
+        exception.flags.in_outward_service = True
+        exception.insert(ignore_permissions=True)
+        opened.append(exception.name)
+    return opened

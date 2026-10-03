@@ -155,6 +155,7 @@ def _current_snapshot(seed: dict[str, Any]) -> dict[str, Any]:
         OUTWARD_DOCTYPE: {
             "deal": "Link",
             "gatepass_no": "Data",
+            "gatepass_comparison_key": "Data",
             "vehicle_no": "Data",
             "raw_party_name": "Small Text",
             "source_event_id": "Data",
@@ -219,6 +220,11 @@ def _current_snapshot(seed: dict[str, Any]) -> dict[str, Any]:
         "OUTWARD_WITHOUT_DEAL" in exception_options,
         "Migrated Exception options are missing OUTWARD_WITHOUT_DEAL",
     )
+    _require(
+        "DUPLICATE_GATEPASS" in exception_options,
+        "Migrated Exception options are missing DUPLICATE_GATEPASS",
+    )
+    _assert_field("Fresko Exception", "related_outward", "Link")
 
     row_counts = {
         OUTWARD_DOCTYPE: frappe.db.count(OUTWARD_DOCTYPE),

@@ -292,6 +292,71 @@ class TestPhase2AOutward(FrappeTestCase):
         self.assertEqual(doc.lines[0].raw_uom_text, "  Crate  ")
         self.assertEqual(doc.lines[0].raw_rate_text, "  NOT AVAILABLE  ")
 
+    def test_duplicate_gatepass_opens_pairwise_exception_without_rejection(self):
+        container = make_container(
+            self.masters,
+            container_no=f"P2A-GP-{frappe.generate_hash(length=6)}",
+            lot_no="GP-LOT",
+            inward_qty=50,
+        )
+        evidence = self._evidence(container, "duplicate gatepass")
+        frappe.set_user(self.maker)
+        first_result = outward.create(
+            container=container.name,
+            movement_at="2026-10-01 10:00:00",
+            source_evidence=evidence.name,
+            source_event_id="gatepass-first",
+            gatepass_no="  GP / 007  ",
+            lines=[
+                self._line(10, lot_no="GP-LOT", source_line_ref="first-a"),
+                self._line(5, lot_no="GP-LOT", source_line_ref="first-b"),
+            ],
+        )
+        first = frappe.get_doc("Fresko Outward", first_result["name"])
+        self._post(first)
+        self.assertFalse(self._open_exception(first.name, "DUPLICATE_GATEPASS"))
+
+        frappe.set_user(self.maker)
+        second_result = outward.create(
+            container=container.name,
+            movement_at="2026-10-01 11:00:00",
+            source_evidence=evidence.name,
+            source_event_id="gatepass-second",
+            gatepass_no="gp-007",
+            lines=[self._line(5, lot_no="GP-LOT", source_line_ref="second-a")],
+        )
+        second = frappe.get_doc("Fresko Outward", second_result["name"])
+        self._post(second)
+        second.reload()
+        first.reload()
+        self.assertEqual(first.gatepass_no, "  GP / 007  ")
+        self.assertEqual(second.gatepass_no, "gp-007")
+        self.assertEqual(first.gatepass_comparison_key, second.gatepass_comparison_key)
+        duplicates = frappe.get_all(
+            "Fresko Exception",
+            filters={
+                "exception_type": "DUPLICATE_GATEPASS",
+                "outward": second.name,
+                "related_outward": first.name,
+                "status": "Open",
+            },
+            fields=["name", "outward", "related_outward"],
+        )
+        self.assertEqual(len(duplicates), 1)
+
+        frappe.set_user(self.maker)
+        reversal_result = outward.reverse(
+            outward_name=first.name,
+            movement_at="2026-10-01 12:00:00",
+            source_evidence=evidence.name,
+            source_event_id="gatepass-first-reversal",
+            reason="test full reversal",
+        )
+        reversal = frappe.get_doc("Fresko Outward", reversal_result["name"])
+        self._post(reversal)
+        self.assertEqual(reversal.gatepass_no, first.gatepass_no)
+        self.assertFalse(self._open_exception(reversal.name, "DUPLICATE_GATEPASS"))
+
     def test_180_unpriced_then_authorized_rate_assertion_resolves_without_mutating_outward(self):
         container = make_container(
             self.masters,

@@ -1,6 +1,6 @@
 # Canonical business decisions — 2026-10-02
 
-**Status:** Locked by the repository owner for forward implementation
+**Status:** Owner boundaries recorded; evidence-bound facts and exact workflows qualified below
 
 **Scope:** Operational classification of the INR 101, INR 350,000, and
 92-at-INR-700 cases; buyer-alias approval; and future supplier-facing access.
@@ -17,12 +17,12 @@ contract, or accounting evidence to production records. Source facts,
 user-confirmed interpretation, independent bank clearance, and CA/statutory
 treatment remain separate.
 
-## 2. Locked transaction and pricing classifications
+## 2. Transaction and pricing classifications with evidence boundaries
 
 ### BD-101 — INR 101 is a labour payment
 
 - The INR 101 case discussed in the real-data review is an amount **paid for
-  labour**. It is not a customer receipt and is not part of Sohail/customer
+  labour**. It is not a customer receipt and is not part of customer
   collections.
 - It must be excluded from collection totals, customer allocation, receivables,
   and cleared-customer-cash reporting.
@@ -34,25 +34,24 @@ treatment remain separate.
   historical source evidence and is marked superseded or contradicted, not
   deleted.
 
-### BD-350 — INR 350,000 was received
+### BD-350 — owner-stated receipt; fixture acceptance pending bank Evidence
 
-- The INR 350,000 case discussed in the real-data review is now classified as
-  **received**. It must no longer be presented as currently pending merely
-  because an earlier source showed `Authorization InProcess`.
-- Production capture must bind this decision to the exact transaction identity.
-  The reviewed audited workbook associates the case with reference
-  `625819349281`; that reference must be verified when the Collection ledger is
-  implemented.
+- The repository owner has stated that the INR 350,000 case was received. This
+  statement does not by itself authorize a fixture or runtime `received=true`.
+- Before the amount is treated as a fixture/runtime fact, production capture must
+  bind it to exact bank Evidence for the masked transaction reference held
+  outside Git. Until then, use `PENDING_EVIDENCE_BINDING` rather than inventing
+  receipt or clearance certainty.
 - `received` is an operational classification. Independent bank evidence still
   controls a separate `Cleared` state, and allocation to a customer/container
   requires its own authorized record.
 - The earlier pending state remains reproducible at its earlier evidence
   cut-off. The received state is a later state/assertion, not a backdated edit.
 
-### BD-92-700 — source is Sohail's handwritten working
+### BD-92-700 — possible handwritten-photo source remains pending
 
-- The business context for `92 × INR 700 = INR 64,400` is Sohail's handwritten
-  manual working supplied through photos, including the price.
+- The possible business context for `92 × INR 700 = INR 64,400` is a handwritten
+  working supplied through photos. The exact source remains pending until linked.
 - The original photo, raw handwriting/transcription, quantity, rate, source
   message/photo identity, and source time must be preserved.
 - INR 64,400 is deterministic arithmetic, not independent evidence of a sale or
@@ -63,9 +62,10 @@ treatment remain separate.
 - After evidence linkage and approval, record the price as a later commercial
   assertion. Do not mutate the earlier physical Outward.
 
-## 3. Locked buyer-alias approval workflow
+## 3. Buyer-alias approval workflow — PROPOSED detail
 
-Buyer/customer alias mapping is role based:
+Role-based approval is accepted in principle. The following exact transition is
+**PROPOSED**, not owner-confirmed runtime authority:
 
 1. **Fresko Salesperson / Trader** proposes a mapping from the immutable raw
    party string to a Customer.
@@ -84,9 +84,12 @@ Rules:
 - unresolved mappings remain `UNKNOWN` or `REVIEW_PENDING` and cannot reach a
   final customer reconciliation state.
 
-## 4. Locked supplier-facing access boundary
+## 4. Supplier-facing access boundary
 
-A future external supplier role, provisionally named **Fresko Supplier Viewer**,
+The locked boundary is that suppliers must not receive internal per-sale amount
+or internal commercial truth. The following exact field list, role and workflow
+remain **PROPOSED**. A future external supplier role, provisionally named
+**Fresko Supplier Viewer**,
 must use a purpose-built portal/API. It must not receive Fresko Desk access to
 internal Deal, Collection, Customer, receivable, margin, or expense records.
 
@@ -150,12 +153,11 @@ Minimum acceptance assertions for these locked decisions:
 
 - INR 101 contributes zero to customer collections and is shown as a
   labour-related outflow with its provenance/state;
-- INR 350,000 is shown as received, with earlier pending history preserved and
-  bank-cleared/allocation states kept separate;
-- 92 at INR 700 appears only when the exact Sohail photo evidence is linked and
+- INR 350,000 remains `PENDING_EVIDENCE_BINDING` in fixtures/runtime until exact
+  bank Evidence is attached; received/cleared/allocation stay separate;
+- 92 at INR 700 appears only when the exact photo evidence is linked and
   the role approval is recorded;
 - alias approval requires propose -> verify -> approve and preserves the raw
   alias plus supersession history; and
 - a supplier user receives a server-side denial for every internal per-sale
   amount/rate, Customer, Collection, receivable, margin, and internal Deal path.
-

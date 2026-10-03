@@ -132,7 +132,7 @@ conflict reopens `REVIEW_PENDING`; approval cancellation requires compensation.
 The same propose/verify/approve sequence applies to Alias Mapping, rates, and
 allocations. System Manager is not a routine approver.
 
-The 92@700 line remains pending until the exact Sohail handwritten photo is
+The 92@700 line remains pending until the exact handwritten photo is
 linked and approved; then Decimal arithmetic derives 64,400.
 
 ## 4. APIs and permissions

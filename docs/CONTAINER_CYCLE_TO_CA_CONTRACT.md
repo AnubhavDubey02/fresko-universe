@@ -8,7 +8,8 @@
 > **Later decision notice (2026-10-02):**
 > `docs/CANONICAL_BUSINESS_DECISIONS_2026-10-02.md` supersedes the current-state
 > interpretation of the INR 101, INR 350,000, and 92-at-INR-700 cases and adds
-> locked buyer-alias approval and supplier-access boundaries. This contract's
+> the role-based alias principle and supplier-access boundary. Exact role
+> transitions and supplier-visible fields remain proposed. This contract's
 > original time-bounded wording remains historical context.
 
 ## 1. Purpose and authority
@@ -214,6 +215,21 @@ missing. The posting opens one exception per deterministic scope, including:
 
 Missing values remain null/unknown. No exception handler may synthesize a zero
 rate, buyer, Deal, inward quantity, or financial posting.
+
+### 8.5 Canonical lock order
+
+Every mutation affecting quantity for one Container acquires locks in this
+order:
+
+1. `Fresko Container` parent row;
+2. the target `Fresko Outward` or `Fresko Container Quantity Assertion`;
+3. affected lot/posted-ledger or active/superseded assertion rows; and
+4. supporting Exception rows.
+
+Quantity-assertion activation and Outward posting therefore serialize on the
+same Container parent. No service may lock a child record and then acquire its
+Container parent. Draft creation may insert without taking all posting locks,
+but it cannot change physical or commercial capacity.
 
 No-overdraw is enforced against an authorized mapped lot. A source-backed known
 quantity whose lot mapping is unresolved posts into an explicit unmapped physical

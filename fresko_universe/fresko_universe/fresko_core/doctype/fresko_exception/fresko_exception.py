@@ -22,11 +22,18 @@ class FreskoException(Document):
             "OUTWARD_UNPRICED",
             "OUTWARD_WITHOUT_DEAL",
             "LOT_UNRESOLVED",
+            "DUPLICATE_GATEPASS",
             "PHYSICAL_VARIANCE",
         }
         if self.exception_type in outward_exception_types:
             if not getattr(self, "outward", None):
                 frappe.throw(f"{self.exception_type} requires a linked Fresko Outward")
+            if self.exception_type == "DUPLICATE_GATEPASS":
+                related = getattr(self, "related_outward", None)
+                if not related or related == self.outward:
+                    frappe.throw(
+                        "DUPLICATE_GATEPASS requires two distinct linked Outwards"
+                    )
             if not getattr(self.flags, "in_outward_service", False):
                 frappe.throw(
                     "Outward control Exceptions can be changed only by the controlled outward service",
@@ -38,5 +45,12 @@ class FreskoException(Document):
             if existing_outward:
                 frappe.throw(
                     "Linked Outward is immutable once set on a Fresko Exception",
+                    frappe.PermissionError,
+                )
+        if not self.is_new() and self.has_value_changed("related_outward"):
+            existing_related = self.get_db_value("related_outward")
+            if existing_related:
+                frappe.throw(
+                    "Related Outward is immutable once set on a Fresko Exception",
                     frappe.PermissionError,
                 )
