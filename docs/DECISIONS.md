@@ -8,8 +8,8 @@
   - Accounts verifies evidence.
   - Approver approves or rejects.
   - Maker, verifier, and approver must be strictly distinct user accounts.
-  - System Manager is not a routine business approver (relegated to configuration and break-glass).
-- **Supplier access isolation:** Any authenticated user with a supplier role is strictly denied server-side access to internal Commercial Sale, Deal, Customer, alias, rate, amount, collection, receivable, margin, and expense records. Master read rights are restricted to existing internal roles (`Fresko Accounts`, `Fresko Approver`, `System Manager`, and assigned makers).
+  - System Manager has technical read/reconciliation-refresh access; no routine business approval or break-glass mutation API is implemented.
+- **Supplier access isolation:** Supplier roles are denied implemented Commercial Sale, Deal, Customer, alias, rate, amount, and source Evidence/Outward paths, including mixed internal-role accounts. The locked exclusion of future Collections, receivables, margins and expenses remains policy; those ledgers are not implemented here. Master read rights are restricted to existing internal roles (`Fresko Accounts`, `Fresko Approver`, `System Manager`, and assigned makers).
 - **Physical allocation caps & compensation:** Sale-to-Outward allocation enforces explicit caps on both sides. Supersession or alias remapping atomically reverses prior active allocations with compensation records (`REVERSED` state) backed by required evidence.
 - **Operating boundaries preserved:** Collections, customer payments, UI, live WhatsApp ingestion, ERP accounting/GL posting, and deployment remain deferred and out of scope.
 
