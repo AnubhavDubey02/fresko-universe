@@ -27,6 +27,7 @@ conflicting proposal without rewriting the historical record.
 | Phase 1 Container/Deal design | `docs/PHASE1_BLUEPRINT_FINAL.md` | Supersedes specialist drafts where they conflict. |
 | Remaining uncertainty | `docs/OPEN_QUESTIONS.md` | `UNKNOWN` and `PENDING` items remain open until evidence or an authorized decision closes them. |
 | Dependency selection | `docs/DEPENDENCY_POLICY.md`, `docs/THIRD_PARTY.md`, `docs/VERSIONS.md` | Free-first/free-forever rules, approved inventory, and immutable platform pins. |
+| Schema-changing pull requests | `docs/SCHEMA_MIGRATION_PROOFS.md` plus `scripts/schema_migration_proofs.json` | Every persisted-schema change registers a seeded Phase 1-to-current proof run by the reusable harness; non-schema changes add none. |
 | CI verification | `docs/GATE2_CI_RESULT.md` | Exact-SHA run URLs, counts, failures, and skips. A green ancestor is not proof for a later SHA. |
 | Security posture | `docs/security/SECURITY_FINDINGS.md`, `docs/security/SECURITY_TESTING.md` | Finding status and test evidence; FSEC-004/FSEC-005 remain Phase 2 entry gates. |
 | Operational source provenance | `docs/SOURCES.md` | Drive identifiers, immutable local hashes, and permitted phase use. |

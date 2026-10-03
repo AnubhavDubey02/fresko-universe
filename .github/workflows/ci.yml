@@ -38,6 +38,10 @@ jobs:
           python3 -m unittest discover -s scripts -p 'test_protected_doctype_writes.py' -v
           python3 scripts/validate_real_data_shadow_fixture.py
           python3 -m unittest discover -s scripts -p 'test_real_data_shadow_fixture.py' -v
+      - name: Validate schema migration proof registry
+        run: |
+          python3 scripts/run_schema_migration_harness.py --validate-only
+          python3 -m unittest discover -s scripts -p 'test_schema_migration_harness.py' -v
       - name: Assert pin file present
         run: |
           test -f .github/frappe-versions.json

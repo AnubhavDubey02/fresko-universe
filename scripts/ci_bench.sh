@@ -162,7 +162,9 @@ echo "==> ERPNext before_tests finished"
 echo "==> run-tests --app fresko_universe"
 bench --site "${SITE}" run-tests --app fresko_universe
 
-echo "==> prove exact Phase 1 Evidence Attempt Link-to-Data migration"
+echo "==> prove exact Phase 1-to-current schema migrations (registered seeded proofs)"
+MIGRATION_HARNESS="${ROOT}/scripts/run_schema_migration_harness.py"
+python3 "${MIGRATION_HARNESS}" --validate-only
 if ! git -C "${ROOT}" merge-base --is-ancestor "${BASELINE_SHA}" HEAD; then
   echo "Phase 1 baseline ${BASELINE_SHA} is not available as an ancestor of HEAD" >&2
   exit 1
@@ -184,10 +186,7 @@ bench new-site "${UPGRADE_SITE}" \
   --db-host "${DB_HOST}"
 bench --site "${UPGRADE_SITE}" install-app erpnext
 bench --site "${UPGRADE_SITE}" install-app fresko_universe
-./env/bin/python "${ROOT}/scripts/prove_evidence_attempt_link_data_migration.py" \
-  --site "${UPGRADE_SITE}" seed_phase1
-./env/bin/python "${ROOT}/scripts/prove_phase2a_outward_upgrade.py" \
-  --site "${UPGRADE_SITE}" seed_phase1
+./env/bin/python "${MIGRATION_HARNESS}" --site "${UPGRADE_SITE}" seed_phase1
 
 vendor_fresko_app "${APP_SRC}" "current-upgrade-candidate"
 diff -qr \
@@ -197,14 +196,8 @@ diff -qr \
   "${APP_SRC}" apps/fresko_universe
 
 bench --site "${UPGRADE_SITE}" migrate
-./env/bin/python "${ROOT}/scripts/prove_evidence_attempt_link_data_migration.py" \
-  --site "${UPGRADE_SITE}" verify_first_migrate
-./env/bin/python "${ROOT}/scripts/prove_phase2a_outward_upgrade.py" \
-  --site "${UPGRADE_SITE}" verify_first_migrate
+./env/bin/python "${MIGRATION_HARNESS}" --site "${UPGRADE_SITE}" verify_first_migrate
 bench --site "${UPGRADE_SITE}" migrate
-./env/bin/python "${ROOT}/scripts/prove_evidence_attempt_link_data_migration.py" \
-  --site "${UPGRADE_SITE}" verify_second_migrate
-./env/bin/python "${ROOT}/scripts/prove_phase2a_outward_upgrade.py" \
-  --site "${UPGRADE_SITE}" verify_second_migrate
+./env/bin/python "${MIGRATION_HARNESS}" --site "${UPGRADE_SITE}" verify_second_migrate
 
 echo "==> CI bench OK"

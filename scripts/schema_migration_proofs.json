@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "proofs": [
+    {
+      "id": "evidence_attempt_link_to_data",
+      "path": "scripts/prove_evidence_attempt_link_data_migration.py"
+    },
+    {
+      "id": "phase2a_physical_ledger",
+      "path": "scripts/prove_phase2a_outward_upgrade.py"
+    }
+  ]
+}
