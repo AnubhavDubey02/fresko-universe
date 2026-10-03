@@ -29,6 +29,12 @@ class TestProtectedDoctypeWriteGuard(unittest.TestCase):
         )
         self.assertEqual(len(violations), 1)
 
+    def test_aliased_database_set_value_also_fails(self):
+        violations = self.scan(
+            "database.set_value('Fresko Container Quantity Assertion', 'Q-1', 'status', 'Active')\n"
+        )
+        self.assertEqual(len(violations), 1)
+
     def test_write_sql_against_protected_table_fails(self):
         violations = self.scan(
             "frappe.db.sql('UPDATE `tabFresko Field Assertion` SET status=%s', ('Active',))\n"

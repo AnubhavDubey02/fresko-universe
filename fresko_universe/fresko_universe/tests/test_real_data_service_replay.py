@@ -145,4 +145,3 @@ class TestRealDataServiceReplay(FrappeTestCase):
             ),
             1,
         )
-

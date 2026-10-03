@@ -58,7 +58,7 @@ def scan_file(path: Path) -> list[str]:
         if not isinstance(node, ast.Call):
             continue
         name = _call_name(node.func)
-        if name.endswith("db.set_value"):
+        if name.endswith(".set_value"):
             target, dynamic = _static_text(node.args[0]) if node.args else (None, True)
             if dynamic or target in PROTECTED_DOCTYPES:
                 violations.append(
@@ -68,7 +68,7 @@ def scan_file(path: Path) -> list[str]:
             violations.append(
                 f"{path}:{node.lineno}: direct Document.db_set bypass is forbidden in runtime code"
             )
-        elif name.endswith("db.sql") and node.args:
+        elif name.endswith(".sql") and node.args:
             sql, dynamic = _static_text(node.args[0])
             if sql and WRITE_SQL.search(sql):
                 mentions_protected = any(table.lower() in sql.lower() for table in PROTECTED_TABLES)
