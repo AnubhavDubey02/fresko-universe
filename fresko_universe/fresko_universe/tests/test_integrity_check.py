@@ -268,7 +268,8 @@ class TestIntegrityCheck(FrappeTestCase):
         self.assertEqual(len(seals), 1)
         self.assertFalse(seals[0].terminal_sha256)  # Draft, no terminal yet
 
-        # Legitimate post through the service.
+        # Legitimate post through the service: only the preparer may submit.
+        frappe.set_user(self.maker)
         outward.submit_for_review(doc.name)
         frappe.set_user(self.checker)
         outward.post(doc.name)
@@ -318,6 +319,15 @@ class TestIntegrityCheck(FrappeTestCase):
             if hasattr(exc.flags, "in_outward_service"):
                 exc.flags.in_outward_service = True
             exc.save(ignore_permissions=True)
+
+        # The integrity Exception must be the only open blocker, so the gate
+        # assertion below cannot pass because of an unrelated Exception.
+        still_open = frappe.get_all(
+            "Fresko Exception",
+            filters={"container": container.name, "status": ("in", ["Open", "In Progress"])},
+            pluck="name",
+        )
+        self.assertEqual(still_open, [ow_seals[0].mismatch_exception])
 
         container.reload()
         container.status = "Closing"

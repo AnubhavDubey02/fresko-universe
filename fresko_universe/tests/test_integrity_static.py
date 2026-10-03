@@ -86,6 +86,13 @@ class TestIntegritySealStaticContract(unittest.TestCase):
         for field in service_fields:
             self.assertIn(field, line_fields, f"OUTWARD_LINE_FIELDS contains {field} not in Outward Line JSON")
 
+    def test_frappe_reads_use_doctype_names_not_table_names(self):
+        # frappe.get_all/get_value take DocType names; a "tab..." name fails at runtime.
+        line_def = json.loads(OUTWARD_LINE_DT.read_text(encoding="utf-8"))
+        source = SERVICE.read_text(encoding="utf-8")
+        self.assertIn(f'"line_doctype": "{line_def["name"]}"', source)
+        self.assertNotRegex(source, r'(get_all|get_value|exists)\(\s*"tab')
+
     def test_terminal_fields_exist_in_doctype_jsons(self):
         ow_def = json.loads(OUTWARD_DT.read_text(encoding="utf-8"))
         ow_fields = {f["fieldname"] for f in ow_def["fields"]}

@@ -96,7 +96,8 @@ CHECKED_DOCTYPES = {
     "Fresko Outward": {
         "payload_fields": OUTWARD_PAYLOAD_FIELDS,
         "has_lines": True,
-        "line_table": "tabFresko Outward Line",
+        # frappe.get_all takes the DocType name, not the `tab...` table name.
+        "line_doctype": "Fresko Outward Line",
         "line_fields": OUTWARD_LINE_FIELDS,
         "terminal_statuses": OUTWARD_TERMINAL_STATUSES,
         "terminal_fields": OUTWARD_TERMINAL_FIELDS,
@@ -168,7 +169,7 @@ def _read_payload_hash(doctype: str, name: str, config: dict) -> str | None:
     lines = None
     if config.get("has_lines"):
         line_rows = frappe.get_all(
-            config["line_table"],
+            config["line_doctype"],
             filters={"parent": name, "parenttype": doctype},
             fields=list(config["line_fields"]),
             order_by="idx asc",
