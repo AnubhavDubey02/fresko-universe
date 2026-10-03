@@ -132,10 +132,15 @@ def _canonicalize(value: Any) -> Any:
         return value.isoformat()
     if isinstance(value, time):
         return value.isoformat()
-    if isinstance(value, Decimal):
-        return format(value, "f")
-    if isinstance(value, float):
-        return repr(value)
+    if isinstance(value, (Decimal, float)):
+        # One normalized decimal text for both, so a driver returning Decimal
+        # instead of float (10.000000000 vs 10.0) cannot raise a false alarm.
+        number = Decimal(repr(value)) if isinstance(value, float) else value
+        if not number.is_finite():
+            return str(number)
+        if number == 0:
+            return "0"
+        return format(number.normalize(), "f")
     if isinstance(value, bool):
         return int(value)
     if isinstance(value, int):

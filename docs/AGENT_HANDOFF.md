@@ -816,3 +816,22 @@ Exact-head GitHub Smoke and pinned Bench remain the merge gate.
   status and actor fields, which are outside the sealed payload. They seal the
   terminal state once and raise no mismatch.
 - `RECORD_MISSING` exceptions cite the sealed payload hash.
+### Known limitations (stated, not hidden)
+
+- Only changes made after the first seal are detected. The first run treats the
+  current state as the baseline.
+- `Active` is not a sealed terminal state, because legitimate supersession
+  later changes it. A direct write moving an `Active` assertion back to
+  `Draft`/`Review Pending` is therefore not detected; its payload fields still
+  are.
+- The seal ledger is protected only at the application layer (service flag,
+  immutability, `on_trash`, protected-write guard). A database-level actor who
+  deletes or rewrites seal rows can defeat it. A raw-deleted seal is silently
+  re-created as a new baseline.
+- A Field Assertion first sealed after its Outward is gone gets a seal with no
+  Container, so its integrity Exception blocks no Container close gate.
+- Each run reads every protected record, with several queries per record. Use
+  `limit` or batch the reads before large volumes.
+- Integer, decimal and float values are canonicalized to one normalized decimal
+  text, so a driver returning `Decimal` instead of `float` cannot raise a false
+  alarm.

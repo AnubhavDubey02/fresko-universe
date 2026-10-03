@@ -368,6 +368,16 @@ class TestIntegrityCheck(FrappeTestCase):
         with self.assertRaises(frappe.PermissionError):
             frappe.delete_doc("Fresko Integrity Seal", seals[0].name, ignore_permissions=True)
 
+    def test_canonical_numbers_are_driver_independent(self):
+        from decimal import Decimal
+
+        canonical = integrity_service._canonicalize
+        self.assertEqual(canonical(10.0), "10")
+        self.assertEqual(canonical(Decimal("10.000000000")), "10")
+        self.assertEqual(canonical(10.5), canonical(Decimal("10.500000000")))
+        self.assertEqual(canonical(0.0), canonical(Decimal("0E-9")))
+        self.assertNotEqual(canonical(10.0), canonical(10.5))
+
     def test_i_role_gate(self):
         frappe.set_user(self.salesperson_only)
         with self.assertRaises(frappe.PermissionError):
