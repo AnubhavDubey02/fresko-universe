@@ -930,6 +930,66 @@
    },
    "module": "Fresko Core"
   },
+  "Fresko Integrity Seal": {
+   "autoname": "hash",
+   "engine": "InnoDB",
+   "fields": {
+    "container": {
+     "fieldtype": "Link",
+     "options": "Fresko Container"
+    },
+    "mismatch_detected_at": {
+     "fieldtype": "Datetime"
+    },
+    "mismatch_exception": {
+     "fieldtype": "Link",
+     "options": "Fresko Exception"
+    },
+    "mismatch_kind": {
+     "fieldtype": "Select",
+     "options": "\nPAYLOAD_CHANGED\nTERMINAL_CHANGED\nRECORD_MISSING"
+    },
+    "mismatch_observed_sha256": {
+     "fieldtype": "Data"
+    },
+    "payload_sha256": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "record_doctype": {
+     "fieldtype": "Select",
+     "options": "Fresko Outward\nFresko Field Assertion\nFresko Container Quantity Assertion",
+     "reqd": 1
+    },
+    "record_name": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "seal_key": {
+     "fieldtype": "Data",
+     "reqd": 1,
+     "unique": 1
+    },
+    "seal_version": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "sealed_at": {
+     "fieldtype": "Datetime",
+     "reqd": 1
+    },
+    "terminal_sealed_at": {
+     "fieldtype": "Datetime"
+    },
+    "terminal_sha256": {
+     "fieldtype": "Data"
+    },
+    "terminal_status": {
+     "fieldtype": "Data"
+    }
+   },
+   "module": "Fresko Core"
+  },
   "Fresko Outward": {
    "autoname": "naming_series:",
    "engine": "InnoDB",
@@ -1143,7 +1203,8 @@
  "migration_proofs": [
   "evidence_attempt_link_to_data",
   "phase2a_physical_ledger",
-  "physical_variance_exception"
+  "physical_variance_exception",
+  "integrity_seal_ledger"
  ],
  "schema_sources": {
   "install.py": "6ed6ee1c49fb1482c9d15ffe98bb60419e0ec4afe47ffb0fe372bcf08f5a9004",

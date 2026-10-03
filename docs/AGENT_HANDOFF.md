@@ -748,3 +748,71 @@ json.load) are the local merge evidence. Exact-head GitHub Bench remains the mer
   database returns dates and decimals in a different format, so a recompute
   would raise false alarms. The checker detects post-baseline changes only and
   is a schema change with its own proof.
+
+## 2026-10-03 protected-record integrity checker (continuation step 4)
+
+### What it does
+
+A periodic integrity checker runs daily (Frappe scheduler) and is also
+callable on demand by System Manager or Fresko Approver. It scans every
+Fresko Outward, Fresko Field Assertion, and Fresko Container Quantity
+Assertion record. On first observation it creates a Fresko Integrity Seal
+containing a canonical SHA-256 hash of the record's immutable stored fields
+as read from the database. Later runs re-read with the same canonical reader
+and compare.
+
+If a payload hash or terminal-state hash no longer matches the sealed
+baseline, or the record has been deleted, the checker opens a Critical
+DATA_INTEGRITY Fresko Exception and records the mismatch on the seal.
+
+### Baseline-ledger rationale
+
+The creation-time `payload_sha256` hashes the *request input as supplied*
+(e.g. `str(movement_at)` as typed by the caller), so recomputing it from DB
+rows would raise FALSE integrity alarms (dates and decimals round-trip
+through MariaDB in a different format). Instead, a separate baseline ledger
+hashes the record's stored fields the first time the checker observes them,
+using a deterministic canonical reader. This detects post-first-seal changes
+only.
+
+### Explicit limitations
+
+- First run seals current state as baseline; does not prove pre-baseline
+  integrity.
+- Evidence/Attachment hashing is out of scope.
+- Daily schedule needs a running Frappe scheduler; no deployment done.
+- Migration never seals or blesses anything.
+
+### Files added/changed
+
+- `fresko_universe/fresko_universe/fresko_core/doctype/fresko_integrity_seal/`
+  (DocType JSON, controller, `__init__.py`)
+- `fresko_universe/fresko_universe/fresko_core/services/integrity_service.py`
+- `fresko_universe/fresko_universe/integrity.py` (whitelist facade)
+- `fresko_universe/fresko_universe/permissions.py`
+  (`assert_can_run_integrity_check`)
+- `fresko_universe/fresko_universe/hooks.py` (scheduler_events daily)
+- `scripts/prove_integrity_seal_upgrade.py` and
+  `scripts/schema_migration_proofs.json` (registered last as
+  `integrity_seal_ledger`)
+- `scripts/check_protected_doctype_writes.py` (added seal to protected set)
+- `scripts/schema_snapshot.json` (updated)
+- `fresko_universe/fresko_universe/tests/test_integrity_check.py` (9 Bench
+  integration cases)
+- `fresko_universe/tests/test_integrity_static.py` (7 offline static checks)
+
+### Bench CI
+
+PENDING CI. Offline gates (harness --validate-only, schema snapshot, smoke,
+static, protected-doctype, py_compile, json.load) are the local evidence.
+Exact-head GitHub Smoke and pinned Bench remain the merge gate.
+### CTO review hardening
+
+- After a record's terminal state (Posted, Rejected or Superseded) is sealed,
+  each later run hashes the terminal fields whatever the current status. A
+  direct write that moves a Posted Outward back to Draft therefore reports
+  `TERMINAL_CHANGED` instead of looking non-terminal and counting as unchanged.
+- Legitimate service transitions (submit, post, review, supersede) change only
+  status and actor fields, which are outside the sealed payload. They seal the
+  terminal state once and raise no mismatch.
+- `RECORD_MISSING` exceptions cite the sealed payload hash.

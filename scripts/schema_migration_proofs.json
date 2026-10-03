@@ -12,6 +12,10 @@
     {
       "id": "physical_variance_exception",
       "path": "scripts/prove_physical_variance_upgrade.py"
+    },
+    {
+      "id": "integrity_seal_ledger",
+      "path": "scripts/prove_integrity_seal_upgrade.py"
     }
   ]
 }
