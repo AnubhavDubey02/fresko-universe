@@ -177,16 +177,18 @@ def _evidence_file(evidence):
     """Resolve a URL to its source attachment without choosing an unrelated File.
 
     Frappe can retain several File documents for a shared content URL. The
-    Evidence attachment is the identity; a lone URL record is a legacy fallback.
-    Multiple candidates without a unique attachment remain ambiguous.
+    exact Evidence Attach-field identity takes precedence over an older parent
+    attachment; a lone URL record is a legacy fallback. Multiple candidates at
+    the same identity specificity remain ambiguous.
     """
     if not evidence.file:
         return None
     rows = frappe.get_all("File", filters={"file_url": evidence.file},
-        fields=["name", "attached_to_doctype", "attached_to_name"])
+        fields=["name", "attached_to_doctype", "attached_to_name", "attached_to_field"])
     attached = [row for row in rows if row.attached_to_doctype == "Fresko Evidence"
         and row.attached_to_name == evidence.name]
-    candidates = attached or rows
+    field_attached = [row for row in attached if getattr(row, "attached_to_field", None) == "file"]
+    candidates = field_attached or attached or rows
     if len(candidates) > 1:
         _fail("Evidence File identity is ambiguous")
     return _linked("File", candidates[0].name) if candidates else None

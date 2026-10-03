@@ -113,12 +113,17 @@ class MoneyContractOfflineTest(unittest.TestCase):
         unrelated = types.SimpleNamespace(
             name="FILE-OTHER", attached_to_doctype="Customer", attached_to_name="CUST-1"
         )
-        attached = types.SimpleNamespace(
-            name="FILE-EVIDENCE", attached_to_doctype="Fresko Evidence", attached_to_name="EVID-1"
+        legacy_attached = types.SimpleNamespace(
+            name="FILE-LEGACY", attached_to_doctype="Fresko Evidence", attached_to_name="EVID-1",
+            attached_to_field=None,
+        )
+        field_attached = types.SimpleNamespace(
+            name="FILE-EVIDENCE", attached_to_doctype="Fresko Evidence", attached_to_name="EVID-1",
+            attached_to_field="file",
         )
         selected_file = types.SimpleNamespace(name="FILE-EVIDENCE")
         self.frappe.has_permission = MagicMock(return_value=True)
-        with patch.object(self.frappe, "get_all", create=True, return_value=[unrelated, attached]):
+        with patch.object(self.frappe, "get_all", create=True, return_value=[unrelated, legacy_attached, field_attached]):
             with patch.object(self.frappe.db, "exists", return_value=True):
                 with patch.object(self.frappe, "get_doc", create=True, return_value=selected_file):
                     result = self.service._evidence_file(evidence)
@@ -128,11 +133,15 @@ class MoneyContractOfflineTest(unittest.TestCase):
     def test_evidence_file_rejects_ambiguous_attached_or_unbound_candidates(self):
         evidence = types.SimpleNamespace(name="EVID-1", file="/files/shared.pdf")
         rows = [
-            types.SimpleNamespace(name="FILE-1", attached_to_doctype="Fresko Evidence", attached_to_name="EVID-1"),
-            types.SimpleNamespace(name="FILE-2", attached_to_doctype="Fresko Evidence", attached_to_name="EVID-1"),
+            types.SimpleNamespace(name="FILE-1", attached_to_doctype="Fresko Evidence", attached_to_name="EVID-1", attached_to_field="file"),
+            types.SimpleNamespace(name="FILE-2", attached_to_doctype="Fresko Evidence", attached_to_name="EVID-1", attached_to_field="file"),
+        ]
+        legacy_rows = [
+            types.SimpleNamespace(name="FILE-1", attached_to_doctype="Fresko Evidence", attached_to_name="EVID-1", attached_to_field=None),
+            types.SimpleNamespace(name="FILE-2", attached_to_doctype="Fresko Evidence", attached_to_name="EVID-1", attached_to_field=None),
         ]
         self.frappe.has_permission = MagicMock(return_value=True)
-        for candidates in (rows, [
+        for candidates in (rows, legacy_rows, [
             types.SimpleNamespace(name="FILE-1", attached_to_doctype=None, attached_to_name=None),
             types.SimpleNamespace(name="FILE-2", attached_to_doctype="Customer", attached_to_name="CUST-1"),
         ]):

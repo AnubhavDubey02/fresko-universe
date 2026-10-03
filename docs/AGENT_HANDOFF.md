@@ -906,3 +906,9 @@ Exact-head GitHub Smoke and pinned Bench remain the merge gate.
 - Run [37148698924](https://github.com/AnubhavDubey02/fresko-universe/actions/runs/37148698924) at `e1236773c081cfcf19f008180ab78ee0313d106b`: Smoke passed; Bench ran 258 tests with one failure and one cleanup error in the same File-byte binding case. Earlier hook/correction failures were repaired. Migration gates were not reached.
 - Pinned Frappe `save_file` can reuse a content URL across distinct attached File documents. Money evidence now selects the uniquely attached Evidence File, accepts a unique legacy URL record, and rejects ambiguous candidates; source binding and read ACLs share the same resolver. Tests retain exact File identity and actual-byte assertions, explicitly create shared-URL attachments, and clean only their synthetic sources.
 - Independent Luna reviewed the resolver and added ambiguity/selected-ACL regressions. 218 app/offline tests pass locally; 39 money Bench methods compile. A fresh exact-head Smoke + pinned Bench and migration run is still required.
+
+
+## 2026-10-03 — PR #16 pinned Attach-field correction
+
+- Run [37149479176](https://github.com/AnubhavDubey02/fresko-universe/actions/runs/37149479176) at `f4ec6900ae06fd94a95047d528dbfeb136082cba`: Smoke passed; 258 Bench tests, zero failures and one File-identity ambiguity error. Pinned `attach_files_to_document` requires the attachment field as well as parent identity, and creates a field-specific reference when an existing upload omits it.
+- The source fixture now passes `df="file"` and asserts the exact shared-URL File ID set after both Evidence saves. The resolver prefers the exact Evidence `file` attachment, then a unique parent-only or legacy URL match; same-specificity ambiguity still rejects. This narrow framework escalation was independently checked, with no skipped tests or weakened identity assertions. Fresh exact-head CI remains required.

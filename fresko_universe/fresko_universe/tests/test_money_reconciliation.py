@@ -739,9 +739,11 @@ class TestMoneyReconciliation(FrappeTestCase):
         }).insert(ignore_permissions=True)
         file_names = []
         self.addCleanup(self._cleanup_test_files, file_names, [self.evidence.name, other_evidence.name])
-        file_doc = save_file(f"money-{self.token}.txt", source_bytes, "Fresko Evidence", self.evidence.name, is_private=1)
+        # Pinned Frappe's Attach on_update hook matches parent AND field; df
+        # prevents Evidence.save from creating another copy for its Attach field.
+        file_doc = save_file(f"money-{self.token}.txt", source_bytes, "Fresko Evidence", self.evidence.name, is_private=1, df="file")
         file_names.append(file_doc.name)
-        duplicate = save_file(f"money-duplicate-{self.token}.txt", source_bytes, "Fresko Evidence", other_evidence.name, is_private=1)
+        duplicate = save_file(f"money-duplicate-{self.token}.txt", source_bytes, "Fresko Evidence", other_evidence.name, is_private=1, df="file")
         file_names.append(duplicate.name)
         self.assertNotEqual(file_doc.name, duplicate.name)
         self.assertEqual(file_doc.file_url, duplicate.file_url)
@@ -752,6 +754,12 @@ class TestMoneyReconciliation(FrappeTestCase):
         self.evidence.save(ignore_permissions=True)
         other_evidence.file = duplicate.file_url
         other_evidence.save(ignore_permissions=True)
+        self.assertEqual(set(frappe.get_all("File", filters={"file_url": file_doc.file_url}, pluck="name")),
+                         {file_doc.name, duplicate.name})
+        file_doc.reload()
+        duplicate.reload()
+        self.assertEqual(file_doc.attached_to_field, "file")
+        self.assertEqual(duplicate.attached_to_field, "file")
         receipt = self._collection()
         self.assertEqual(receipt.evidence_file, file_doc.name)
         self.assertEqual(receipt.evidence_sha256, hashlib.sha256(source_bytes).hexdigest())
