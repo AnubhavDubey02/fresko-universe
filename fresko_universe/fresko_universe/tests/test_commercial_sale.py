@@ -18,7 +18,7 @@ from queue import Queue
 import frappe
 from frappe import client
 from frappe.tests.utils import FrappeTestCase
-from frappe.utils import add_to_date, get_datetime
+from frappe.utils import add_to_date, get_datetime, now_datetime
 from frappe.utils.file_manager import save_file
 
 from fresko_universe import commercial, outward
@@ -253,6 +253,8 @@ class TestCommercialSale(FrappeTestCase):
         outward_view = commercial.get_outward_reconciliation(physical.name, as_of="2099-12-31 23:59:59")
         self.assertEqual(Decimal(outward_view["totals_by_uom"][self.masters["uom"]]["remaining_qty"]), Decimal(40))
         self.assertIn("ALIAS_UNRESOLVED", outward_view["unresolved_flags"])
+        self.assertIn("RATE_UNKNOWN", outward_view["unresolved_flags"])
+        self.assertTrue(outward_view["linked_sales"][0]["rate_unresolved"])
 
     def test_corrected_sale_compensation_has_one_atomic_recording_time(self):
         sale = self._approve_sale(self._create())
@@ -951,7 +953,7 @@ class TestCommercialSale(FrappeTestCase):
         time.sleep(1.1)
         frappe.set_user(self.maker)
         result = outward.reverse(
-            physical.name, movement_at="2026-10-03 15:00:00",
+            physical.name, movement_at=str(now_datetime()),
             source_evidence=self.evidence.name, source_event_id=f"{self.token}:physical-reversal",
             reason="Physical source movement cancelled",
         )

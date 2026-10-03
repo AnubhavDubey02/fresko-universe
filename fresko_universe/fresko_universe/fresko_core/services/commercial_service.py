@@ -1093,7 +1093,9 @@ def get_outward_reconciliation(outward_name, as_of=None):
         view = get_sale_as_of(row.sale, cutoff_text)
         linked = [allocation for allocation in view["allocations"] if allocation["outward"] == outward_name]
         if linked:
-            linked_sales.append({"name": view["name"], "sale_at": view["sale_at"], "status": view["status"], "customer": view["customer"], "reconciliation_state": view["reconciliation_state"]})
+            line_keys = {allocation["sale_line_key"] for allocation in linked}
+            rate_unresolved = any(line["price_state"] != "FINAL" or line["rate"] is None for line in view["lines"] if line["line_key"] in line_keys)
+            linked_sales.append({"name": view["name"], "sale_at": view["sale_at"], "status": view["status"], "customer": view["customer"], "rate_unresolved": rate_unresolved, "reconciliation_state": view["reconciliation_state"]})
             allocations.extend(linked)
     groups, lines = {}, []
     active = _physical_as_of(physical, cutoff)
@@ -1106,7 +1108,7 @@ def get_outward_reconciliation(outward_name, as_of=None):
             _add_qty(groups, line.uom, "remaining_qty", qty - allocated)
         lines.append({"line_key": line.line_key, "uom": line.uom, "qty": format(qty, "f"), "commercially_allocated_qty": format(allocated, "f"), "remaining_qty": format(qty - allocated, "f") if active else None})
     complete = active and bool(lines) and all(Decimal(row["remaining_qty"]) == 0 for row in lines)
-    unresolved = sorted({"ALIAS_UNRESOLVED" for sale in linked_sales if not sale["customer"]} | ({"OUTWARD_WITHOUT_SALE"} if active and not complete else set()))
+    unresolved = sorted({"ALIAS_UNRESOLVED" for sale in linked_sales if not sale["customer"]} | {"RATE_UNKNOWN" for sale in linked_sales if sale["rate_unresolved"]} | ({"OUTWARD_WITHOUT_SALE"} if active and not complete else set()))
     confirmed = complete and all(sale["reconciliation_state"] == "CONFIRMED" for sale in linked_sales)
     return {"outward": outward_name, "movement_at": str(physical.movement_at), "as_of": cutoff_text, "physical_active": active, "allocations": allocations, "lines": lines, "totals_by_uom": _string_groups(groups), "linked_sales": linked_sales, "unresolved_flags": unresolved, "reconciliation_state": "CONFIRMED" if confirmed else "PARTIAL" if allocations else "PENDING"}
 
