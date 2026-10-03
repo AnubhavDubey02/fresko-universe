@@ -1,0 +1,1155 @@
+{
+ "doctypes": {
+  "Fresko Approval": {
+   "autoname": "hash",
+   "engine": "InnoDB",
+   "fields": {
+    "approver": {
+     "default": "__user",
+     "fieldtype": "Link",
+     "options": "User",
+     "reqd": 1
+    },
+    "consumed": {
+     "default": "0",
+     "fieldtype": "Check"
+    },
+    "deal": {
+     "fieldtype": "Link",
+     "options": "Fresko Deal",
+     "reqd": 1
+    },
+    "decided_at": {
+     "default": "Now",
+     "fieldtype": "Datetime",
+     "reqd": 1
+    },
+    "decision": {
+     "fieldtype": "Select",
+     "options": "APPROVE\nCOUNTER\nREJECT\nOVERSELL_OVERRIDE",
+     "reqd": 1
+    },
+    "decision_rate": {
+     "fieldtype": "Currency"
+    },
+    "exception": {
+     "fieldtype": "Link",
+     "options": "Fresko Exception"
+    },
+    "oversell_override": {
+     "fieldtype": "Check"
+    },
+    "proposed_rate": {
+     "fieldtype": "Currency"
+    },
+    "rate_ceiling": {
+     "fieldtype": "Currency"
+    },
+    "rate_floor": {
+     "fieldtype": "Currency"
+    },
+    "reason": {
+     "fieldtype": "Small Text",
+     "reqd": 1
+    },
+    "revision": {
+     "fieldtype": "Link",
+     "options": "Fresko Revision"
+    }
+   },
+   "module": "Fresko Core"
+  },
+  "Fresko Container": {
+   "autoname": "naming_series:",
+   "engine": "InnoDB",
+   "fields": {
+    "amended_from": {
+     "fieldtype": "Link",
+     "options": "Fresko Container"
+    },
+    "arrival_date": {
+     "fieldtype": "Date",
+     "reqd": 1
+    },
+    "closing_status": {
+     "default": "Open",
+     "fieldtype": "Select",
+     "options": "Open\nReady to Close\nClosed with Exceptions\nFully Reconciled\nCancelled",
+     "reqd": 1
+    },
+    "company": {
+     "fieldtype": "Link",
+     "options": "Company",
+     "reqd": 1
+    },
+    "container_no": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "country_of_origin": {
+     "fieldtype": "Link",
+     "options": "Country"
+    },
+    "currency": {
+     "fieldtype": "Link",
+     "options": "Currency",
+     "reqd": 1
+    },
+    "default_rate_ceiling": {
+     "fieldtype": "Currency"
+    },
+    "default_rate_floor": {
+     "fieldtype": "Currency"
+    },
+    "inward_qty": {
+     "fieldtype": "Float",
+     "reqd": 1
+    },
+    "item": {
+     "fieldtype": "Link",
+     "options": "Item",
+     "reqd": 1
+    },
+    "item_name": {
+     "fieldtype": "Data"
+    },
+    "landed_cost": {
+     "fieldtype": "Currency"
+    },
+    "lots": {
+     "fieldtype": "Table",
+     "options": "Fresko Container Lot"
+    },
+    "naming_series": {
+     "default": "CON-.YYYY.-.",
+     "fieldtype": "Select",
+     "options": "CON-.YYYY.-.",
+     "reqd": 1
+    },
+    "opening_notes": {
+     "fieldtype": "Small Text"
+    },
+    "rate_rules": {
+     "fieldtype": "Table",
+     "options": "Fresko Container Rate Rule"
+    },
+    "source_documents": {
+     "fieldtype": "Table",
+     "options": "Fresko Container Source Document"
+    },
+    "status": {
+     "default": "Draft",
+     "fieldtype": "Select",
+     "options": "Draft\nExpected\nArrived\nIn Cold Storage\nSelling\nClosing\nClosed\nCancelled",
+     "reqd": 1
+    },
+    "supplier": {
+     "fieldtype": "Link",
+     "options": "Supplier",
+     "reqd": 1
+    },
+    "uom": {
+     "fieldtype": "Link",
+     "options": "UOM",
+     "reqd": 1
+    },
+    "warehouse": {
+     "fieldtype": "Link",
+     "options": "Warehouse"
+    }
+   },
+   "module": "Fresko Core"
+  },
+  "Fresko Container Lot": {
+   "engine": "InnoDB",
+   "fields": {
+    "batch": {
+     "fieldtype": "Link",
+     "options": "Batch"
+    },
+    "count_size": {
+     "fieldtype": "Data"
+    },
+    "inward_qty": {
+     "fieldtype": "Float",
+     "reqd": 1
+    },
+    "lot_no": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "rate_ceiling_override": {
+     "fieldtype": "Currency"
+    },
+    "rate_floor_override": {
+     "fieldtype": "Currency"
+    },
+    "uom": {
+     "fieldtype": "Link",
+     "options": "UOM",
+     "reqd": 1
+    }
+   },
+   "istable": 1,
+   "module": "Fresko Core"
+  },
+  "Fresko Container Quantity Assertion": {
+   "autoname": "hash",
+   "engine": "InnoDB",
+   "fields": {
+    "activated_at": {
+     "fieldtype": "Datetime"
+    },
+    "activated_by": {
+     "fieldtype": "Link",
+     "options": "User"
+    },
+    "assertion_key": {
+     "fieldtype": "Data",
+     "reqd": 1,
+     "unique": 1
+    },
+    "basis": {
+     "fieldtype": "Select",
+     "options": "DECLARED_SHIPPING\nCUSTOMS_DECLARED\nOPERATING_INWARD",
+     "reqd": 1
+    },
+    "container": {
+     "fieldtype": "Link",
+     "options": "Fresko Container",
+     "reqd": 1
+    },
+    "effective_at": {
+     "fieldtype": "Datetime"
+    },
+    "evidence": {
+     "fieldtype": "Link",
+     "options": "Fresko Evidence",
+     "reqd": 1
+    },
+    "payload_sha256": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "prepared_at": {
+     "fieldtype": "Datetime",
+     "reqd": 1
+    },
+    "prepared_by": {
+     "fieldtype": "Link",
+     "options": "User",
+     "reqd": 1
+    },
+    "provenance": {
+     "fieldtype": "Select",
+     "options": "SOURCE_EXTRACTED\nUSER_CONFIRMED\nAUTHORIZED_DECISION",
+     "reqd": 1
+    },
+    "quantity": {
+     "fieldtype": "Data"
+    },
+    "raw_uom": {
+     "fieldtype": "Data"
+    },
+    "raw_value": {
+     "fieldtype": "Small Text",
+     "reqd": 1
+    },
+    "reason": {
+     "fieldtype": "Small Text",
+     "reqd": 1
+    },
+    "reviewed_at": {
+     "fieldtype": "Datetime"
+    },
+    "reviewed_by": {
+     "fieldtype": "Link",
+     "options": "User"
+    },
+    "source_fact_id": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "status": {
+     "default": "Draft",
+     "fieldtype": "Select",
+     "options": "Draft\nReview Pending\nActive\nSuperseded\nRejected",
+     "reqd": 1
+    },
+    "superseded_by": {
+     "fieldtype": "Link",
+     "options": "Fresko Container Quantity Assertion"
+    },
+    "supersedes": {
+     "fieldtype": "Link",
+     "options": "Fresko Container Quantity Assertion"
+    },
+    "uom": {
+     "fieldtype": "Link",
+     "options": "UOM"
+    }
+   },
+   "module": "Fresko Core"
+  },
+  "Fresko Container Rate Rule": {
+   "engine": "InnoDB",
+   "fields": {
+    "count_size": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "notes": {
+     "fieldtype": "Data"
+    },
+    "rate_ceiling": {
+     "fieldtype": "Currency"
+    },
+    "rate_floor": {
+     "fieldtype": "Currency"
+    }
+   },
+   "istable": 1,
+   "module": "Fresko Core"
+  },
+  "Fresko Container Source Document": {
+   "engine": "InnoDB",
+   "fields": {
+    "attachment": {
+     "fieldtype": "Attach"
+    },
+    "content_hash": {
+     "fieldtype": "Data"
+    },
+    "document_type": {
+     "fieldtype": "Select",
+     "options": "Bill of Lading\nPacking List\nInvoice\nGatepass\nOther",
+     "reqd": 1
+    },
+    "notes": {
+     "fieldtype": "Small Text"
+    },
+    "reference": {
+     "fieldtype": "Data"
+    }
+   },
+   "istable": 1,
+   "module": "Fresko Core"
+  },
+  "Fresko Deal": {
+   "autoname": "naming_series:",
+   "engine": "InnoDB",
+   "fields": {
+    "amended_from": {
+     "fieldtype": "Link",
+     "options": "Fresko Deal"
+    },
+    "amount": {
+     "fieldtype": "Currency"
+    },
+    "approval": {
+     "fieldtype": "Link",
+     "options": "Fresko Approval"
+    },
+    "approval_required": {
+     "fieldtype": "Check"
+    },
+    "approved_rate": {
+     "fieldtype": "Currency"
+    },
+    "batch": {
+     "fieldtype": "Link",
+     "options": "Batch"
+    },
+    "buyer_alias": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "cancel_reason": {
+     "fieldtype": "Small Text"
+    },
+    "company": {
+     "fieldtype": "Link",
+     "options": "Company",
+     "reqd": 1
+    },
+    "container": {
+     "fieldtype": "Link",
+     "options": "Fresko Container",
+     "reqd": 1
+    },
+    "container_lot": {
+     "fieldtype": "Data"
+    },
+    "count_size": {
+     "fieldtype": "Data"
+    },
+    "created_on": {
+     "default": "Now",
+     "fieldtype": "Datetime"
+    },
+    "currency": {
+     "fieldtype": "Link",
+     "options": "Currency",
+     "reqd": 1
+    },
+    "customer": {
+     "fieldtype": "Link",
+     "options": "Customer"
+    },
+    "dispatched_qty": {
+     "fieldtype": "Float"
+    },
+    "duplicate_fingerprint": {
+     "fieldtype": "Data",
+     "unique": 1
+    },
+    "item": {
+     "fieldtype": "Link",
+     "options": "Item",
+     "reqd": 1
+    },
+    "lot_no": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "naming_series": {
+     "default": "DEAL-.YYYY.-.",
+     "fieldtype": "Select",
+     "options": "DEAL-.YYYY.-.",
+     "reqd": 1
+    },
+    "proposed_rate": {
+     "fieldtype": "Currency",
+     "reqd": 1
+    },
+    "qty": {
+     "fieldtype": "Float",
+     "reqd": 1
+    },
+    "rate_ceiling": {
+     "fieldtype": "Currency"
+    },
+    "rate_floor": {
+     "fieldtype": "Currency"
+    },
+    "salesperson": {
+     "fieldtype": "Link",
+     "options": "Sales Person"
+    },
+    "salesperson_user": {
+     "fieldtype": "Link",
+     "options": "User"
+    },
+    "source_message_id": {
+     "fieldtype": "Data",
+     "unique": 1
+    },
+    "status": {
+     "default": "Proposed",
+     "fieldtype": "Select",
+     "options": "Proposed\nAuto Approved\nApproval Required\nApproved\nCountered\nRejected\nOutward Pending\nDispatched\nPartially Dispatched\nPayment Pending\nPaid\nPartially Paid\nReconciled\nCancelled\nDisputed",
+     "reqd": 1
+    },
+    "title": {
+     "fieldtype": "Data"
+    },
+    "uom": {
+     "fieldtype": "Link",
+     "options": "UOM",
+     "reqd": 1
+    }
+   },
+   "module": "Fresko Deals"
+  },
+  "Fresko Evidence": {
+   "autoname": "hash",
+   "engine": "InnoDB",
+   "fields": {
+    "container": {
+     "fieldtype": "Link",
+     "options": "Fresko Container"
+    },
+    "content_sha256": {
+     "fieldtype": "Data"
+    },
+    "conversation_id": {
+     "fieldtype": "Data"
+    },
+    "deal": {
+     "fieldtype": "Link",
+     "options": "Fresko Deal"
+    },
+    "evidence_type": {
+     "default": "Note",
+     "fieldtype": "Select",
+     "options": "WhatsApp Message\nEmail\nDocument\nPhoto\nNote\nOther",
+     "reqd": 1
+    },
+    "expected_attachment_count": {
+     "default": -1,
+     "fieldtype": "Int"
+    },
+    "external_ref": {
+     "fieldtype": "Data"
+    },
+    "file": {
+     "fieldtype": "Attach"
+    },
+    "has_attachments": {
+     "fieldtype": "Check"
+    },
+    "hash_algorithm": {
+     "fieldtype": "Data"
+    },
+    "human_verified": {
+     "fieldtype": "Check"
+    },
+    "linked_doctype": {
+     "fieldtype": "Link",
+     "options": "DocType"
+    },
+    "linked_name": {
+     "fieldtype": "Dynamic Link",
+     "options": "linked_doctype"
+    },
+    "manifest_status": {
+     "default": "UNKNOWN",
+     "fieldtype": "Select",
+     "options": "UNKNOWN\nFINALIZED"
+    },
+    "message_id": {
+     "fieldtype": "Data"
+    },
+    "message_payload_sha256": {
+     "fieldtype": "Data"
+    },
+    "notes": {
+     "fieldtype": "Small Text"
+    },
+    "overall_verification_status": {
+     "default": "PENDING",
+     "fieldtype": "Select",
+     "options": "PENDING\nCOMPLETE\nPARTIAL\nCONFLICT"
+    },
+    "parser_version": {
+     "fieldtype": "Data"
+    },
+    "provider": {
+     "fieldtype": "Data"
+    },
+    "provider_account_id": {
+     "fieldtype": "Data"
+    },
+    "provider_message_id": {
+     "fieldtype": "Data"
+    },
+    "received_at": {
+     "fieldtype": "Datetime"
+    },
+    "scoped_message_key": {
+     "fieldtype": "Data",
+     "unique": 1
+    },
+    "source_sender_id": {
+     "fieldtype": "Data"
+    },
+    "source_sent_at": {
+     "fieldtype": "Datetime"
+    },
+    "verified_attachment_count": {
+     "fieldtype": "Int"
+    }
+   },
+   "module": "Fresko Core"
+  },
+  "Fresko Evidence Attachment": {
+   "autoname": "hash",
+   "engine": "InnoDB",
+   "fields": {
+    "attachment_ordinal": {
+     "fieldtype": "Int"
+    },
+    "capture_status": {
+     "default": "PENDING",
+     "fieldtype": "Select",
+     "options": "PENDING\nVERIFYING\nCAPTURED\nFAILED_RETRYABLE\nFAILED_PERMANENT\nPARTIAL\nHASH_MISMATCH\nSUPERSEDED"
+    },
+    "content_byte_count": {
+     "fieldtype": "Int"
+    },
+    "content_sha256": {
+     "fieldtype": "Data"
+    },
+    "conversation_id": {
+     "fieldtype": "Data"
+    },
+    "evidence": {
+     "fieldtype": "Link",
+     "options": "Fresko Evidence",
+     "reqd": 1
+    },
+    "expected_byte_count": {
+     "default": -1,
+     "fieldtype": "Int"
+    },
+    "expected_sha256": {
+     "fieldtype": "Data"
+    },
+    "failure_reason": {
+     "fieldtype": "Small Text"
+    },
+    "file": {
+     "fieldtype": "Attach",
+     "reqd": 1
+    },
+    "file_url": {
+     "fieldtype": "Data"
+    },
+    "hash_algorithm": {
+     "fieldtype": "Data"
+    },
+    "identity_type": {
+     "fieldtype": "Select",
+     "options": "provider_id\nordinal"
+    },
+    "is_current_version": {
+     "default": 1,
+     "fieldtype": "Check"
+    },
+    "is_superseded": {
+     "fieldtype": "Check"
+    },
+    "logical_attachment_key": {
+     "fieldtype": "Data"
+    },
+    "provenance_ref": {
+     "fieldtype": "Data"
+    },
+    "provenance_type": {
+     "default": "MISSING_PROVENANCE",
+     "fieldtype": "Select",
+     "options": "OFFLINE_IMPORT_MANIFEST\nPROVIDER_HEADER_CONTENT_LENGTH\nPROVIDER_PAYLOAD_DIGEST\nUNTRUSTED_CALLER\nMISSING_PROVENANCE"
+    },
+    "provider": {
+     "fieldtype": "Data"
+    },
+    "provider_account_id": {
+     "fieldtype": "Data"
+    },
+    "provider_attachment_id": {
+     "fieldtype": "Data"
+    },
+    "provider_message_id": {
+     "fieldtype": "Data"
+    },
+    "readback_verified": {
+     "fieldtype": "Check"
+    },
+    "scoped_attachment_version_key": {
+     "fieldtype": "Data",
+     "unique": 1
+    },
+    "storage_ref": {
+     "fieldtype": "Data"
+    },
+    "superseded_by": {
+     "fieldtype": "Link",
+     "options": "Fresko Evidence Attachment"
+    },
+    "version": {
+     "default": 1,
+     "fieldtype": "Int"
+    }
+   },
+   "module": "Fresko Core"
+  },
+  "Fresko Evidence Attempt": {
+   "autoname": "hash",
+   "engine": "InnoDB",
+   "fields": {
+    "actor": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "attempt_time": {
+     "fieldtype": "Datetime",
+     "reqd": 1
+    },
+    "audit_payload_sha256": {
+     "fieldtype": "Data"
+    },
+    "delivery_received_at": {
+     "fieldtype": "Datetime"
+    },
+    "durability_state": {
+     "default": "UNKNOWN",
+     "fieldtype": "Select",
+     "options": "COMMITTED_INDEPENDENT\nCALLER_TRANSACTION_BOUND\nUNKNOWN"
+    },
+    "evidence": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "evidence_attachment": {
+     "fieldtype": "Data"
+    },
+    "existing_payload": {
+     "fieldtype": "Long Text"
+    },
+    "existing_payload_sha256": {
+     "fieldtype": "Data"
+    },
+    "logical_attachment_key": {
+     "fieldtype": "Data"
+    },
+    "new_doc_ref": {
+     "fieldtype": "Data"
+    },
+    "observed_byte_count": {
+     "fieldtype": "Int"
+    },
+    "observed_sha256": {
+     "fieldtype": "Data"
+    },
+    "old_doc_ref": {
+     "fieldtype": "Data"
+    },
+    "operation": {
+     "fieldtype": "Select",
+     "options": "MESSAGE_INGEST\nATTACHMENT_INGEST\nATTACHMENT_VERIFY\nCORRECTION_SUPERSEDE\nOUTWARD_CREATE",
+     "reqd": 1
+    },
+    "outcome": {
+     "fieldtype": "Select",
+     "options": "SUCCESS_NEW\nSUCCESS_IDEMPOTENT_REDELIVERY\nCONFLICT_PAYLOAD_MISMATCH\nCONFLICT_KEY_COLLISION\nCONFLICT_PROVENANCE_MISMATCH\nVERIFICATION_SUCCESS\nVERIFICATION_HASH_MISMATCH\nVERIFICATION_PARTIAL_BYTES\nVERIFICATION_FAILURE_RETRYABLE\nVERIFICATION_FAILURE_PERMANENT\nFAILED_STORAGE\nFAILED_DB_WRITE\nACCESS_DENIED\nVALIDATION_FAILED",
+     "reqd": 1
+    },
+    "payload_sha256": {
+     "fieldtype": "Data"
+    },
+    "reason": {
+     "fieldtype": "Small Text"
+    },
+    "scoped_attachment_version_key": {
+     "fieldtype": "Data"
+    },
+    "scoped_message_key": {
+     "fieldtype": "Data"
+    },
+    "source_payload": {
+     "fieldtype": "Long Text"
+    }
+   },
+   "module": "Fresko Core"
+  },
+  "Fresko Exception": {
+   "autoname": "hash",
+   "engine": "InnoDB",
+   "fields": {
+    "container": {
+     "fieldtype": "Link",
+     "options": "Fresko Container"
+    },
+    "deal": {
+     "fieldtype": "Link",
+     "options": "Fresko Deal"
+    },
+    "declared_quantity_assertion": {
+     "fieldtype": "Link",
+     "options": "Fresko Container Quantity Assertion"
+    },
+    "description": {
+     "fieldtype": "Small Text",
+     "reqd": 1
+    },
+    "exception_type": {
+     "fieldtype": "Select",
+     "options": "BUYER_UNRESOLVED\nDUPLICATE_MESSAGE\nOVERSELL_OVERRIDE\nSTOCK_SHORTFALL\nRATE_FLOOR_BREACH\nRATE_POLICY_MISSING\nOUTWARD_UNPRICED\nOUTWARD_WITHOUT_DEAL\nLOT_UNRESOLVED\nDUPLICATE_GATEPASS\nPHYSICAL_VARIANCE\nDATA_INTEGRITY\nOTHER",
+     "reqd": 1
+    },
+    "opened_at": {
+     "default": "Now",
+     "fieldtype": "Datetime"
+    },
+    "opened_by": {
+     "default": "__user",
+     "fieldtype": "Link",
+     "options": "User"
+    },
+    "operating_quantity_assertion": {
+     "fieldtype": "Link",
+     "options": "Fresko Container Quantity Assertion"
+    },
+    "outward": {
+     "fieldtype": "Link",
+     "options": "Fresko Outward"
+    },
+    "related_outward": {
+     "fieldtype": "Link",
+     "options": "Fresko Outward"
+    },
+    "resolution_notes": {
+     "fieldtype": "Small Text"
+    },
+    "resolved_at": {
+     "fieldtype": "Datetime"
+    },
+    "resolved_by": {
+     "fieldtype": "Link",
+     "options": "User"
+    },
+    "severity": {
+     "default": "Medium",
+     "fieldtype": "Select",
+     "options": "Info\nLow\nMedium\nHigh\nCritical\nMaterial",
+     "reqd": 1
+    },
+    "status": {
+     "default": "Open",
+     "fieldtype": "Select",
+     "options": "Open\nIn Progress\nResolved\nWaived\nCancelled",
+     "reqd": 1
+    },
+    "variance_key": {
+     "fieldtype": "Data",
+     "unique": 1
+    },
+    "variance_quantity": {
+     "fieldtype": "Data"
+    },
+    "variance_uom": {
+     "fieldtype": "Link",
+     "options": "UOM"
+    }
+   },
+   "module": "Fresko Core"
+  },
+  "Fresko Field Assertion": {
+   "autoname": "hash",
+   "engine": "InnoDB",
+   "fields": {
+    "activated_at": {
+     "fieldtype": "Datetime"
+    },
+    "activated_by": {
+     "fieldtype": "Link",
+     "options": "User"
+    },
+    "asserted_at": {
+     "fieldtype": "Datetime"
+    },
+    "asserted_by": {
+     "fieldtype": "Link",
+     "options": "User"
+    },
+    "asserted_field": {
+     "default": "rate",
+     "fieldtype": "Select",
+     "options": "rate",
+     "reqd": 1
+    },
+    "assertion_basis": {
+     "fieldtype": "Select",
+     "options": "SOURCE_EXTRACTED\nUSER_CONFIRMED\nAUTHORIZED_DECISION",
+     "reqd": 1
+    },
+    "assertion_key": {
+     "fieldtype": "Data",
+     "reqd": 1,
+     "unique": 1
+    },
+    "currency": {
+     "fieldtype": "Link",
+     "options": "Currency"
+    },
+    "effective_at": {
+     "fieldtype": "Datetime"
+    },
+    "evidence": {
+     "fieldtype": "Link",
+     "options": "Fresko Evidence",
+     "reqd": 1
+    },
+    "outward": {
+     "fieldtype": "Link",
+     "options": "Fresko Outward",
+     "reqd": 1
+    },
+    "outward_line_key": {
+     "fieldtype": "Data"
+    },
+    "payload_sha256": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "prepared_at": {
+     "fieldtype": "Datetime",
+     "reqd": 1
+    },
+    "prepared_by": {
+     "fieldtype": "Link",
+     "options": "User",
+     "reqd": 1
+    },
+    "rate": {
+     "fieldtype": "Data"
+    },
+    "rate_uom": {
+     "fieldtype": "Link",
+     "options": "UOM"
+    },
+    "raw_value": {
+     "fieldtype": "Small Text",
+     "reqd": 1
+    },
+    "reason": {
+     "fieldtype": "Small Text",
+     "reqd": 1
+    },
+    "reviewed_at": {
+     "fieldtype": "Datetime"
+    },
+    "reviewed_by": {
+     "fieldtype": "Link",
+     "options": "User"
+    },
+    "status": {
+     "default": "Draft",
+     "fieldtype": "Select",
+     "options": "Draft\nReview Pending\nActive\nSuperseded\nRejected",
+     "reqd": 1
+    },
+    "superseded_by": {
+     "fieldtype": "Link",
+     "options": "Fresko Field Assertion"
+    },
+    "supersedes": {
+     "fieldtype": "Link",
+     "options": "Fresko Field Assertion"
+    }
+   },
+   "module": "Fresko Core"
+  },
+  "Fresko Outward": {
+   "autoname": "naming_series:",
+   "engine": "InnoDB",
+   "fields": {
+    "company": {
+     "fieldtype": "Link",
+     "options": "Company",
+     "reqd": 1
+    },
+    "container": {
+     "fieldtype": "Link",
+     "options": "Fresko Container",
+     "reqd": 1
+    },
+    "deal": {
+     "fieldtype": "Link",
+     "options": "Fresko Deal"
+    },
+    "gatepass_comparison_key": {
+     "fieldtype": "Data"
+    },
+    "gatepass_no": {
+     "fieldtype": "Data"
+    },
+    "lines": {
+     "fieldtype": "Table",
+     "options": "Fresko Outward Line",
+     "reqd": 1
+    },
+    "movement_at": {
+     "fieldtype": "Datetime",
+     "reqd": 1
+    },
+    "movement_type": {
+     "default": "OUTWARD",
+     "fieldtype": "Select",
+     "options": "OUTWARD\nREVERSAL",
+     "reqd": 1
+    },
+    "naming_series": {
+     "default": "OUT-.YYYY.-.",
+     "fieldtype": "Select",
+     "options": "OUT-.YYYY.-.",
+     "reqd": 1
+    },
+    "payload_sha256": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "posted_at": {
+     "fieldtype": "Datetime"
+    },
+    "posted_by": {
+     "fieldtype": "Link",
+     "options": "User"
+    },
+    "posting_reason": {
+     "fieldtype": "Small Text"
+    },
+    "prepared_at": {
+     "fieldtype": "Datetime",
+     "reqd": 1
+    },
+    "prepared_by": {
+     "fieldtype": "Link",
+     "options": "User",
+     "reqd": 1
+    },
+    "raw_party_name": {
+     "fieldtype": "Small Text"
+    },
+    "reverses_outward": {
+     "fieldtype": "Link",
+     "options": "Fresko Outward",
+     "unique": 1
+    },
+    "source_event_id": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "source_event_key": {
+     "fieldtype": "Data",
+     "reqd": 1,
+     "unique": 1
+    },
+    "source_evidence": {
+     "fieldtype": "Link",
+     "options": "Fresko Evidence",
+     "reqd": 1
+    },
+    "status": {
+     "default": "Draft",
+     "fieldtype": "Select",
+     "options": "Draft\nReview Pending\nPosted",
+     "reqd": 1
+    },
+    "submitted_at": {
+     "fieldtype": "Datetime"
+    },
+    "submitted_by": {
+     "fieldtype": "Link",
+     "options": "User"
+    },
+    "vehicle_no": {
+     "fieldtype": "Data"
+    }
+   },
+   "module": "Fresko Core"
+  },
+  "Fresko Outward Line": {
+   "engine": "InnoDB",
+   "fields": {
+    "batch": {
+     "fieldtype": "Link",
+     "options": "Batch"
+    },
+    "line_key": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "lot_no": {
+     "fieldtype": "Data"
+    },
+    "qty": {
+     "fieldtype": "Float",
+     "reqd": 1
+    },
+    "raw_lot_text": {
+     "fieldtype": "Data"
+    },
+    "raw_qty_text": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "raw_rate_text": {
+     "fieldtype": "Data"
+    },
+    "raw_uom_text": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "source_line_ref": {
+     "fieldtype": "Data"
+    },
+    "uom": {
+     "fieldtype": "Link",
+     "options": "UOM",
+     "reqd": 1
+    }
+   },
+   "istable": 1,
+   "module": "Fresko Core"
+  },
+  "Fresko Revision": {
+   "autoname": "hash",
+   "engine": "InnoDB",
+   "fields": {
+    "approval_reference": {
+     "fieldtype": "Link",
+     "options": "Fresko Approval"
+    },
+    "changed_at": {
+     "default": "Now",
+     "fieldtype": "Datetime",
+     "reqd": 1
+    },
+    "changed_by": {
+     "default": "__user",
+     "fieldtype": "Link",
+     "options": "User",
+     "reqd": 1
+    },
+    "fieldname": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "new_value": {
+     "fieldtype": "Small Text"
+    },
+    "old_value": {
+     "fieldtype": "Small Text"
+    },
+    "parent_doctype": {
+     "fieldtype": "Link",
+     "options": "DocType",
+     "reqd": 1
+    },
+    "parent_name": {
+     "fieldtype": "Dynamic Link",
+     "options": "parent_doctype",
+     "reqd": 1
+    },
+    "reason": {
+     "fieldtype": "Small Text",
+     "reqd": 1
+    },
+    "status": {
+     "default": "Pending",
+     "fieldtype": "Select",
+     "options": "Pending\nApplied\nRejected\nCancelled",
+     "reqd": 1
+    },
+    "supporting_evidence": {
+     "fieldtype": "Link",
+     "options": "Fresko Evidence"
+    }
+   },
+   "module": "Fresko Core"
+  }
+ },
+ "migration_proofs": [
+  "evidence_attempt_link_to_data",
+  "phase2a_physical_ledger",
+  "physical_variance_exception"
+ ],
+ "schema_sources": {
+  "install.py": "6ed6ee1c49fb1482c9d15ffe98bb60419e0ec4afe47ffb0fe372bcf08f5a9004",
+  "patches.txt": "dcd5839e194d054215b6e71e1a57ccc3e025a917bebb56ef1eb8d2dc33dba3bc",
+  "patches/v1_0/backfill_evidence_attempt_durability_state.py": "82c40e75f3305e83674bc2edf98a531964740952084b20cce2fc88b5665e0677",
+  "patches/v1_0/backfill_evidence_capture_status.py": "408dc1b30a9eb3f1512c8b7dc00e9420cd32aa5e778a9fea1cc64edf751e18bd"
+ },
+ "snapshot_version": 1
+}

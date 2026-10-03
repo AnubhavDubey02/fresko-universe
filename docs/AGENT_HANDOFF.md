@@ -727,3 +727,24 @@ Continuation steps 2-4 above are unchanged.
 
 PENDING CI. Offline gates (harness, protected-doctype, smoke, static, py_compile,
 json.load) are the local merge evidence. Exact-head GitHub Bench remains the merge gate.
+
+## 2026-10-03 LF pinning and schema-change detector
+
+- PR #12 (merge `eed62be`) added `.gitattributes`. Text is LF on every platform
+  and workbooks/images are binary. Renormalization changed no stored bytes. The
+  hash-pinned shadow fixture now validates on a Windows `autocrlf=true` checkout.
+- `scripts/check_schema_snapshot.py` and the committed `scripts/schema_snapshot.json`
+  make the schema-changing-PR rule automatic. The Smoke job fails when the
+  snapshot is stale, or when a pull request changes persisted schema relative to
+  the base branch's snapshot without registering a new migration proof.
+  `--update` refuses an unproven change. See `docs/SCHEMA_MIGRATION_PROOFS.md`.
+- The detector covers declared schema only, not proof adequacy. Exact-head
+  Smoke and pinned Bench remain the merge gate.
+- Next authorized step: the periodic protected-record integrity checker. Its
+  design is a separate baseline ledger: the checker hashes each record's
+  immutable stored fields the first time it sees the record, then compares later
+  reads against that baseline. It does not recompute the creation-time
+  `payload_sha256`, because that hashes the request input as supplied and the
+  database returns dates and decimals in a different format, so a recompute
+  would raise false alarms. The checker detects post-baseline changes only and
+  is a schema change with its own proof.
