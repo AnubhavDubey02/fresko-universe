@@ -8,6 +8,10 @@
     {
       "id": "phase2a_physical_ledger",
       "path": "scripts/prove_phase2a_outward_upgrade.py"
+    },
+    {
+      "id": "physical_variance_exception",
+      "path": "scripts/prove_physical_variance_upgrade.py"
     }
   ]
 }

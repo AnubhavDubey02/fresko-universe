@@ -63,6 +63,40 @@
    "read_only": 1
   },
   {
+   "fieldname": "declared_quantity_assertion",
+   "fieldtype": "Link",
+   "label": "Declared Quantity Assertion",
+   "options": "Fresko Container Quantity Assertion",
+   "read_only": 1
+  },
+  {
+   "fieldname": "operating_quantity_assertion",
+   "fieldtype": "Link",
+   "label": "Operating Quantity Assertion",
+   "options": "Fresko Container Quantity Assertion",
+   "read_only": 1
+  },
+  {
+   "fieldname": "variance_quantity",
+   "fieldtype": "Data",
+   "label": "Variance Quantity",
+   "read_only": 1
+  },
+  {
+   "fieldname": "variance_uom",
+   "fieldtype": "Link",
+   "label": "Variance UOM",
+   "options": "UOM",
+   "read_only": 1
+  },
+  {
+   "fieldname": "variance_key",
+   "fieldtype": "Data",
+   "label": "Variance Key",
+   "unique": 1,
+   "read_only": 1
+  },
+  {
    "fieldname": "description",
    "fieldtype": "Small Text",
    "label": "Description",
