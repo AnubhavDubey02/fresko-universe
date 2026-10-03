@@ -34,7 +34,10 @@ SNAPSHOT_PATH = Path(__file__).with_name("schema_snapshot.json")
 SNAPSHOT_RELATIVE = "scripts/schema_snapshot.json"
 SNAPSHOT_VERSION = 1
 
-DOCTYPE_KEYS = ("module", "istable", "issingle", "is_submittable", "is_tree", "autoname", "engine")
+# is_virtual decides whether a table exists at all.
+DOCTYPE_KEYS = ("module", "istable", "issingle", "is_virtual", "is_submittable", "is_tree", "autoname", "engine")
+# Absent and 0/False are equivalent in Frappe exports, so both are omitted; a
+# change to or from a non-zero value is still detected.
 FIELD_KEYS = ("fieldtype", "options", "reqd", "unique", "length", "precision", "default", "search_index")
 # Display-only field types create no column.
 NON_COLUMN_FIELDTYPES = {"Section Break", "Column Break", "Tab Break", "HTML", "Button", "Heading", "Fold"}
