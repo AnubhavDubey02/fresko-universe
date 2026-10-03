@@ -835,3 +835,32 @@ Exact-head GitHub Smoke and pinned Bench remain the merge gate.
 - Integer, decimal and float values are canonicalized to one normalized decimal
   text, so a driver returning `Decimal` instead of `float` cannot raise a false
   alarm.
+
+## 2026-10-03 PR #14 integrity audit-context correction and CI evidence
+
+- PR #14 remained on `codex/protected-record-integrity-check`, based on merged
+  `main` at `8c9bcdb9dcc70e884afa1f7c2faa56b23c22f183`.
+- Runs #137 and #138 failed on the earlier Outward-line DocType/table-name
+  defect. Run #139 (`37110405347`) tested
+  `822a962c446cbccc6e1d2bafe7f3bf1fda854ac2`: Smoke passed, while Bench ran
+  175 tests with one failure because a correctly Container-linked
+  `DATA_INTEGRITY` Exception omitted the Container identifier from its
+  human-readable description. These failed runs remain historical evidence.
+- Commit `8c7a32e76130cb3d81fc49d228b563d49d998703` makes the description include
+  `for Container <identifier>` only when the checker already knows the
+  Container. It does not change hashes, mismatch kinds, severity, structured
+  links, idempotency, seal state, or Container close-gate behavior. The
+  existing Bench assertion was preserved.
+- Local verification at that commit passed: the migration registry, protected
+  write guard, real-data shadow replay, schema snapshot against `origin/main`,
+  41 script tests, 169 app/offline tests, Python compilation, and
+  `git diff --check`.
+- Exact-head GitHub Actions run `37120995299` passed at
+  `8c7a32e76130cb3d81fc49d228b563d49d998703`: Smoke passed in 7 seconds and
+  pinned Frappe/ERPNext Bench passed in 6 minutes 26 seconds. The successful
+  Bench step includes the app integration tests and all four registered
+  Phase-1-to-current proofs through first migrate and idempotent second
+  migrate.
+- The integrity checker's previously documented limitations remain unchanged.
+  No business fact was confirmed, no test was weakened, and no deployment or
+  real operational database was touched.
