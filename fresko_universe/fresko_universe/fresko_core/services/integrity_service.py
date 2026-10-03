@@ -482,8 +482,9 @@ def _record_mismatch(
         return
 
     # Create a DATA_INTEGRITY exception.
+    container_context = f" for Container {container}" if container else ""
     description = (
-        f"Integrity check detected {kind} on {doctype} {record_name}. "
+        f"Integrity check detected {kind} on {doctype} {record_name}{container_context}. "
         f"Sealed hash: {sealed_hash}. "
         f"Observed hash: {observed_sha256 or '(record missing)'}. "
         f"Seal: {seal_name}."
