@@ -569,3 +569,67 @@ not Collection, Payment Allocation, accounting, bank-clearance, or runtime
 financial behavior. Exact-head GitHub CI remains the merge gate for this
 iteration; CI history is the record and no green-status ceremony commit is
 required.
+
+## 2026-10-03 landed stack and paused migration-harness handoff
+
+This is a worktree checkpoint for the next coding agent. The repository owner
+asked this session to stop because the current Codex allowance was nearly
+exhausted. It does not claim that the work-in-progress files below are tested,
+reviewed, committed, pushed, or ready to merge.
+
+### Landed state
+
+- PR #2 merged with merge commit
+  `32b3f997b9c4e40b7ebb0eeaaeaccf3e9cf61fdf`.
+- PR #7 merged with merge commit
+  `20b50d3fbb7b0d93a0a31cdae0a7f7be860538ed`.
+- PR #8 merged with merge commit
+  `cabb379cade502824e2e737bb0aa628346fdf721`.
+- PRs #3 through #6 were closed as superseded; their branches were retained.
+- PR #9 exact head
+  `37d1c3f2ea2e222ca4a8830548cdb6a9499ea6fa` passed GitHub Actions run
+  `37082266645` (Smoke and pinned Bench) and merged with merge commit
+  `d955e8ca4433663eebf94aabaf38d24947e243e5`.
+- No business fact was newly marked CONFIRMED, no deployment or real database
+  was touched, and no history rewrite, force-push, branch deletion, repository
+  setting change, Commercial Sale, Collection, Allocation, or ERP posting was
+  performed.
+
+### Paused worktree state
+
+- Current branch: `codex/reusable-migration-harness`.
+- Base/current committed HEAD:
+  `d955e8ca4433663eebf94aabaf38d24947e243e5` from `origin/main`.
+- Three untracked draft files exist:
+  `scripts/run_schema_migration_harness.py`,
+  `scripts/schema_migration_proofs.json`, and
+  `scripts/test_schema_migration_harness.py`.
+- The draft attempts to centralize proof registration, site lifecycle, ordered
+  stages, rollback, and failure propagation while preserving the two existing
+  seeded proof modules. It was interrupted while applying the wider patch.
+- **No CI workflow or Bench-script integration was applied.** The draft has
+  not been run even through its offline tests. The next agent must inspect it
+  as untrusted work in progress rather than assume it is correct.
+
+### Authorized continuation order
+
+1. Review the three untracked draft files. Complete the reusable migration
+   harness narrowly, wire `scripts/ci_bench.sh` to one harness call per stage,
+   add an offline CI validation, document its schema-PR-only rule, and run the
+   full relevant local gates.
+2. Commit and push only after review, open a small PR from `main`, and merge it
+   only when Smoke and Bench are green at the exact head. Stop if the same CI
+   issue fails twice.
+3. From freshly updated `main`, implement persistent `PHYSICAL_VARIANCE` as a
+   separate schema-changing PR using the reusable seeded harness. Do not infer
+   or confirm quantities; use synthetic fixtures and deterministic links to
+   the relevant quantity assertions.
+4. From freshly updated `main`, implement the periodic protected-record hash
+   integrity check as its own small PR.
+
+Each new PR must start from merged `main`, not an unmerged PR. The standing
+owner constraints remain in force: ask before marking any business fact
+CONFIRMED, starting commercial/accounting runtime work, deploying, touching a
+real database, deleting branches, rewriting history, force-pushing, changing
+repository settings, or weakening a failing test. UNKNOWN/PENDING must remain
+truthful rather than be converted into certainty.
