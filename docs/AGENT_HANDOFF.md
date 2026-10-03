@@ -660,3 +660,70 @@ reviewed as untrusted work in progress and then completed on
   pinned Bench remain the merge gate.
 
 Continuation steps 2-4 above are unchanged.
+
+## 2026-10-03 persistent PHYSICAL_VARIANCE (continuation step 3)
+
+### Implemented
+
+- Fresko Exception schema extended with five new read-only fields after
+  `related_outward`: `declared_quantity_assertion` (Link), `operating_quantity_assertion`
+  (Link), `variance_quantity` (Data), `variance_uom` (Link to UOM), `variance_key`
+  (Data, unique). No data migration patch; Frappe model sync adds columns as NULL.
+- Exception controller (`fresko_exception.py`) gains a quantity-scoped PHYSICAL_VARIANCE
+  validation path: requires container, two distinct assertion links, non-empty non-zero
+  `variance_quantity`, `variance_uom`, `variance_key`, and `flags.in_quantity_service`.
+  Mutual exclusion prevents a row from carrying both outward and quantity links. All five
+  new fields are immutable once set. Outward-scoped existing behaviour is unchanged.
+- `quantity_assertion_service.py` gains `_ensure_physical_variance` (internal, called
+  after successful ACTIVATE in `review_quantity_assertion`), `ensure_physical_variance`
+  (public, checker role), and `resolve_physical_variance` (RESOLVE/WAIVE with notes).
+  Variance key is sha256 of canonical JSON identity. Race replay via UniqueValidationError
+  re-read. Never closes or modifies older variance exceptions.
+- Projection (`quantity_reconciliation_projection`) adds `physical_variance_exception`
+  key (read-only lookup by variance_key for the projected pair; None for legacy/unresolved).
+  Updated `todo` strings to reflect that exceptions are now created automatically.
+- Whitelisted wrappers `ensure_physical_variance` and `resolve_physical_variance` added
+  to `quantity_assertion.py`.
+- Close gate (`fresko_container.py:_validate_close_gate`) already blocks on
+  PHYSICAL_VARIANCE by container — no change needed.
+- Migration proof `scripts/prove_physical_variance_upgrade.py` registered in
+  `schema_migration_proofs.json` as id `physical_variance_exception`. Seeds one synthetic
+  legacy OTHER exception on Phase 1 baseline, verifies five new columns exist with types,
+  unique index on `variance_key`, seeded row unchanged, new columns NULL, zero rows with
+  non-null `variance_key`, count unchanged. Second-migrate idempotent.
+- Bench integration tests in `test_container_quantity_assertion.py`:
+  `TestPhysicalVarianceException` class with 13 tests covering 3060 vs 3056, reverse
+  activation order, idempotency, equal quantities, declared-only, legacy fallback,
+  cross-UOM, supersession, close gate, WAIVE/replay/different-decision, blank notes,
+  direct insert without flag, immutability, maker-only role.
+- Offline static contract tests in `test_quantity_assertion_static.py`:
+  `TestPhysicalVarianceStaticContract` with 7 checks covering schema fields, controller
+  guard, service functions, wrappers, upgrade proof, projection key, inward_qty safety.
+
+### CTO review hardening
+
+- Quantity-scope fields are accepted only on `PHYSICAL_VARIANCE`, so a Desk row of
+  another type cannot pre-claim a pair's `variance_key`. Service key lookups also
+  filter on the exception type.
+- `variance_quantity` must be a finite, non-zero decimal.
+- The Container is immutable on a quantity-scoped variance. The resolve service
+  re-checks it after taking the Container lock.
+- A quantity-scoped variance cannot be deleted (`on_trash`); it can only be
+  resolved or waived with notes.
+- The close-gate Bench test routes `Selling -> Closing -> Closed` and matches the
+  gate message, so an unrelated transition error cannot pass it vacuously.
+- The upgrade-proof seed row has no Container link, so no dangling link is
+  fabricated.
+
+### Not implemented
+
+- No auto-close of older PHYSICAL_VARIANCE exceptions when a new pair resolves.
+- No legacy-fallback persistence (Container.inward_qty is not used as operating source
+  for exception creation; only real active OPERATING_INWARD assertions).
+- No Desk UI for the five new fields beyond read-only display.
+- No inference of quantities, UOM, or timestamps.
+
+### Bench evidence
+
+PENDING CI. Offline gates (harness, protected-doctype, smoke, static, py_compile,
+json.load) are the local merge evidence. Exact-head GitHub Bench remains the merge gate.

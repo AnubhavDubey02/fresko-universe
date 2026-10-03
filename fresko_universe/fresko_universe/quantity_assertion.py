@@ -43,3 +43,13 @@ def review(name: str, decision: str):
 @frappe.whitelist()
 def reconciliation_projection(container: str):
     return service.quantity_reconciliation_projection(container)
+
+
+@frappe.whitelist()
+def ensure_physical_variance(container: str):
+    return service.ensure_physical_variance(container)
+
+
+@frappe.whitelist()
+def resolve_physical_variance(name: str, decision: str, notes: str):
+    return service.resolve_physical_variance(name, decision, notes)
