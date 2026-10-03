@@ -859,7 +859,8 @@ def propose_payment_allocation(
         "collection": collection, "allocation_type": allocation_type, "amount": amount,
         "currency": currency, "evidence": evidence, "source_event_id": source_event_id,
         "sale": sale, "container": container, "customer": customer, "supersedes": supersedes,
-        "reason": reason if supersedes else None}, derived={"container", "customer"})
+        "reason": reason if supersedes else None},
+        derived={"container", "customer"} if allocation_type == "SALE" else ())
     if replay:
         return replay
     _locks(coll.company, [container] if container else [])

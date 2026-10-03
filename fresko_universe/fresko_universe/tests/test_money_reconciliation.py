@@ -408,6 +408,13 @@ class TestMoneyReconciliation(FrappeTestCase):
                 original.reload()
                 self.assertEqual((original.decision_history, original.version), (history, version))
                 self.assertEqual(frappe.db.count(ALLOCATION, {"collection": receipt.name}), 1)
+                if target is None:
+                    with self.assertRaisesRegex(frappe.ValidationError, "IDEMPOTENCY_PAYLOAD_CONFLICT"):
+                        money.propose_payment_allocation(
+                            collection=receipt.name, allocation_type="CONTAINER_UNAPPLIED", amount="100.00",
+                            currency=self.masters["currency"], evidence=self.evidence.name,
+                            source_event_id=f"{self.token}:{event}", container="",
+                        )
         self.assertEqual(self._receivable(sale)["cash_applied_amount"], "0.00")
 
     def test_allocation_cannot_silently_replace_caller_container_with_sale_container(self):
