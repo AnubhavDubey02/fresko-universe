@@ -48,3 +48,27 @@ and its unit tests. The offline gate fails when:
 The offline gate proves registration and shape only. Migration safety is shown
 only by the pinned Bench run at the exact pull-request head, and only for the
 assertions each proof makes.
+
+## Automatic schema-change detection
+
+`scripts/schema_snapshot.json` records the persisted shape of every Fresko
+DocType: column-defining field properties and DocType storage properties.
+Labels, descriptions, permissions, and layout fields are excluded. The snapshot
+also records the line-ending-normalized hash of every source that runs DDL or a
+data migration during install or migrate (`install.py`, `patches.txt`, and patch
+modules), plus the registered proof ids.
+
+`scripts/check_schema_snapshot.py --check` runs in the Smoke job. It fails when:
+
+- the committed snapshot no longer matches the repository; or
+- on a pull request, the schema differs from the base branch's snapshot but no
+  new proof id was registered. A hand-edited snapshot therefore cannot hide a
+  schema change.
+
+When you intend a schema change, add and register the proof first, then run
+`python3 scripts/check_schema_snapshot.py --update`. The update refuses an
+unproven schema change. Any edit to `install.py` or a patch module counts as a
+schema-source change, because those files run DDL or data migration.
+
+The detector checks declared schema only. It cannot judge whether a proof's
+assertions are adequate; review and pinned Bench still decide that.

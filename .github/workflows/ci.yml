@@ -21,6 +21,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # Full history provides origin/<base> for the schema snapshot base check.
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -42,6 +44,16 @@ jobs:
         run: |
           python3 scripts/run_schema_migration_harness.py --validate-only
           python3 -m unittest discover -s scripts -p 'test_schema_migration_harness.py' -v
+      - name: Require a migration proof for persisted schema changes
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          python3 -m unittest discover -s scripts -p 'test_schema_snapshot.py' -v
+          if [ -n "${BASE_REF}" ]; then
+            python3 scripts/check_schema_snapshot.py --check --base-ref "origin/${BASE_REF}"
+          else
+            python3 scripts/check_schema_snapshot.py --check
+          fi
       - name: Assert pin file present
         run: |
           test -f .github/frappe-versions.json
