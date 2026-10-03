@@ -773,6 +773,11 @@ def _reverse(doc, reason, evidence, successor=None, company_evidence=False):
 
 
 def _reverse_sale_allocations(sale, reason, evidence, successor=None):
+    # Compensate financial applications atomically with commercial correction.
+    # During an exact-baseline migration the new ledger tables may not exist yet.
+    if frappe.db.table_exists("Fresko Collection"):
+        from fresko_universe.fresko_core.services import money_service
+        money_service.compensate_for_sale_change(sale.name, reason, evidence)
     rows = frappe.db.sql("SELECT name FROM `tabFresko Sale Outward Allocation` WHERE sale=%s AND state='APPROVED' ORDER BY name FOR UPDATE", (sale.name,), as_dict=True)
     for row in rows:
         allocation = frappe.get_doc(ALLOCATION, row.name, for_update=True)

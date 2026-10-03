@@ -27,11 +27,22 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "18"
+          package-manager-cache: false
       - name: Run offline smoke suite
         working-directory: fresko_universe
         run: |
           python3 -m unittest tests.test_smoke_unit -v
           python3 -m unittest tests.test_commercial_contract -v
+          python3 -m unittest tests.test_money_contract -v
+          python3 -m unittest tests.test_ask_fresko_contract -v
+          python3 -m unittest tests.test_workspace_contract -v
+      - name: Run workspace UI offline checks
+        run: |
+          node scripts/test_workspace_ui.cjs
+          node scripts/test_money_ui.cjs
       - name: Validate Phase 2 readiness fixtures
         run: |
           python3 scripts/validate_phase2_readiness_fixtures.py
@@ -162,4 +173,5 @@ jobs:
             /home/runner/frappe-bench/sites/test.localhost/logs/
             /home/runner/frappe-bench/sites/upgrade.localhost/logs/
             /home/runner/frappe-bench/sites/commercial-upgrade.localhost/logs/
+            /home/runner/frappe-bench/sites/money-upgrade.localhost/logs/
           if-no-files-found: ignore

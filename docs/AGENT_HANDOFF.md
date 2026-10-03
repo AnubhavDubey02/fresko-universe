@@ -881,3 +881,14 @@ Exact-head GitHub Smoke and pinned Bench remain the merge gate.
   - Operational boundaries preserved: INR 101 labour outflow; INR 350,000 pending bank evidence; 92@700 pending handwritten photo + role approval; 3,060 declared vs 3,056 operating physical capacity. Collections, payments, UI, live WhatsApp ingestion, ERP posting, and deployment remain out of scope.
   - Registered fifth migration proof `commercial_sale_ledger` (`scripts/prove_commercial_sale_upgrade.py`).
 - Status: Code IMPLEMENTED; exact-head Smoke and pinned Bench CI remain PENDING. Read functions are evolving; no final completeness or passing tests are asserted merely because code was written.
+
+
+## 2026-10-04 — Money/Reconciliation and native workspace candidate
+
+- Commercial PR #15 merged at main `b140b800b021c4317931e37a723a140740b2fc4c`; post-merge run [37143711405](https://github.com/AnubhavDubey02/fresko-universe/actions/runs/37143711405) succeeded.
+- Candidate branch: `codex/money-reconciliation`, based on that exact main. Four money roots, service-only workflow, evidence byte snapshots, many-to-many payment/adjustment applications, dual-cutoff projections, supplier isolation, compensation on commercial corrections, and controlled receipt Exceptions are implemented.
+- Native Pages: `fresko-workspace` and `fresko-money`; deterministic Ask Fresko read catalog. No provider/WhatsApp/OCR/deployment or new dependency.
+- Sixth registered migration proof `money_reconciliation_ledger` preserves prior records and creates zero money rows. CI also upgrades from the exact merged commercial baseline and repeats migration. These database proofs are PENDING until candidate CI runs.
+- Local verification at candidate checkpoint: 210 app/offline tests and 41 script tests passed; operations UI Node VM harness passed. 33 new real Bench money tests compile but have not run locally; no local Bench executable. Both money and operations Page VM harnesses pass; final exact-head gates are PENDING.
+- Documentation: `docs/MONEY_RECONCILIATION_RUNTIME.md`, `docs/OPERATIONS_WORKSPACE.md`. Private Drive review/agent usage ledger remain outside Git.
+- Resume from actual branch/status and live checks. A candidate or a passing ancestor is not a shipping claim. Current candidate requires Smoke + pinned Bench, all six first/second migration proofs, exact-commercial-baseline upgrade/rerun, and independent review before integration.

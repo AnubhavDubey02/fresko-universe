@@ -12,6 +12,7 @@ def after_install():
     _ensure_gate1_nullable_rate_snapshots()
     _ensure_commercial_indexes()
     _ensure_commercial_master_reads()
+    _ensure_money_master_reads()
     frappe.clear_cache()
 
 
@@ -20,6 +21,7 @@ def after_migrate():
     _ensure_gate1_nullable_rate_snapshots()
     _ensure_commercial_indexes()
     _ensure_commercial_master_reads()
+    _ensure_money_master_reads()
 
 
 def _ensure_roles():
@@ -95,5 +97,16 @@ def _ensure_commercial_master_reads():
         if not frappe.db.exists("DocType", doctype):
             continue
         for role in ROLES:
+            if not frappe.db.exists("Custom DocPerm", {"parent": doctype, "role": role, "permlevel": 0, "if_owner": 0}):
+                add_permission(doctype, role, ptype="read")
+
+
+def _ensure_money_master_reads():
+    """Financial actors need bank master reads; business permissions remain checked."""
+    from frappe.permissions import add_permission
+    for doctype in ("Bank Account", "User"):
+        if not frappe.db.exists("DocType", doctype):
+            continue
+        for role in ("Fresko Accounts", "Fresko Approver"):
             if not frappe.db.exists("Custom DocPerm", {"parent": doctype, "role": role, "permlevel": 0, "if_owner": 0}):
                 add_permission(doctype, role, ptype="read")
