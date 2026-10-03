@@ -16,6 +16,10 @@
     {
       "id": "integrity_seal_ledger",
       "path": "scripts/prove_integrity_seal_upgrade.py"
+    },
+    {
+      "id": "commercial_sale_ledger",
+      "path": "scripts/prove_commercial_sale_upgrade.py"
     }
   ]
 }

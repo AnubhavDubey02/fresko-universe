@@ -1,5 +1,18 @@
 # DECISIONS — Fresko Universe
 
+## 2026-10-03 — Commercial Sale backend slice and role workflow implementation
+
+- **Commercial Sale slice authorized:** User explicitly authorized the Commercial Sale runtime slice continuing from merged `main` at `579a8465f363105eb6e78c15cb173156e2c0df93`.
+- **Role workflow technical controls:** The previously PROPOSED role-based alias and commercial approval workflow is implemented as server-side technical controls in `commercial_service.py`:
+  - Salesperson/Trader makes proposals (Sale, alias, rate, allocation).
+  - Accounts verifies evidence.
+  - Approver approves or rejects.
+  - Maker, verifier, and approver must be strictly distinct user accounts.
+  - System Manager has technical read/reconciliation-refresh access; no routine business approval or break-glass mutation API is implemented.
+- **Supplier access isolation:** Supplier roles are denied implemented Commercial Sale, Deal, Customer, alias, rate, amount, and source Evidence/Outward paths, including mixed internal-role accounts. The locked exclusion of future Collections, receivables, margins and expenses remains policy; those ledgers are not implemented here. Master read rights are restricted to existing internal roles (`Fresko Accounts`, `Fresko Approver`, `System Manager`, and assigned makers).
+- **Physical allocation caps & compensation:** Sale-to-Outward allocation enforces explicit caps on both sides. Supersession or alias remapping atomically reverses prior active allocations with compensation records (`REVERSED` state) backed by required evidence.
+- **Operating boundaries preserved:** Collections, customer payments, UI, live WhatsApp ingestion, ERP accounting/GL posting, and deployment remain deferred and out of scope.
+
 ## 2026-10-03 — Owner scope correction for operational decisions
 
 - **BD-101:** INR 101 is a labour payment/outflow, not a customer receipt. It is

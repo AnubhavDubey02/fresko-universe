@@ -72,3 +72,12 @@ schema-source change, because those files run DDL or data migration.
 
 The detector checks declared schema only. It cannot judge whether a proof's
 assertions are adequate; review and pinned Bench still decide that.
+
+## 2026-10-03 Commercial Sale Ledger proof registration
+
+The Commercial Sale backend slice adds `Fresko Commercial Sale`, `Fresko Commercial Sale Line`, `Fresko Party Alias Mapping`, and `Fresko Sale Outward Allocation`, with an additional `commercial_scope_key` index on `Fresko Exception`.
+- Registered as the fifth proof `commercial_sale_ledger` (`scripts/prove_commercial_sale_upgrade.py`) in `scripts/schema_migration_proofs.json`.
+- Implements `seed_phase1()`, `verify_first_migrate()`, and `verify_second_migrate()`.
+- Verifies that selected legacy Deal, Container, Lot, Exception, and Outward field values remain unchanged (`_legacy_snapshot()`, with deterministic driver-value serialization).
+- Proves zero commercial fabrication: counts on newly introduced commercial DocTypes start strictly at 0 rows.
+- Includes `seed_current_main()` for proving upgrades directly from current `main` at `579a8465f363105eb6e78c15cb173156e2c0df93`.

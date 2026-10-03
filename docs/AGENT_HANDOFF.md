@@ -864,3 +864,20 @@ Exact-head GitHub Smoke and pinned Bench remain the merge gate.
 - The integrity checker's previously documented limitations remain unchanged.
   No business fact was confirmed, no test was weakened, and no deployment or
   real operational database was touched.
+
+## 2026-10-03 Commercial Sale backend slice and role controls handoff
+
+- Continuing from user checkpoint and merged `main` at `579a8465f363105eb6e78c15cb173156e2c0df93`.
+- User explicitly authorizes the Commercial Sale runtime slice:
+  - Implements four DocTypes: `Fresko Commercial Sale`, `Fresko Commercial Sale Line`, `Fresko Party Alias Mapping`, `Fresko Sale Outward Allocation`.
+  - Pure string decimal parsing (`Decimal`) for all numeric fields; no float corruption.
+  - Immutable source payloads (`source_payload`, `payload_sha256`, `source_event_key`) and append-only versioned `decision_history`.
+  - Reusable party alias mapping with approved `active_alias_key` and non-unique historical tuple justification.
+  - Three-role segregation of duties (Maker Salesperson/Trader -> Verifier Accounts -> Approver) across distinct users; System Manager excluded from routine approvals.
+  - Rate state distinguishes immutable maker `PROPOSED` from server-projected `FINAL`.
+  - Pessimistic locking sequence: `Company` -> sorted `Container` -> `Sale`/`Outward` -> decisions.
+  - Many-to-many Sale-to-Outward allocation with dual-sided caps, physical Outward validity, and compensation reversals on correction.
+  - Server-side ACLs deny supplier roles access to internal commercial, deal, and customer records; master read restricted to internal roles.
+  - Operational boundaries preserved: INR 101 labour outflow; INR 350,000 pending bank evidence; 92@700 pending handwritten photo + role approval; 3,060 declared vs 3,056 operating physical capacity. Collections, payments, UI, live WhatsApp ingestion, ERP posting, and deployment remain out of scope.
+  - Registered fifth migration proof `commercial_sale_ledger` (`scripts/prove_commercial_sale_upgrade.py`).
+- Status: Code IMPLEMENTED; exact-head Smoke and pinned Bench CI remain PENDING. Read functions are evolving; no final completeness or passing tests are asserted merely because code was written.

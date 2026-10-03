@@ -10,12 +10,16 @@ _GATE1_NULLABLE_RATE_COLS = ("approved_rate", "rate_floor", "rate_ceiling")
 def after_install():
     _ensure_roles()
     _ensure_gate1_nullable_rate_snapshots()
+    _ensure_commercial_indexes()
+    _ensure_commercial_master_reads()
     frappe.clear_cache()
 
 
 def after_migrate():
     _ensure_roles()
     _ensure_gate1_nullable_rate_snapshots()
+    _ensure_commercial_indexes()
+    _ensure_commercial_master_reads()
 
 
 def _ensure_roles():
@@ -57,3 +61,39 @@ def _ensure_gate1_nullable_rate_snapshots():
         frappe.db.sql(
             f"ALTER TABLE `{table}` MODIFY `{col}` {col_type} NULL DEFAULT NULL"
         )
+
+
+def _ensure_commercial_indexes():
+    """DDL only after synchronization; never infer or backfill commercial rows."""
+    indexes = {
+        "Fresko Commercial Sale": [("container", "sale_at"), ("alias_mapping", "sale_at"), ("customer", "sale_at"), ("status", "sale_at"), ("source_evidence",)],
+        "Fresko Commercial Sale Line": [("parent", "line_key"), ("parent", "bucket_key"), ("container_lot", "price_state"), ("price_state", "source_line_ref")],
+        "Fresko Party Alias Mapping": [("company", "normalized_alias", "status")],
+        "Fresko Sale Outward Allocation": [("sale", "state"), ("outward", "state")],
+    }
+    for doctype, definitions in indexes.items():
+        if not frappe.db.table_exists(doctype):
+            continue
+        for columns in definitions:
+            frappe.db.add_index(doctype, list(columns), index_name="commercial_" + "_".join(columns))
+    # Child identity uniqueness is parent scoped, and NULL buckets remain unknown.
+    if frappe.db.table_exists("Fresko Commercial Sale Line"):
+        frappe.db.add_unique("Fresko Commercial Sale Line", ["parent", "line_key"], constraint_name="commercial_line_identity")
+        frappe.db.add_unique("Fresko Commercial Sale Line", ["parent", "bucket_key"], constraint_name="commercial_bucket_identity")
+
+
+def _ensure_commercial_master_reads():
+    """Grant only master reads needed by authenticated commercial actors.
+
+    Frappe's supported helper preserves upstream permissions when creating
+    Custom DocPerm rows. Existing operator-managed rules are left intact.
+    Linked-document and user/company permissions are still checked at runtime.
+    """
+    from frappe.permissions import add_permission
+
+    for doctype in ("Company", "Customer", "Currency", "Item", "UOM", "Batch"):
+        if not frappe.db.exists("DocType", doctype):
+            continue
+        for role in ROLES:
+            if not frappe.db.exists("Custom DocPerm", {"parent": doctype, "role": role, "permlevel": 0, "if_owner": 0}):
+                add_permission(doctype, role, ptype="read")

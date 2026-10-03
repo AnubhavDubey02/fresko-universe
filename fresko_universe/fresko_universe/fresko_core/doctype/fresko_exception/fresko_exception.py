@@ -18,6 +18,7 @@ QUANTITY_SCOPE_FIELDS = (
 
 class FreskoException(Document):
     def validate(self):
+        self._validate_commercial_scope()
         # Audit fields (opened_by/opened_at/resolved_*) live on the DocType JSON.
         # getattr keeps validate safe if a site is mid-migrate.
         if not getattr(self, "opened_by", None):
@@ -30,6 +31,28 @@ class FreskoException(Document):
 
         self._validate_scope()
         self._validate_immutability()
+
+    def _validate_commercial_scope(self):
+        commercial_types = {
+            "ALIAS_UNRESOLVED", "ALIAS_CONFLICT", "RATE_UNKNOWN",
+            "RATE_EVIDENCE_MISSING", "PRICE_BUCKET_UNALLOCATED", "LOT_UNKNOWN",
+            "PARTY_UNKNOWN", "MOVEMENT_TIME_UNKNOWN", "SALE_WITHOUT_OUTWARD",
+            "OUTWARD_WITHOUT_SALE", "ALLOCATION_OVERDRAW",
+            "IDEMPOTENCY_PAYLOAD_CONFLICT", "CONCURRENT_STATE_CONFLICT",
+        }
+        scoped = bool(self.get("sale") or self.get("commercial_scope_key"))
+        previous_key = None if self.is_new() else self.get_db_value("commercial_scope_key")
+        if scoped or previous_key or self.exception_type in commercial_types:
+            from fresko_universe.fresko_core.services import commercial_service
+
+            if not commercial_service._SCOPE.get():
+                frappe.throw("Commercial Exceptions require the controlled service", frappe.PermissionError)
+            if not self.container or not self.get("commercial_scope_key"):
+                frappe.throw("Commercial Exception requires Container and server scope key")
+            if previous_key:
+                for field in ("container", "sale", "commercial_scope_key", "as_of_recorded_at", "exception_type"):
+                    if self.has_value_changed(field):
+                        frappe.throw(f"Commercial Exception {field} is immutable", frappe.PermissionError)
 
     def _validate_scope(self):
         outward_exception_types = {
@@ -168,6 +191,8 @@ class FreskoException(Document):
             )
 
     def on_trash(self):
+        if self.get("commercial_scope_key") or self.get("sale"):
+            frappe.throw("Commercial Exceptions cannot be deleted", frappe.PermissionError)
         # Deleting would silently clear the Container close gate; resolve or waive instead.
         if any(getattr(self, fieldname, None) for fieldname in QUANTITY_SCOPE_FIELDS):
             frappe.throw(

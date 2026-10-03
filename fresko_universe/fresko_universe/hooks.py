@@ -32,6 +32,11 @@ fixtures = [
 
 # FSEC-003 — row-level + document ACL (Salesperson owner/salesperson scoped)
 permission_query_conditions = {
+    "Customer": "fresko_universe.permissions.customer_internal_permission_query",
+    "Fresko Exception": "fresko_universe.fresko_core.services.commercial_service.commercial_exception_permission_query",
+    "Fresko Sale Outward Allocation": "fresko_universe.fresko_core.services.commercial_service.allocation_permission_query",
+    "Fresko Party Alias Mapping": "fresko_universe.fresko_core.services.commercial_service.alias_permission_query",
+    "Fresko Commercial Sale": "fresko_universe.fresko_core.services.commercial_service.sale_permission_query",
     "Fresko Deal": "fresko_universe.permissions.deal_permission_query",
     "Fresko Evidence": "fresko_universe.permissions.evidence_permission_query",
     "Fresko Evidence Attachment": "fresko_universe.permissions.evidence_attachment_permission_query",
@@ -42,6 +47,11 @@ permission_query_conditions = {
 }
 
 has_permission = {
+    "Customer": "fresko_universe.permissions.customer_internal_has_permission",
+    "Fresko Exception": "fresko_universe.fresko_core.services.commercial_service.commercial_exception_has_permission",
+    "Fresko Sale Outward Allocation": "fresko_universe.fresko_core.services.commercial_service.commercial_has_permission",
+    "Fresko Party Alias Mapping": "fresko_universe.fresko_core.services.commercial_service.commercial_has_permission",
+    "Fresko Commercial Sale": "fresko_universe.fresko_core.services.commercial_service.commercial_has_permission",
     "Fresko Deal": "fresko_universe.permissions.deal_has_permission",
     "Fresko Evidence": "fresko_universe.permissions.evidence_has_permission",
     "Fresko Evidence Attachment": "fresko_universe.permissions.evidence_attachment_has_permission",
