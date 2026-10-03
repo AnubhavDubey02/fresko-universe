@@ -235,6 +235,17 @@ def assert_can_activate_field_assertion() -> None:
     assert_can_post_outward()
 
 
+def assert_can_run_integrity_check() -> None:
+    """System Manager or Fresko Approver may trigger the integrity checker."""
+    roles = current_roles()
+    if is_system_manager(roles) or ROLE_APPROVER in roles:
+        return
+    _throw_denied(
+        "run integrity check",
+        _("requires Fresko Approver or System Manager"),
+    )
+
+
 def assert_can_prepare_quantity_assertion() -> None:
     """Quantity assertion maker role gate follows the Phase 2A physical ledger."""
     assert_can_prepare_outward()

@@ -109,7 +109,7 @@ class SchemaMigrationHarnessTest(unittest.TestCase):
         specs = harness.validate_registry()
         self.assertEqual(
             [spec.proof_id for spec in specs],
-            ["evidence_attempt_link_to_data", "phase2a_physical_ledger", "physical_variance_exception"],
+            ["evidence_attempt_link_to_data", "phase2a_physical_ledger", "physical_variance_exception", "integrity_seal_ledger"],
         )
 
     def test_execute_stage_is_ordered_and_fails_on_missing_stage(self) -> None:

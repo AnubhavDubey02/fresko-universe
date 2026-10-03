@@ -62,4 +62,10 @@ doc_events = {
     },
 }
 
+scheduler_events = {
+    "daily": [
+        "fresko_universe.integrity.scheduled_integrity_check",
+    ],
+}
+
 

@@ -748,3 +748,119 @@ json.load) are the local merge evidence. Exact-head GitHub Bench remains the mer
   database returns dates and decimals in a different format, so a recompute
   would raise false alarms. The checker detects post-baseline changes only and
   is a schema change with its own proof.
+
+## 2026-10-03 protected-record integrity checker (continuation step 4)
+
+### What it does
+
+A periodic integrity checker runs daily (Frappe scheduler) and is also
+callable on demand by System Manager or Fresko Approver. It scans every
+Fresko Outward, Fresko Field Assertion, and Fresko Container Quantity
+Assertion record. On first observation it creates a Fresko Integrity Seal
+containing a canonical SHA-256 hash of the record's immutable stored fields
+as read from the database. Later runs re-read with the same canonical reader
+and compare.
+
+If a payload hash or terminal-state hash no longer matches the sealed
+baseline, or the record has been deleted, the checker opens a Critical
+DATA_INTEGRITY Fresko Exception and records the mismatch on the seal.
+
+### Baseline-ledger rationale
+
+The creation-time `payload_sha256` hashes the *request input as supplied*
+(e.g. `str(movement_at)` as typed by the caller), so recomputing it from DB
+rows would raise FALSE integrity alarms (dates and decimals round-trip
+through MariaDB in a different format). Instead, a separate baseline ledger
+hashes the record's stored fields the first time the checker observes them,
+using a deterministic canonical reader. This detects post-first-seal changes
+only.
+
+### Explicit limitations
+
+- First run seals current state as baseline; does not prove pre-baseline
+  integrity.
+- Evidence/Attachment hashing is out of scope.
+- Daily schedule needs a running Frappe scheduler; no deployment done.
+- Migration never seals or blesses anything.
+
+### Files added/changed
+
+- `fresko_universe/fresko_universe/fresko_core/doctype/fresko_integrity_seal/`
+  (DocType JSON, controller, `__init__.py`)
+- `fresko_universe/fresko_universe/fresko_core/services/integrity_service.py`
+- `fresko_universe/fresko_universe/integrity.py` (whitelist facade)
+- `fresko_universe/fresko_universe/permissions.py`
+  (`assert_can_run_integrity_check`)
+- `fresko_universe/fresko_universe/hooks.py` (scheduler_events daily)
+- `scripts/prove_integrity_seal_upgrade.py` and
+  `scripts/schema_migration_proofs.json` (registered last as
+  `integrity_seal_ledger`)
+- `scripts/check_protected_doctype_writes.py` (added seal to protected set)
+- `scripts/schema_snapshot.json` (updated)
+- `fresko_universe/fresko_universe/tests/test_integrity_check.py` (9 Bench
+  integration cases)
+- `fresko_universe/tests/test_integrity_static.py` (7 offline static checks)
+
+### Bench CI
+
+PENDING CI. Offline gates (harness --validate-only, schema snapshot, smoke,
+static, protected-doctype, py_compile, json.load) are the local evidence.
+Exact-head GitHub Smoke and pinned Bench remain the merge gate.
+### CTO review hardening
+
+- After a record's terminal state (Posted, Rejected or Superseded) is sealed,
+  each later run hashes the terminal fields whatever the current status. A
+  direct write that moves a Posted Outward back to Draft therefore reports
+  `TERMINAL_CHANGED` instead of looking non-terminal and counting as unchanged.
+- Legitimate service transitions (submit, post, review, supersede) change only
+  status and actor fields, which are outside the sealed payload. They seal the
+  terminal state once and raise no mismatch.
+- `RECORD_MISSING` exceptions cite the sealed payload hash.
+### Known limitations (stated, not hidden)
+
+- Only changes made after the first seal are detected. The first run treats the
+  current state as the baseline.
+- `Active` is not a sealed terminal state, because legitimate supersession
+  later changes it. A direct write moving an `Active` assertion back to
+  `Draft`/`Review Pending` is therefore not detected; its payload fields still
+  are.
+- The seal ledger is protected only at the application layer (service flag,
+  immutability, `on_trash`, protected-write guard). A database-level actor who
+  deletes or rewrites seal rows can defeat it. A raw-deleted seal is silently
+  re-created as a new baseline.
+- A Field Assertion first sealed after its Outward is gone gets a seal with no
+  Container, so its integrity Exception blocks no Container close gate.
+- Each run reads every protected record, with several queries per record. Use
+  `limit` or batch the reads before large volumes.
+- Integer, decimal and float values are canonicalized to one normalized decimal
+  text, so a driver returning `Decimal` instead of `float` cannot raise a false
+  alarm.
+
+## 2026-10-03 PR #14 integrity audit-context correction and CI evidence
+
+- PR #14 remained on `codex/protected-record-integrity-check`, based on merged
+  `main` at `8c9bcdb9dcc70e884afa1f7c2faa56b23c22f183`.
+- Runs #137 and #138 failed on the earlier Outward-line DocType/table-name
+  defect. Run #139 (`37110405347`) tested
+  `822a962c446cbccc6e1d2bafe7f3bf1fda854ac2`: Smoke passed, while Bench ran
+  175 tests with one failure because a correctly Container-linked
+  `DATA_INTEGRITY` Exception omitted the Container identifier from its
+  human-readable description. These failed runs remain historical evidence.
+- Commit `8c7a32e76130cb3d81fc49d228b563d49d998703` makes the description include
+  `for Container <identifier>` only when the checker already knows the
+  Container. It does not change hashes, mismatch kinds, severity, structured
+  links, idempotency, seal state, or Container close-gate behavior. The
+  existing Bench assertion was preserved.
+- Local verification at that commit passed: the migration registry, protected
+  write guard, real-data shadow replay, schema snapshot against `origin/main`,
+  41 script tests, 169 app/offline tests, Python compilation, and
+  `git diff --check`.
+- Exact-head GitHub Actions run `37120995299` passed at
+  `8c7a32e76130cb3d81fc49d228b563d49d998703`: Smoke passed in 7 seconds and
+  pinned Frappe/ERPNext Bench passed in 6 minutes 26 seconds. The successful
+  Bench step includes the app integration tests and all four registered
+  Phase-1-to-current proofs through first migrate and idempotent second
+  migrate.
+- The integrity checker's previously documented limitations remain unchanged.
+  No business fact was confirmed, no test was weakened, and no deployment or
+  real operational database was touched.
