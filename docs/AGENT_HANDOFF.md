@@ -420,3 +420,152 @@ GitHub Actions run https://github.com/AnubhavDubey02/fresko-universe/actions/run
 - The Bench job completed fresh installation/migration, the full application tests including the Phase 2A MariaDB concurrency cases, the Phase 1-to-current upgrade, and the second idempotence migration.
 
 No runtime corrective commit was needed after this run. The documentation-only descendant that records this result still needs its own exact-head checks before it can supersede `06763ba` as the latest verified branch tip.
+
+## 2026-10-02 business-decision lock after real-data review
+
+This documentation checkpoint records repository-owner decisions made after the
+read-only comparison of the Phase 2A model with the supplied Plum, Grapes, CA,
+and operations-handover evidence. It does not claim runtime implementation,
+authorize a merge, or rewrite the earlier evidence cut-offs.
+
+Canonical detail is in
+`docs/CANONICAL_BUSINESS_DECISIONS_2026-10-02.md`; the locked summary is in
+`docs/DECISIONS.md`.
+
+### Decisions locked
+
+- INR 101 is a labour payment/outflow, not a customer receipt, and stays outside
+  customer/Sohail collections, allocations, and receivables.
+- INR 350,000 was received. Earlier pending evidence remains historical;
+  received, bank-cleared, and allocated are still distinct states.
+- The source context for 92 at INR 700 is Sohail's handwritten working supplied
+  through photos. The exact photo must be linked and the rate role-approved
+  before activation; the physical Outward is never rewritten.
+- Buyer-alias mapping is role based: Trader/Salesperson proposes, Accounts
+  verifies, and Fresko Approver approves first-time or conflicting mappings.
+  Raw aliases and superseded mappings remain immutable history.
+- A future supplier-facing user sees only its own approved published
+  supplier/container settlement view. Per-sale rate/amount, customers, internal
+  Deals, collections, receivables, margins, and internal expenses remain denied
+  server side.
+- A contract-specific Supplier Settlement Value, when authorized, is separate
+  from internal actual sales and may never overwrite or masquerade as them.
+
+### Implementation status and next step
+
+No runtime, schema, permission, migration, fixture, or test behavior is changed
+by this documentation checkpoint. PR #8 remains the focused physical-Outward
+slice.
+
+The next best implementation slice is a real-data shadow-replay gate: first add
+the P0 fact boundaries needed to reproduce the Plum/Grapes cut-offs without
+inference, then role-based alias approval, then Collection/Payment Allocation.
+Excel remains the operational source of truth during the shadow pilot. Supplier
+portal implementation stays after internal Supplier Invoice/Remittance/
+Settlement ledgers and server-side isolation tests exist.
+
+The pre-change branch tip for this documentation checkpoint was
+`5e407a99d51c7d589022a64413c56e47867306cb`, whose exact-head GitHub Actions run
+was green as previously recorded. Any commit containing this new documentation
+still requires its own exact-head CI before it is described as green.
+
+## 2026-10-03 real-data shadow-replay and quantity-boundary iteration
+
+This is a focused local implementation checkpoint on
+`codex/real-data-shadow-replay`, based on business-decision commit
+`3998ca70ff044d48f83be4873fb3f0595336e679`. The implementation and replay
+checkpoint through `ff4002f03e7532f9d227fea74cbac81ae5e37bcc` is pushed;
+exact-head CI verification remains pending.
+
+### Implemented
+
+- Added a sanitized real-data shadow-replay manifest pinned to the reviewed
+  Plum, Grapes, and CA workbook hashes/ranges. It reproduces the dated totals
+  and rejects quantity-basis overwrite, pending-DO stock effects, INR 101
+  collection contamination, INR 350,000 state conflation, invented GP/rate
+  allocation, and unsupported 92-at-700 activation.
+- The 92-at-700 source is explicitly a pending Sohail handwritten photo with no
+  fabricated hash. It remains verification-pending until the exact photo and
+  role approval are linked.
+- Added immutable `Fresko Container Quantity Assertion` facts for
+  `DECLARED_SHIPPING`, `CUSTOMS_DECLARED`, and `OPERATING_INWARD`, with evidence,
+  canonical Decimal text, maker/checker, idempotency, locking, supersession, and
+  read-only reconciliation projection.
+- Declared 3,060 and operating inward 3,056 now coexist and project variance 4
+  as `OPEN_VARIANCE` without changing Container.inward_qty, stock, or ATS.
+- Added optional raw `gatepass_no`, `vehicle_no`, and `raw_party_name` to
+  physical Outward. They participate in payload conflict detection, survive
+  compensating reversal, and appear in physical snapshot provenance. Raw party
+  text does not resolve Customer.
+- Added migration proof for the new quantity assertion table/fields/options,
+  unique key, zero fabricated facts, and preservation of existing Container
+  inward/UOM values across two migrations.
+- Added `docs/COMMERCIAL_EVENT_ALIAS_CONTRACT.md` as the reviewed contract for
+  the next runtime slice: multi-lot Commercial Sale, many-to-many Sale/Outward
+  allocation, unallocated price buckets, and Trader -> Accounts -> Approver
+  reusable alias decisions. The contract is documentation only.
+
+### Local verification
+
+- Offline/unit/static suite: 153 tests passed.
+- Real-data shadow replay: manifest validated; 17 tests passed.
+- WhatsApp readiness: 19 fixtures validated; 6 contract tests passed.
+- All 20 repository JSON files parsed.
+- Relevant Python compilation and `git diff --check` passed; only local CRLF
+  conversion warnings were emitted.
+- New Bench integration tests cover quantity lifecycle, maker/checker,
+  idempotency conflict, 3,060/3,056 projection, no inward mutation, unknown/UOM,
+  supersession, cross-UOM behavior, and a two-connection competing activation.
+
+### Remaining gates and intentional boundaries
+
+- No local Frappe Bench/site exists, so the new integration/concurrency tests
+  and twice-migrate upgrade proof remain **PENDING GitHub Actions**.
+- The variance projection does not yet create a persistent `PHYSICAL_VARIANCE`
+  Exception because the current exception helper is Outward-scoped. The app
+  must not claim that exception opened, resolved, or waived.
+- No maker/checker Desk screen exists for quantity assertions.
+- Commercial Sale, alias mapping, Collections, Payment Allocation, supplier
+  ledgers/portal, settlement, ERP posting, and CA output remain unimplemented.
+- Excel remains the operational source of truth during the shadow pilot.
+
+Next: run exact-head CI/Bench on the pushed branch and fix real failures without
+weakening tests. Only after that gate should the Commercial Event/Alias contract
+become runtime work; Collections/Payment Allocation remains the following
+separate slice.
+
+## 2026-10-03 PR #9 assurance correction iteration
+
+This section supersedes only the over-broad current-state claims in the two
+preceding 2026-10-02/03 sections. Historical source cut-offs remain preserved.
+
+- ATS now caps aggregate commercial capacity at the lower of legacy Container
+  inward and an active same-UOM `OPERATING_INWARD` assertion. It does not invent
+  a lot-level shortage allocation; a cross-UOM operating fact fails closed.
+- Compatibility fallback is labelled `LEGACY_UNVERIFIED`.
+- `DUPLICATE_GATEPASS` is a review Exception, not a posting rejection. Raw
+  values are preserved, normalized comparison is Container-scoped, the two
+  Outwards are linked, and self/multi-line/reversal cases are excluded.
+- CI now guards protected immutable DocTypes from direct `db.set_value`,
+  `db_set`, and protected/dynamic write-SQL bypasses in runtime code.
+- Bench coverage includes a sanitized Plum aggregate through real quantity and
+  Outward services, System Manager maker/checker denial, and concurrent
+  quantity activation versus Outward posting under the shared Container-first
+  lock order.
+- Fixtures use synthetic non-resolving source/member identifiers. The INR
+  350,000 fixture remains `PENDING_EVIDENCE_BINDING`; no raw bank reference is
+  committed. The 92-at-700 photo context remains pending.
+- Role-based alias approval and supplier isolation are accepted principles;
+  exact role transitions and supplier-visible fields remain **PROPOSED**.
+- Structured QC is formally deferred. The interim shadow-pilot control is one
+  dated photo folder per Container, which does not create structured QC facts.
+- `PHYSICAL_VARIANCE` persistence, reusable schema-migration harness, and the
+  periodic integrity checker are separate owner-authorized post-PR #9 PRs.
+- Server Scripts disabled on a target site remains **UNKNOWN** because no
+  deployment or real-data site is authorized or in scope.
+
+The shadow manifest and INR examples are fixture-validator/decision behavior,
+not Collection, Payment Allocation, accounting, bank-clearance, or runtime
+financial behavior. Exact-head GitHub CI remains the merge gate for this
+iteration; CI history is the record and no green-status ceremony commit is
+required.

@@ -1,5 +1,35 @@
 # DECISIONS — Fresko Universe
 
+## 2026-10-03 — Owner scope correction for operational decisions
+
+- **BD-101:** INR 101 is a labour payment/outflow, not a customer receipt. It is
+  excluded from customer collections, allocations, and receivables.
+- **BD-350:** the owner has stated that INR 350,000 was received, but a repository
+  fixture or runtime record must remain `PENDING_EVIDENCE_BINDING` until the exact
+  bank Evidence is attached to the masked reference held outside Git. `Received`,
+  bank `Cleared`, and customer/container allocation remain separate states.
+- **BD-92-700:** the possible source context for 92 at INR 700 is a handwritten
+  working supplied through photos. Exact photo linkage and role approval are
+  required before the rate becomes an active commercial assertion; until then
+  the context and price stay `PENDING`.
+- **Buyer aliases:** role-based approval is accepted in principle. The exact
+  Salesperson/Trader -> Accounts -> Approver transition remains **PROPOSED**.
+  Raw aliases and superseded decisions must remain immutable history.
+- **Supplier access:** the locked boundary is that a supplier must not see
+  internal per-sale amounts or internal commercial truth. The exact visible-field
+  list, publication workflow, and role transitions remain **PROPOSED**.
+- Detailed authority, controls, unresolved evidence links, acceptance tests, and
+  implementation order are in
+  `docs/CANONICAL_BUSINESS_DECISIONS_2026-10-02.md`.
+
+## 2026-10-03 — QC formally deferred
+
+- A structured QC module is **DEFERRED** until explicitly authorized as a later
+  product slice.
+- During the shadow pilot, the interim evidence control is one dated photo folder
+  per Container. Folder presence is evidence context only and must not fabricate
+  structured QC results, acceptance, rejection, shortage, or claim facts.
+
 ## 2026-09-18 — Readiness design closeout (delegated technical decision)
 
 - Following Anubhav's delegation, MSG-UNIQ design selects a versioned canonical

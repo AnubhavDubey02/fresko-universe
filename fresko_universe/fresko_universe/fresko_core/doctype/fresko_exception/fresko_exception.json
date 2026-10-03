@@ -15,7 +15,7 @@
    "label": "Exception Type",
    "reqd": 1,
    "in_list_view": 1,
-   "options": "BUYER_UNRESOLVED\nDUPLICATE_MESSAGE\nOVERSELL_OVERRIDE\nSTOCK_SHORTFALL\nRATE_FLOOR_BREACH\nRATE_POLICY_MISSING\nOUTWARD_UNPRICED\nOUTWARD_WITHOUT_DEAL\nLOT_UNRESOLVED\nPHYSICAL_VARIANCE\nDATA_INTEGRITY\nOTHER"
+   "options": "BUYER_UNRESOLVED\nDUPLICATE_MESSAGE\nOVERSELL_OVERRIDE\nSTOCK_SHORTFALL\nRATE_FLOOR_BREACH\nRATE_POLICY_MISSING\nOUTWARD_UNPRICED\nOUTWARD_WITHOUT_DEAL\nLOT_UNRESOLVED\nDUPLICATE_GATEPASS\nPHYSICAL_VARIANCE\nDATA_INTEGRITY\nOTHER"
   },
   {
    "fieldname": "severity",
@@ -52,6 +52,14 @@
    "fieldtype": "Link",
    "label": "Outward",
    "options": "Fresko Outward",
+   "read_only": 1
+  },
+  {
+   "fieldname": "related_outward",
+   "fieldtype": "Link",
+   "label": "Related Outward",
+   "options": "Fresko Outward",
+   "description": "Second immutable Outward reference for pairwise controls such as duplicate gatepass review.",
    "read_only": 1
   },
   {

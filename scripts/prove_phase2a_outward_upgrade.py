@@ -20,6 +20,7 @@ from frappe.utils import now_datetime
 OUTWARD_DOCTYPE = "Fresko Outward"
 OUTWARD_LINE_DOCTYPE = "Fresko Outward Line"
 ASSERTION_DOCTYPE = "Fresko Field Assertion"
+QUANTITY_ASSERTION_DOCTYPE = "Fresko Container Quantity Assertion"
 DEAL_DOCTYPE = "Fresko Deal"
 LEGACY_DEAL_NAME = "PHASE2A-UPGRADE-DEAL"
 LEGACY_DISPATCHED_QTY = "3.25"
@@ -81,9 +82,19 @@ def _deal_snapshot(name: str) -> dict[str, Any]:
     return dict(rows[0])
 
 
+def _container_snapshot() -> list[dict[str, Any]]:
+    """Only snapshot pre-existing operational scalars; migration must never rewrite them."""
+    return [dict(row) for row in frappe.db.sql(
+        """SELECT name, CAST(inward_qty AS CHAR) AS inward_qty,
+                  HEX(CAST(inward_qty AS CHAR)) AS inward_qty_hex, uom
+             FROM `tabFresko Container` ORDER BY name""",
+        as_dict=True,
+    )]
+
+
 def seed_phase1() -> None:
     """Seed one populated legacy Deal while the exact Phase 1 app is installed."""
-    for doctype in (OUTWARD_DOCTYPE, OUTWARD_LINE_DOCTYPE, ASSERTION_DOCTYPE):
+    for doctype in (OUTWARD_DOCTYPE, OUTWARD_LINE_DOCTYPE, ASSERTION_DOCTYPE, QUANTITY_ASSERTION_DOCTYPE):
         _require(
             not frappe.db.exists("DocType", doctype),
             f"Phase 1 unexpectedly contains DocType {doctype}",
@@ -116,6 +127,7 @@ def seed_phase1() -> None:
     state = {
         "legacy_deal": _deal_snapshot(LEGACY_DEAL_NAME),
         "legacy_deal_count": frappe.db.count(DEAL_DOCTYPE),
+        "container_snapshot": _container_snapshot(),
     }
     _write_json(_private_path(STATE_FILENAME), state)
     print(
@@ -135,13 +147,17 @@ def _assert_field(doctype: str, fieldname: str, fieldtype: str) -> None:
 
 
 def _current_snapshot(seed: dict[str, Any]) -> dict[str, Any]:
-    for doctype in (OUTWARD_DOCTYPE, OUTWARD_LINE_DOCTYPE, ASSERTION_DOCTYPE):
+    for doctype in (OUTWARD_DOCTYPE, OUTWARD_LINE_DOCTYPE, ASSERTION_DOCTYPE, QUANTITY_ASSERTION_DOCTYPE):
         _require(frappe.db.exists("DocType", doctype), f"Migrated DocType is missing: {doctype}")
         _require(_table_exists(doctype), f"Migrated table is missing: tab{doctype}")
 
     required_fields = {
         OUTWARD_DOCTYPE: {
             "deal": "Link",
+            "gatepass_no": "Data",
+            "gatepass_comparison_key": "Data",
+            "vehicle_no": "Data",
+            "raw_party_name": "Small Text",
             "source_event_id": "Data",
             "source_event_key": "Data",
             "payload_sha256": "Data",
@@ -163,6 +179,18 @@ def _current_snapshot(seed: dict[str, Any]) -> dict[str, Any]:
             "status": "Select",
             "supersedes": "Link",
         },
+        QUANTITY_ASSERTION_DOCTYPE: {
+            "container": "Link",
+            "basis": "Select",
+            "quantity": "Data",
+            "uom": "Link",
+            "evidence": "Link",
+            "source_fact_id": "Data",
+            "assertion_key": "Data",
+            "payload_sha256": "Data",
+            "status": "Select",
+            "supersedes": "Link",
+        },
     }
     for doctype, fields in required_fields.items():
         for fieldname, fieldtype in fields.items():
@@ -173,6 +201,17 @@ def _current_snapshot(seed: dict[str, Any]) -> dict[str, Any]:
         bool(outward_meta.get_field("reverses_outward").unique),
         "Migrated reversal link must have a unique database constraint",
     )
+    quantity_meta = frappe.get_meta(QUANTITY_ASSERTION_DOCTYPE, cached=False)
+    _require(
+        bool(quantity_meta.get_field("assertion_key").unique),
+        "Migrated quantity assertion key must have a unique database constraint",
+    )
+    _require(
+        {"DECLARED_SHIPPING", "CUSTOMS_DECLARED", "OPERATING_INWARD"}.issubset(
+            set((quantity_meta.get_field("basis").options or "").splitlines())
+        ),
+        "Migrated quantity assertion basis options are incomplete",
+    )
     exception_options = set(
         (frappe.get_meta("Fresko Exception", cached=False)
          .get_field("exception_type").options or "").splitlines()
@@ -181,14 +220,20 @@ def _current_snapshot(seed: dict[str, Any]) -> dict[str, Any]:
         "OUTWARD_WITHOUT_DEAL" in exception_options,
         "Migrated Exception options are missing OUTWARD_WITHOUT_DEAL",
     )
+    _require(
+        "DUPLICATE_GATEPASS" in exception_options,
+        "Migrated Exception options are missing DUPLICATE_GATEPASS",
+    )
+    _assert_field("Fresko Exception", "related_outward", "Link")
 
     row_counts = {
         OUTWARD_DOCTYPE: frappe.db.count(OUTWARD_DOCTYPE),
         OUTWARD_LINE_DOCTYPE: frappe.db.count(OUTWARD_LINE_DOCTYPE),
         ASSERTION_DOCTYPE: frappe.db.count(ASSERTION_DOCTYPE),
+        QUANTITY_ASSERTION_DOCTYPE: frappe.db.count(QUANTITY_ASSERTION_DOCTYPE),
     }
     _require(
-        row_counts == {OUTWARD_DOCTYPE: 0, OUTWARD_LINE_DOCTYPE: 0, ASSERTION_DOCTYPE: 0},
+        row_counts == {OUTWARD_DOCTYPE: 0, OUTWARD_LINE_DOCTYPE: 0, ASSERTION_DOCTYPE: 0, QUANTITY_ASSERTION_DOCTYPE: 0},
         f"Migration fabricated Phase 2A physical truth: {row_counts!r}",
     )
 
@@ -201,11 +246,16 @@ def _current_snapshot(seed: dict[str, Any]) -> dict[str, Any]:
         frappe.db.count(DEAL_DOCTYPE) == seed["legacy_deal_count"],
         "Migration changed the number of legacy Fresko Deal rows",
     )
+    _require(
+        _container_snapshot() == seed["container_snapshot"],
+        "Migration changed existing Container.inward_qty or UOM values",
+    )
     return {
-        "doctypes_present": [OUTWARD_DOCTYPE, OUTWARD_LINE_DOCTYPE, ASSERTION_DOCTYPE],
+        "doctypes_present": [OUTWARD_DOCTYPE, OUTWARD_LINE_DOCTYPE, ASSERTION_DOCTYPE, QUANTITY_ASSERTION_DOCTYPE],
         "row_counts": row_counts,
         "legacy_deal": current_deal,
         "legacy_deal_count": seed["legacy_deal_count"],
+        "container_snapshot": seed["container_snapshot"],
     }
 
 

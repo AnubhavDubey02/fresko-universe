@@ -38,21 +38,44 @@ def available_to_sell(
     # snapshot while probing the Deal before it waited for the container lock.
     # Propagate current-read semantics so a waiter sees reservations committed
     # by the transaction that held the container lock before it.
-    lot_inward = _lot_inward_qty(container, lot_no, for_update=for_update)
+    lot_inward, lot_uom = _lot_inward(container, lot_no, for_update=for_update)
     reserved = _reserved_qty(
         container,
         lot_no,
         exclude_deal=exclude_deal,
         for_update=for_update,
     )
-    return flt(lot_inward) - flt(reserved)
+    lot_available = flt(lot_inward) - flt(reserved)
+
+    # A Container Quantity Assertion is container-wide, not lot-specific.  Do
+    # not invent a pro-rata shortage allocation between lots.  Instead, cap
+    # every lot's ATS by the remaining container-wide capacity after all
+    # commercial reservations.  This makes the aggregate sellable quantity the
+    # lower of legacy inward and the active same-UOM OPERATING_INWARD fact.
+    container_capacity = _container_operating_capacity(
+        container, lot_uom, for_update=for_update
+    )
+    container_reserved = _reserved_qty(
+        container,
+        None,
+        exclude_deal=exclude_deal,
+        for_update=for_update,
+    )
+    container_available = flt(container_capacity) - flt(container_reserved)
+    return min(lot_available, container_available)
 
 
 def _lot_inward_qty(container: str, lot_no: str, *, for_update: bool = False) -> float:
+    return _lot_inward(container, lot_no, for_update=for_update)[0]
+
+
+def _lot_inward(
+    container: str, lot_no: str, *, for_update: bool = False
+) -> tuple[float, str]:
     lock_clause = " FOR UPDATE" if for_update else ""
     row = frappe.db.sql(
         f"""
-        SELECT inward_qty
+        SELECT inward_qty, uom
         FROM `tabFresko Container Lot`
         WHERE parent=%s AND parenttype='Fresko Container' AND lot_no=%s
         LIMIT 1{lock_clause}
@@ -65,18 +88,77 @@ def _lot_inward_qty(container: str, lot_no: str, *, for_update: bool = False) ->
             f"Lot '{lot_no}' not found on container {container}",
             title="Lot Not On Container",
         )
-    return flt(row[0].inward_qty)
+    return flt(row[0].inward_qty), row[0].uom
+
+
+def _container_operating_capacity(
+    container: str, uom: str, *, for_update: bool = False
+) -> float:
+    """Return the lower of legacy inward and active same-UOM operating truth.
+
+    An active operating assertion in another UOM is explicit evidence that
+    cannot be converted implicitly.  Fail closed instead of falling back to a
+    legacy scalar in that situation.
+    """
+    lock_clause = " FOR UPDATE" if for_update else ""
+    container_rows = frappe.db.sql(
+        f"""
+        SELECT inward_qty, uom
+        FROM `tabFresko Container`
+        WHERE name=%s
+        LIMIT 1{lock_clause}
+        """,
+        (container,),
+        as_dict=True,
+    )
+    if not container_rows:
+        frappe.throw(f"Container {container} does not exist")
+    legacy = container_rows[0]
+    if legacy.uom != uom:
+        frappe.throw(
+            f"Container {container} lot UOM {uom} does not match legacy inward UOM {legacy.uom}",
+            title="ATS UOM Mismatch",
+        )
+
+    assertions = frappe.db.sql(
+        f"""
+        SELECT name, quantity, uom
+        FROM `tabFresko Container Quantity Assertion`
+        WHERE container=%s AND basis='OPERATING_INWARD' AND status='Active'
+        ORDER BY activated_at DESC, creation DESC, name DESC{lock_clause}
+        """,
+        (container,),
+        as_dict=True,
+    )
+    same_uom = next((row for row in assertions if row.uom == uom), None)
+    if same_uom is None:
+        if assertions:
+            frappe.throw(
+                f"ATS is unresolved for container {container}: active operating inward uses another or unknown UOM",
+                title="ATS Operating Quantity Unresolved",
+            )
+        return flt(legacy.inward_qty)
+    if same_uom.quantity in (None, ""):
+        frappe.throw(
+            f"ATS is unresolved for container {container}: active operating inward quantity is unknown",
+            title="ATS Operating Quantity Unresolved",
+        )
+    return min(flt(legacy.inward_qty), flt(same_uom.quantity))
 
 
 def _reserved_qty(
     container: str,
-    lot_no: str,
+    lot_no: str | None,
     *,
     exclude_deal: Optional[str] = None,
     for_update: bool = False,
 ) -> float:
     statuses = tuple(ATS_REDUCING_STATUSES)
-    params: list = [container, lot_no, statuses]
+    params: list = [container, statuses]
+    lot_clause = ""
+    if lot_no is not None:
+        lot_clause = " AND lot_no=%s"
+        params.insert(1, lot_no)
     exclude_clause = ""
     if exclude_deal:
         exclude_clause = " AND name != %s"
@@ -88,7 +170,7 @@ def _reserved_qty(
         SELECT name, status, qty, COALESCE(dispatched_qty, 0) AS dispatched_qty
         FROM `tabFresko Deal`
         WHERE container=%s
-          AND lot_no=%s
+          {lot_clause}
           AND status IN %s
           {exclude_clause}
         {lock_clause}

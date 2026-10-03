@@ -27,6 +27,28 @@ Drive folder parent (xlsx): `0AGdgZm7J1lvQUk9PVA`
 - Storage rule: the full ZIP remains outside Git. Only compact reviewed fixture
   records and provenance are committed.
 
+## 25-Sep real-data validation pack
+
+The reviewed archive and operational workbook binaries remain outside Git. The
+sanitized acceptance manifest is
+`fresko_universe/fresko_universe/fixtures/real_data_shadow/manifest.json`.
+
+- Archive SHA-256:
+  `E875335141BE021DA1B0315A7046D6798E638CA5F8DE4F89BAB607404BACC78F`.
+- `Fresko_Plum_Official_Outward_Update_21_Sep_2026.xlsx` SHA-256:
+  `3B9D5D33BF8425819A88AFDCD9B07329A4C66F48A565D09719C663EA651A0BFF`.
+- `Fresko_Grapes_Official_Outward_Update_21_Sep_2026.xlsx` SHA-256:
+  `71994E54F585DDC56C07EF76825F8B60739BAC086D367654750A6B0A1486536B`.
+- `Fresko_Universal_CA_Master_Accounting_Reconciliation_25_Sep_2026_AUDITED.xlsx`
+  SHA-256:
+  `54FB00CE898373E84F1463E78B32E05B801A5C3D70C415668474A916BE268F68`.
+- Exact sheet/range references and expected cut-off totals live in the sanitized
+  manifest and are validated by `scripts/validate_real_data_shadow_fixture.py`.
+- The exact Sohail handwritten photo for 92 at INR 700 is **not yet linked or
+  hash-verified**. The fixture therefore records a pending photo source and must
+  reject activation; it does not pretend that this case is evidenced by the CA
+  workbook.
+
 ## Staged fixtures in-repo
 
 Under `fresko_universe/fresko_universe/fixtures/drive/`:

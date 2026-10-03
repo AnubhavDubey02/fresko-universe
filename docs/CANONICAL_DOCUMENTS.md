@@ -4,7 +4,10 @@
 
 **Reviewed:** 2026-10-02
 
-**Scope:** Historical Phase 1 authority, dated PR #7 stabilization status, and the focused Phase 2A physical-Outward contract/implementation checkpoint. This index authorizes no merge.
+**Scope:** Historical Phase 1 authority, dated PR #7 stabilization status, the
+focused Phase 2A physical-Outward contract/implementation checkpoint, the
+2026-10-02 locked operational/access decisions, and the 2026-10-03 real-data
+shadow-replay/quantity-boundary checkpoint. This index authorizes no merge.
 
 Use this index before relying on an older design memo. Historical documents remain
 in the repository as dated evidence; a later canonical decision overrides a
@@ -14,6 +17,9 @@ conflicting proposal without rewriting the historical record.
 
 | Subject | Canonical document | Rule |
 |---|---|---|
+| Real-data shadow-replay gate | `docs/REAL_DATA_SHADOW_REPLAY_CONTRACT.md` plus `fresko_universe/fresko_universe/fixtures/real_data_shadow/manifest.json` | Sanitized source-hash/range-bound acceptance truth for the reviewed Plum/Grapes/CA cut-offs. It is a deterministic fixture gate, not runtime, bank, accounting, or CA proof. |
+| Next commercial-event and alias slice | `docs/COMMERCIAL_EVENT_ALIAS_CONTRACT.md` | Implementation contract for multi-lot Commercial Sale, unallocated price buckets, Sale-to-Outward allocation, and role-approved reusable aliases. It records no runtime implementation. |
+| Current operational classifications and access boundaries | `docs/CANONICAL_BUSINESS_DECISIONS_2026-10-02.md` | Records the INR 101 boundary and evidence-pending INR 350,000/92-at-INR-700 states; accepts role-based alias approval and supplier isolation in principle while exact transitions/visible fields remain proposed. |
 | Latest stabilization and temporal acceptance status | `docs/CANONICAL_STATUS_ADDENDUM_2026-10-01.md` | Current exact-head checkpoint and dated corrections to time-bounded business examples; preserves older documents as historical evidence. |
 | Container-to-CA business contract | `docs/CONTAINER_CYCLE_TO_CA_CONTRACT.md` | Governs truth layers, cut-offs, lifecycle boundaries, Phase 2A physical movement, future ledgers, settlement, and CA-ready output without implying those future ledgers are implemented. |
 | Current coding-agent implementation handoff | `docs/AGENT_HANDOFF.md` | Dated branch/SHA/test status. The 2026-10-02 section records the first Phase 2A slice and its explicit deferrals; live GitHub checks still control exact-head claims. |

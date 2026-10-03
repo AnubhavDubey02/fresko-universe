@@ -218,6 +218,7 @@ class FreskoContainer(Document):
                         "OUTWARD_UNPRICED",
                         "OUTWARD_WITHOUT_DEAL",
                         "LOT_UNRESOLVED",
+                        "DUPLICATE_GATEPASS",
                         "PHYSICAL_VARIANCE",
                     ],
                 ),

@@ -3,6 +3,21 @@
 ## Locked by Anubhav (2026-09-15)
 D1, D3, D4, D5, D6, D10 — see DECISIONS.md.
 
+## Locked by Anubhav (2026-10-02)
+
+- INR 101 is a labour payment/outflow, not a customer collection.
+- INR 350,000 was received; bank-cleared and allocation states remain separate.
+- The source context for 92 at INR 700 is Sohail's handwritten photo working;
+  exact photo linkage and approval remain implementation evidence gates.
+- Buyer-alias approval is role based: Trader proposes, Accounts verifies,
+  Fresko Approver approves.
+- Supplier-facing access excludes per-sale amounts/rates and all internal
+  customer, collection, receivable, margin, and Deal data. A distinct approved
+  Supplier Settlement Value may be published only under its documented contract
+  basis.
+
+See `docs/CANONICAL_BUSINESS_DECISIONS_2026-10-02.md`.
+
 ## Still open
 | ID | Question | Notes |
 |---|---|---|
