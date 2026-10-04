@@ -41,6 +41,13 @@ installation, migration, all application tests and all existing upgrade gates.
 Historical baseline sources still use their existing migration-proof paths.
 No persisted DocType schema is changed by this packet.
 
+Local preparation commit `26f8cd51702786f662d8a7a8ba0a9c4710a8ae1c` passed
+fresh-site install/migrate and 275 pinned Bench tests (zero failures/errors),
+228 app/static tests, 49 script tests and both Node UI harnesses. The local
+Bench used the synchronized app copy; GitHub additionally tests immutable
+export and normal `bench get-app`. Native acceptance, exact-head CI and Cloud
+deployment have distinct gates and are not inferred from these results.
+
 ## Platform pins and actual deployment identity
 
 | Component | Required test pin |
@@ -142,6 +149,23 @@ authorized synthetic staging fixtures. Do not run the loopback CI launcher as
 a production infrastructure recipe. Disable test/fixture flags before any
 subsequent operator or pilot use.
 
+### Prepared physical touch-device pass
+
+After hosting access is connected, open the authorized staging URL on one real
+Android/Chrome or iPhone/Safari device. Record device, OS/browser versions,
+viewport, UTC time and deployed app SHAs. Use a fresh authorized synthetic
+scenario so repeated allocation attempts cannot consume a previous scenario's
+remaining quantity. Never substitute existing pilot records.
+
+Follow the same multi-lot Sale, alias/rate review, Outward allocation, Collection
+and Payment Allocation sequence using separate maker, verifier and approver
+accounts. Check tapping, scrolling, dialog fields, mobile tables and Container /
+As Of switching; repeat a slow or double-tapped action and confirm its single
+persisted result. Check Supplier and mixed-role direct URL denial. Capture only
+synthetic domain screens after login and record pass/fail per action; exclude
+credentials and session material. Device/emulated evidence remain separately
+labelled. This protocol is prepared; no physical-device execution is claimed.
+
 ## Recovery proof and Cloud completion
 
 `scripts/browser_recovery.py` creates a full database/public/private/config
@@ -154,7 +178,11 @@ inspection and must be cleaned with its exact generated name after review.
 The first local run passed after creating an empty destination site before
 restore. Its snapshot included two draft Sales, six Containers, three posted
 Outwards, both file sentinels and the decrypted secret. Money rows were not yet
-created at that checkpoint; recovery must run again after browser finance flows.
+created at that checkpoint. The later post-Money recovery passed with one
+approved Collection, one approved Payment Allocation, five Sales, six Containers,
+three Outwards, one alias mapping and three Outward allocations, plus both file
+sentinels and encrypted-secret readback. These are selected synthetic records;
+the proof still does not establish whole-database equality or Cloud recovery.
 Failed synthetic destinations are identified by their generated name in the
 error/private diagnostic and require exact-name cleanup. No source-site restore
 or deletion is performed. The local MariaDB account scope is an isolated test
@@ -200,16 +228,37 @@ The Money read lock also suppressed a new filter request while the old request
 was pending. The Node regression reproduced this. Reads now run independently,
 and callbacks check filter context and request generation before rendering.
 Duplicate writes remain serialized. Delayed **real** browser response evidence
-remains required before claiming browser acceptance.
+now passes locally for both Pages: the harness holds an actual successful
+server response, changes the native cutoff, then releases the old response and
+asserts that the newer projection remains displayed. Fresh exact-head CI still
+must run these checks with the complete desktop/mobile workflows.
 
 A delayed Workspace response could also repopulate a Container after its filter
 was cleared. Clearing the filter now advances the request generation before
 returning and discards the old selection and response. Offline behavioral tests
 cover both read races; they do not substitute for the real browser checks.
 
+The completed harness also replays the exact native Collection create request,
+checks the original record identity and one persisted source-event row, checks
+historical read-only controls and stale-token truth equality, and rejects missing
+required saved workflow IDs or skipped acceptance tests. Supplier and mixed-role
+native URL/API denial passed locally. Artifact output must be a new nonsymlink
+directory; a rejected destination is never used for the summary either. These
+focused results do not establish a complete desktop/mobile or hosting pass.
+
+A native 360px reproduction also found that tabbing from Customer opens the
+Collection Datetime picker; Escape dismissed the parent dialog too. The helper
+now clicks the visible dialog heading to dismiss that picker while retaining
+the selected Customer. Page-level picker dismissal remains separate. A native
+read-only regression checks both the Page Container Link and this dialog path.
+
 Defer broad operator UX to the next bounded packet: mobile table/control access,
 clearer raw-lot guidance, actionable permission-aware buttons, removal of stale
 Money-extension copy and unified contextual pending/exception presentation.
+The native narrow-screen `New Collection` primary button also lacks an accessible
+name when its text is hidden; the harness uses its visible `data-label` button.
+Workspace inner actions are reachable through Frappe's native mobile Menu links,
+which the harness follows instead of interacting with hidden desktop buttons.
 Record actual screenshots/findings before ranking this work. Do not start that
 packet until this packet's available gates and independent review are green.
 

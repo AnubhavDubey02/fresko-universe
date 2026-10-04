@@ -967,3 +967,30 @@ test failure exit status when `CI` is set, now explicit in the CI launcher.
 Native acceptance is continuing on a clean synthetic restored site; earlier
 partial Sales/alias decisions are preserved. Exact-head CI, completed browser
 flows and hosting evidence must be recorded before final acceptance.
+
+Fresh-site result for preparation commit
+`26f8cd51702786f662d8a7a8ba0a9c4710a8ae1c`: installation and migration succeeded;
+275 pinned Bench tests passed in 605.661 seconds, zero failures/errors. This
+replaces the reused-site failure as the current local complete-test evidence;
+it remains separate from exact-head GitHub and hosting acceptance.
+
+Draft PR #18 is open. Exact-head run `37209321660` at `26f8cd5` passed Smoke,
+275 pinned Bench tests and all six migration proofs on first and second migrate.
+The overall Bench job failed in native browser acceptance (three timeouts and a
+Supplier denial assertion); the recovery CI step did not execute. Subsequent
+native harness repairs and missing race/replay coverage require a new exact-head
+run and independent review. No merge or Cloud deployment is claimed.
+
+Follow-up focused native checks passed: delayed actual Workspace/Money responses
+preserve the newer cutoff; historical/receivable/exception views and stale Money
+tokens preserve approved truth; exact Collection source replay returns one
+record; Supplier and mixed-role direct URL/API denial holds. The harness now
+fails required missing workflow IDs/skips and preserves a rejected artifact
+destination. Complete fresh desktop/mobile CI and final independent review
+remain required; existing approved desktop synthetic records were preserved.
+
+Mobile harness investigation reproduced Escape closing the Collection dialog
+after Customer selection and Tab opened its Datetime picker. Native dialog-heading
+click dismisses only the picker and retains Customer. The Page/dialog-aware Link
+getter remains required on both paths. Partial 390/360 allocation proposals are
+preserved; complete acceptance uses a fresh fixture instead of recreating them.

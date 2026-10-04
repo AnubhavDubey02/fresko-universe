@@ -1,5 +1,5 @@
 from typing import Any, Dict, Optional
-from playwright.sync_api import Browser, BrowserContext, Locator, Page
+from playwright.sync_api import Browser, BrowserContext, Locator, Page, expect
 
 
 class BrowserSession:
@@ -22,6 +22,7 @@ class BrowserSession:
             has_touch=is_mobile,
         )
         self.page: Page = self.context.new_page()
+        self.last_field: Optional[str] = None
         self._authenticate(email, password)
 
     def _authenticate(self, email: str, password: str) -> None:
@@ -71,6 +72,14 @@ class BrowserSession:
         """Dismiss any active Frappe datepicker popup through normal user interaction."""
         active_dp = self.page.locator("#datepickers-container .datepicker.active:visible")
         if active_dp.count() > 0:
+            modal = self.page.locator(".modal.show:visible, .modal:visible").first
+            if modal.count():
+                # Escape bubbles to Bootstrap and closes the parent dialog.
+                # Click its native heading outside the picker instead.
+                modal.locator(".modal-title").click()
+                active_dp.wait_for(state="hidden", timeout=2000)
+                expect(modal).to_be_visible()
+                return
             self.page.keyboard.press("Escape")
             try:
                 active_dp.wait_for(state="hidden", timeout=2000)
@@ -85,6 +94,7 @@ class BrowserSession:
         dialog: bool = False,
         require_autocomplete: bool = False,
     ) -> None:
+        self.last_field = fieldname
         scope: Locator
         if dialog:
             scope = self.page.locator(".modal.show:visible, .modal:visible").first
@@ -115,10 +125,13 @@ class BrowserSession:
 
             rows = container.locator(".awesomplete ul:visible [role='option']:visible")
             if require_autocomplete:
-                rows.first.wait_for(state="visible")
+                rows.first.wait_for(state="visible", timeout=10000)
             else:
                 try:
-                    rows.first.wait_for(state="visible", timeout=600)
+                    # Link queries are debounced and mobile emulation can take
+                    # longer to return the real suggestion list. Give the
+                    # native UI time to populate before committing the field.
+                    rows.first.wait_for(state="visible", timeout=5000)
                 except Exception:
                     pass
 
@@ -138,7 +151,8 @@ class BrowserSession:
                         f"Frappe Link '{fieldname}' returned suggestions but not the requested value '{expected}'"
                     )
 
-            control.press("Tab")
+            if control.is_visible() and control.evaluate("el => document.activeElement === el"):
+                self.page.keyboard.press("Tab")
             self._close_active_datepicker()
 
             # Verify actual Frappe dialog/control value after commit
@@ -170,16 +184,22 @@ class BrowserSession:
                 )
             except Exception as wait_err:
                 actual_val = self._get_frappe_field_value(fieldname, dialog)
-                input_val = control.input_value()
                 if actual_val != expected:
+                    try:
+                        input_val = control.input_value(timeout=1000)
+                    except Exception:
+                        input_val = "<not visible or detached>"
                     raise AssertionError(
                         f"Frappe Link '{fieldname}' did not commit requested value: control value is {actual_val!r}, input value is {input_val!r}, expected {expected!r}"
                     ) from wait_err
 
-            if control.input_value().strip() != expected:
+            committed = self._get_frappe_field_value(fieldname, dialog)
+            if control.is_visible() and control.input_value().strip() != expected:
                 raise AssertionError(
                     f"Frappe Link '{fieldname}' visible input value {control.input_value()!r} does not match expected {expected!r}"
                 )
+            if committed != expected:
+                raise AssertionError(f"Frappe Link '{fieldname}' getter value {committed!r} does not match expected {expected!r}")
         else:
             control.fill(str(value))
             control.press("Tab")
@@ -187,6 +207,7 @@ class BrowserSession:
 
     def datetime_field(self, fieldname: str, iso_value: str) -> None:
         """Enter a canonical timestamp through Frappe's native display format."""
+        self.last_field = fieldname
         container = self.page.locator(f"body div[data-fieldname='{fieldname}']:visible").first
         control = container.locator("input:not([type=hidden])").first
         control.wait_for(state="visible")
@@ -217,6 +238,7 @@ class BrowserSession:
             )
 
     def clear_datetime_field(self, fieldname: str) -> None:
+        self.last_field = fieldname
         container = self.page.locator(f"body div[data-fieldname='{fieldname}']:visible").first
         control = container.locator("input:not([type=hidden])").first
         control.wait_for(state="visible")
@@ -239,7 +261,16 @@ class BrowserSession:
         modal = self.page.locator(".modal.show:visible, .modal:visible").first
         modal.wait_for(state="visible")
         if title:
-            modal.locator(".modal-title").filter(has_text=title).wait_for(state="visible")
+            expect(modal.locator(".modal-title")).to_have_text(title, timeout=30000)
+        self.page.wait_for_function(
+            """() => {
+                const dialog = window.cur_dialog;
+                const wrapper = dialog && dialog.$wrapper && dialog.$wrapper.get(0);
+                return !!(dialog && dialog.display === true && wrapper &&
+                    wrapper.classList.contains('show') && wrapper.contains(document.activeElement));
+            }""",
+            timeout=30000,
+        )
         return modal
 
     def click_dialog(self, label: str) -> None:
