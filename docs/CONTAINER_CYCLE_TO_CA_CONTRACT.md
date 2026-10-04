@@ -276,6 +276,13 @@ No package may be labelled fully reconciled while a material unresolved
 exception remains. An authorized waiver may permit progression only when the
 waiver, owner, reason, materiality basis, and affected totals are explicit.
 
+The 2026-10-04 current runtime close gate implements the explicit matrix in
+`docs/PILOT_SAFETY_CLOSE_POLICY.md`: Physical/Commercial blockers plus contextual
+Money receipt issues, current-read validation and preserved UNKNOWN/PENDING.
+Company-level unassigned receipts are not guessed onto Containers. The current
+Exception gate alone does not certify full settlement, zero receivables or a
+frozen CA-ready package; parking/receivable closure policy remains separate.
+
 ## 11. CA-ready package
 
 A CA-ready package is an immutable dated export containing:

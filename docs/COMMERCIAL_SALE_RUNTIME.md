@@ -26,7 +26,7 @@ Each root record enforces immutable source identity via `source_payload`, `paylo
 ## 3. Segregation of Duties and Role Workflow
 
 Workflow transitions enforce strict separation of duties across distinct users:
-- **Maker** (`Fresko Salesperson`; optional separately configured `Fresko Trader` is recognized): creates/submits Sale, proposes alias mappings, proposes rates, and proposes allocations.
+- **Maker** (`Fresko Salesperson`; optional separately configured `Fresko Trader` is recognized): creates/submits Sale, proposes alias mappings, proposes rates, and proposes allocations. The 2026-10-04 pilot audit found that Trader recognition alone does not provide Evidence access or native Workspace/DocType permissions. Salesperson remains the supported installed maker capability; Trader-only workflow support is deferred rather than expanding authorization in this safety repair.
 - **Verifier** (`Fresko Accounts`): verifies evidence and commercial assertions. Must not be the maker.
 - **Approver** (`Fresko Approver`): approves or rejects. Must not be the maker or verifier.
 - `System Manager`: technical visibility and reconciliation refresh; no routine business approval or break-glass mutation API is implemented.

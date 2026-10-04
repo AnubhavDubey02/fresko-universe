@@ -145,3 +145,14 @@ python3 scripts/validate_phase2_readiness_fixtures.py \
 
 The validator uses only the Python standard library. Passing it confirms fixture
 shape and source integrity; it does not validate a future ingestion engine.
+
+## 2026-10-04 future live-provider entry guard
+
+The current non-whitelisted `evidence_service.ingest_provider_message_evidence`
+requires four exact nonempty string scope IDs before calling the existing ingest
+service. Future authenticated adapters must use this strict entry after their own
+signature/account verification. Historical/offline `ingest_message_evidence` still
+preserves unknown identity; it is not the live-provider entry. No transport,
+webhook, media downloader or network integration is implemented by this guard.
+See `docs/PILOT_SAFETY_CLOSE_POLICY.md` for the tested boundary and current
+Attachment aggregation states (CONFLICT exists on the parent, not the child).
