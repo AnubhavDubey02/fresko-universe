@@ -236,6 +236,14 @@ The Money race runs after the financial workflows and requires distinct actual
 old/new sales counts, so an empty fixture cannot satisfy that proof. Fresh
 exact-head CI still must run these checks with the complete desktop/mobile workflows.
 
+Native Link `get_value()` can reflect input before server validation and the
+filter change callback finish. The browser helper waits for committed Control
+state before querying; it does not use a fixed delay. Pristine completed fixture
+debt is INR 4000 for one Container and INR 12000 for the shared Customer. Unpriced
+Sale PENDING is checked before late-rate approval, separately from those known
+positions. Prior unpriced drafts on a reused local site do not define fresh CI
+expectations.
+
 A delayed Workspace response could also repopulate a Container after its filter
 was cleared. Clearing the filter now advances the request generation before
 returning and discards the old selection and response. Offline behavioral tests

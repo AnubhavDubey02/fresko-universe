@@ -994,3 +994,17 @@ after Customer selection and Tab opened its Datetime picker. Native dialog-headi
 click dismisses only the picker and retains Customer. The Page/dialog-aware Link
 getter remains required on both paths. Partial 390/360 allocation proposals are
 preserved; complete acceptance uses a fresh fixture instead of recreating them.
+
+Exact-head run `37229099731` at `b89e9e1` passed Smoke (228 app/static plus
+49 script tests), 275 pinned Bench tests and all six first/second migration
+proofs, including exact Commercial/Money baseline upgrades. Native desktop,
+360/390 financial workflows, dialog preservation, actual delayed-response races
+and Supplier/mixed denials passed. Seven browser tests ran in 507.353 seconds;
+one saved Container-receivable check failed, zero errors/skips. Recovery was not
+reached. The Link helper was reading visible input before native validation and
+its change callback completed. It now waits for the committed Control state.
+Clean-fixture Container/Customer debt assertions are 4000/12000; legacy local
+unpriced drafts are not acceptance truth. A separate native unpriced Sale read
+asserts null gross/debt and PENDING before rate approval. No app runtime/schema
+change accompanies this harness repair; a fresh exact-head complete gate is
+required before deployment-ref publication.

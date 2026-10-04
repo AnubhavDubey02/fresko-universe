@@ -87,6 +87,21 @@ class BrowserSession:
                 self.page.evaluate("() => document.activeElement && document.activeElement.blur()")
                 active_dp.wait_for(state="hidden", timeout=2000)
 
+    def _wait_link_commit(self, fieldname: str, dialog: bool, expected: str) -> None:
+        # Control.get_value() reads the input while validate_link is still pending.
+        # Wait for the native model/input update and its change callback to finish.
+        self.page.wait_for_function(
+            """([fieldname, dialog, expected]) => {
+                const wrapper = frappe.container.page;
+                const owner = dialog ? window.cur_dialog : (wrapper && (wrapper.page || wrapper));
+                const control = owner && owner.fields_dict && owner.fields_dict[fieldname];
+                return !!(control && !control.inside_change_event && !control._validated &&
+                    (control.value == null ? '' : control.value) === expected &&
+                    (control.get_value() == null ? '' : control.get_value()) === expected);
+            }""",
+            arg=[fieldname, dialog, expected], timeout=30000,
+        )
+
     def field(
         self,
         fieldname: str,
@@ -119,6 +134,7 @@ class BrowserSession:
             if control.input_value() == expected:
                 committed = self._get_frappe_field_value(fieldname, dialog)
                 if committed == expected:
+                    self._wait_link_commit(fieldname, dialog, expected)
                     return
 
             control.fill(expected)
@@ -193,6 +209,7 @@ class BrowserSession:
                         f"Frappe Link '{fieldname}' did not commit requested value: control value is {actual_val!r}, input value is {input_val!r}, expected {expected!r}"
                     ) from wait_err
 
+            self._wait_link_commit(fieldname, dialog, expected)
             committed = self._get_frappe_field_value(fieldname, dialog)
             if control.is_visible() and control.input_value().strip() != expected:
                 raise AssertionError(
