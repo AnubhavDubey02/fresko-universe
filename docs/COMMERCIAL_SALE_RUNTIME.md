@@ -42,6 +42,19 @@ To prevent deadlocks and race conditions, transactions acquire pessimistic `FOR 
 
 Concurrent edits check `expected_version` raising `STALE_VERSION` on mismatch. Idempotent replays return existing records; altered payloads raise `IDEMPOTENCY_PAYLOAD_CONFLICT`. Unique races recover or raise `CONCURRENT_STATE_CONFLICT`.
 
+Existing-record Commercial mutations dispatched by an HTTP request require an
+explicit positive integer `expected_version` (integer or canonical ASCII decimal
+string). Missing/blank tokens fail with `EXPECTED_VERSION_REQUIRED`; malformed
+tokens fail with `INVALID_EXPECTED_VERSION`. Role/Supplier checks precede this
+validation. A well-formed stale token still fails with `STALE_VERSION` under the
+existing locks. All 15 versioned Sale/rate/alias/allocation facades apply this
+boundary. New-record creation retains source-event idempotency.
+
+Trusted direct Python calls outside an HTTP request retain the existing optional
+`None` compatibility used by Bench fixtures and internal workflows. A supplied
+blank value is never normalized to `None`. The request boundary uses the pinned
+framework's server-established `frappe.local.request`, not client metadata.
+
 ## 5. Many-to-Many Allocations, Caps, and Reversals
 
 - Commercial Sale lines link to physical Outward lines via `Fresko Sale Outward Allocation`.
@@ -54,6 +67,19 @@ Concurrent edits check `expected_version` raising `STALE_VERSION` on mismatch. I
 ## 6. Deterministic Projections and Access Boundaries
 
 - `get_sale_as_of`, `get_container_reconciliation`, and `get_outward_reconciliation` project point-in-time truth from immutable source payloads and `decision_history` snapshots without mutating stored state.
+- `get_sale_as_of` is explicitly historical: `projection_mode=HISTORICAL` and
+  `version_at_cutoff` name the selected audit event; no `current_version` token
+  is exposed. Existing audit snapshots are unchanged, including old rows.
+- `get_sale_current` returns `projection_mode=LIVE`, actual locked current state
+  and `current_version` for optimistic mutation. Its server cutoff is captured
+  after current document locks. `get_container_reconciliation` is Live when the
+  cutoff is omitted/blank, and Historical for any explicit cutoff, including a
+  future date. The Container read captures one cutoff after parent locks.
+- Workspace blank As Of means Live. An explicit cutoff makes the Workspace
+  read-only: existing-record actions, preparation and open-dialog submissions are
+  guarded, and current alias/allocation review queues are withheld. Historical
+  audit versions are descriptive; they are not presented as mutation tokens.
+  Live reloads replace selected Sale state/token with the newly accepted row.
 - Reconciliation classifies `commercially_sold_qty`, `physically_allocated_qty`, `sold_not_physically_allocated_qty`, `priced_qty`, `unpriced_qty`, and `physical_qty` deterministically.
 - All commercial APIs and DocType reads enforce server-side ACLs. Any role with "supplier" in its name is completely denied implemented Commercial Sale, Deal, Customer, alias, rate and amount paths, including source Evidence/Outward reads. Receivables, margins, Collections and expenses remain future ledgers.
 - Existing internal roles have read access restricted: makers read assigned records; Accounts, Approver, and System Manager have internal visibility.

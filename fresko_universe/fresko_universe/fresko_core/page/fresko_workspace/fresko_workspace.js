@@ -203,10 +203,14 @@ class FreskoWorkspace {
         this.as_of_field = this.page.add_field({
             fieldname: 'as_of',
             fieldtype: 'Datetime',
-            label: __('As Of'),
-            default: frappe.datetime.now_datetime(),
+            label: __('As Of (blank = Live)'),
+            default: null,
             change: function() {
                 self.as_of_value = self.as_of_field.get_value();
+                self.selected_sale = null;
+                self.selected_outward_name = null;
+                self.selected_outward_data = null;
+                self.update_view_actions();
                 self.load_container_data();
             }
         });
@@ -218,7 +222,7 @@ class FreskoWorkspace {
         }, 'octicon octicon-sync');
 
         if (this.user_context.can_prepare) {
-            this.page.add_inner_button(__('New Sale'), function() {
+            this.new_sale_button = this.page.add_inner_button(__('New Sale'), function() {
                 self.open_sale_preparation_dialog();
             });
         }
@@ -227,13 +231,13 @@ class FreskoWorkspace {
             this.page.add_inner_button(__('Money'), function() { frappe.set_route('fresko-money'); });
         }
 
-        this.page.add_inner_button(__('Propose Alias'), function() {
+        this.propose_alias_button = this.page.add_inner_button(__('Propose Alias'), function() {
             self.open_propose_alias_dialog();
         });
 
         // Main DOM container
         this.root_dom = create_dom_element('div', { class: 'fresko-workspace-container' });
-        this.page.main.empty().append(this.root_dom);
+        this.page.main.append(this.root_dom); // Preserve the native Page filter form.
 
         this.render_skeleton();
 
@@ -281,6 +285,36 @@ class FreskoWorkspace {
         this.render_empty_state(__('Select a Container to inspect reconciliation projections.'));
     }
 
+    is_live_view() {
+        return !this.as_of_value && (!this.container_data || this.container_data.projection_mode === 'LIVE');
+    }
+
+    require_live_view() {
+        if (this.is_live_view()) return true;
+        frappe.msgprint(__('Historical views are read-only. Clear As Of to work in Live view.'));
+        return false;
+    }
+
+    require_mutation(record, token_field = 'version') {
+        if (!this.require_live_view()) return false;
+        if (token_field === 'current_version' && record.projection_mode !== 'LIVE') {
+            frappe.msgprint(__('Reload the current Sale before taking an action.'));
+            return false;
+        }
+        var token = record[token_field];
+        if (!Number.isSafeInteger(Number(token)) || !/^[1-9][0-9]*$/.test(String(token))) {
+            frappe.msgprint(__('A current version is required. Refresh this record.'));
+            return false;
+        }
+        return true;
+    }
+
+    update_view_actions() {
+        var disabled = !this.is_live_view();
+        if (this.new_sale_button) this.new_sale_button.prop('disabled', disabled);
+        if (this.propose_alias_button) this.propose_alias_button.prop('disabled', disabled);
+    }
+
     update_header_banner() {
         this.header_banner.innerHTML = '';
         var title_group = create_dom_element('div', {}, [
@@ -291,7 +325,8 @@ class FreskoWorkspace {
         ]);
 
         var meta_group = create_dom_element('div', { class: 'fresko-header-meta' });
-        var as_of_text = this.container_data && this.container_data.as_of ? this.container_data.as_of : (this.as_of_value || 'Latest');
+        var as_of_text = this.is_live_view() ? __('LIVE') : (this.as_of_value || __('Historical'));
+        this.update_view_actions();
         meta_group.appendChild(create_dom_element('div', { class: 'fresko-meta-item' }, [
             'As-Of: ',
             create_dom_element('strong', {}, [as_of_text])
@@ -325,14 +360,17 @@ class FreskoWorkspace {
 
     load_container_data() {
         var self = this;
+        var seq = ++this.current_load_seq;
         if (!this.container_name) {
             this.container_data = null;
+            this.selected_sale = null;
+            this.selected_outward_name = null;
+            this.selected_outward_data = null;
             this.update_header_banner();
             this.render_empty_state(__('Select a Container to inspect reconciliation projections.'));
             return;
         }
 
-        var seq = ++this.current_load_seq;
         this.render_loading(__('Loading commercial reconciliation projections...'));
 
         frappe.call({
@@ -346,6 +384,10 @@ class FreskoWorkspace {
                 return; // Guard against asynchronous stale responses
             }
             self.container_data = r.message || null;
+            if (self.selected_sale) {
+                var selected_name = self.selected_sale.name;
+                self.selected_sale = ((self.container_data || {}).sales || []).find(function(row) { return row.name === selected_name; }) || null;
+            }
             self.update_header_banner();
             self.render_active_tab();
         }).catch(function(err) {
@@ -581,7 +623,7 @@ class FreskoWorkspace {
         var card = create_dom_element('div', { class: 'fresko-section-card', style: { borderColor: '#1b66c9' } });
 
         var head = create_dom_element('div', { class: 'fresko-card-title' }, [
-            create_dom_element('span', {}, [__('Selected Sale: ') + sale.name + ' (Version ' + (sale.version || 1) + ')']),
+            create_dom_element('span', {}, [__('Selected Sale: ') + sale.name + (sale.projection_mode === 'LIVE' ? ' (Live version ' + sale.current_version + ')' : ' (Historical version ' + (sale.version_at_cutoff === null || sale.version_at_cutoff === undefined ? 'UNKNOWN' : sale.version_at_cutoff) + ')')]),
             create_dom_element('div', { style: { display: 'flex', gap: '8px' } }, [
                 render_badge_node(sale.status),
                 render_badge_node(sale.reconciliation_state)
@@ -612,12 +654,12 @@ class FreskoWorkspace {
 
         // Workflow Action Buttons (Role-aware client controls; server authorizes strictly)
         var act_bar = create_dom_element('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' } });
-        if (sale.status === 'DRAFT') {
+        if (this.is_live_view() && sale.projection_mode === 'LIVE' && sale.status === 'DRAFT') {
             act_bar.appendChild(create_dom_element('button', {
                 class: 'fresko-btn-sm fresko-btn-primary',
                 onClick: function() { self.submit_sale(sale); }
             }, [__('Submit Sale')]));
-        } else if (sale.status === 'REVIEW_PENDING') {
+        } else if (this.is_live_view() && sale.projection_mode === 'LIVE' && sale.status === 'REVIEW_PENDING') {
             if (self.user_context.can_verify) {
                 act_bar.appendChild(create_dom_element('button', {
                     class: 'fresko-btn-sm fresko-btn-primary',
@@ -628,7 +670,7 @@ class FreskoWorkspace {
                 class: 'fresko-btn-sm fresko-btn-danger',
                 onClick: function() { self.reject_sale_dialog(sale); }
             }, [__('Reject Sale')]));
-        } else if (sale.status === 'VERIFIED') {
+        } else if (this.is_live_view() && sale.projection_mode === 'LIVE' && sale.status === 'VERIFIED') {
             if (self.user_context.can_approve) {
                 act_bar.appendChild(create_dom_element('button', {
                     class: 'fresko-btn-sm fresko-btn-primary',
@@ -643,7 +685,8 @@ class FreskoWorkspace {
 
         act_bar.appendChild(create_dom_element('button', {
             class: 'fresko-btn-sm fresko-btn-secondary',
-            onClick: function() { self.open_allocation_dialog(sale, null); }
+            disabled: self.is_live_view() ? null : 'disabled',
+                onClick: function() { self.open_allocation_dialog(sale, null); }
         }, [__('+ Allocate to Outward')]));
 
         card.appendChild(act_bar);
@@ -694,7 +737,7 @@ class FreskoWorkspace {
             tr.appendChild(create_dom_element('td', {}, [l.remaining_qty !== null ? l.remaining_qty : 'UNKNOWN']));
 
             var line_act = create_dom_element('td');
-            if (l.price_state === 'UNKNOWN' || l.price_state === 'PROPOSED') {
+            if (self.is_live_view() && sale.projection_mode === 'LIVE' && (l.price_state === 'UNKNOWN' || l.price_state === 'PROPOSED')) {
                 line_act.appendChild(create_dom_element('button', {
                     class: 'fresko-btn-sm fresko-btn-secondary',
                     onClick: function() { self.open_propose_rate_dialog(sale, l); }
@@ -905,6 +948,7 @@ class FreskoWorkspace {
         card.appendChild(create_dom_element('div', { style: { marginTop: '12px' } }, [
             create_dom_element('button', {
                 class: 'fresko-btn-sm fresko-btn-primary',
+                disabled: self.is_live_view() ? null : 'disabled',
                 onClick: function() { self.open_allocation_dialog(null, outward); }
             }, [__('+ Propose Sale Allocation for this Outward')])
         ]));
@@ -922,6 +966,7 @@ class FreskoWorkspace {
             create_dom_element('span', {}, [__('Party Alias Mapping Review Queue')]),
             create_dom_element('button', {
                 class: 'fresko-btn-sm fresko-btn-primary',
+                disabled: self.is_live_view() ? null : 'disabled',
                 onClick: function() { self.open_propose_alias_dialog(); }
             }, [__('+ Propose New Alias Mapping')])
         ]));
@@ -936,6 +981,11 @@ class FreskoWorkspace {
         var self = this;
         var wrap = this.content_panel.querySelector('#fresko-alias-queue-wrap');
         if (!wrap) return;
+        if (!this.is_live_view()) {
+            wrap.textContent = __('The current alias review queue is available in Live view.');
+            return;
+        }
+        var generation = this.current_load_seq;
         wrap.innerHTML = '<div class="text-muted">Loading alias queue...</div>';
 
         frappe.call({
@@ -947,6 +997,7 @@ class FreskoWorkspace {
                 limit_page_length: 50
             }
         }).then(function(r) {
+            if (generation !== self.current_load_seq || !self.is_live_view()) return;
             var mappings = r.message || [];
             wrap.innerHTML = '';
             if (mappings.length === 0) {
@@ -1013,6 +1064,11 @@ class FreskoWorkspace {
 
     load_sale_allocations(sale, wrap_el) {
         var self = this;
+        if (!this.is_live_view()) {
+            wrap_el.textContent = __('The current allocation review queue is available in Live view.');
+            return;
+        }
+        var generation = this.current_load_seq;
         wrap_el.innerHTML = '<div class="text-muted small">Loading allocation records...</div>';
 
         frappe.call({
@@ -1020,11 +1076,12 @@ class FreskoWorkspace {
             args: {
                 doctype: 'Fresko Sale Outward Allocation',
                 filters: { sale: sale.name },
-                fields: ['name', 'sale', 'sale_line_key', 'outward', 'outward_line_key', 'qty', 'uom', 'status', 'evidence', 'reason', 'source_event_id', 'version'],
+                fields: ['name', 'sale', 'sale_line_key', 'outward', 'outward_line_key', 'qty', 'uom', 'state', 'verified_by', 'prepared_by', 'evidence', 'reason', 'source_event_key', 'version'],
                 order_by: 'creation desc',
                 limit_page_length: 50
             }
         }).then(function(r) {
+            if (generation !== self.current_load_seq || !self.is_live_view()) return;
             var allocs = r.message || [];
             wrap_el.innerHTML = '';
             if (allocs.length === 0) {
@@ -1041,7 +1098,7 @@ class FreskoWorkspace {
                     create_dom_element('th', {}, [__('Qty / UOM')]),
                     create_dom_element('th', {}, [__('Status')]),
                     create_dom_element('th', {}, [__('Evidence')]),
-                    create_dom_element('th', {}, [__('Raw Source / Event')]),
+                    create_dom_element('th', {}, [__('Source Event Key')]),
                     create_dom_element('th', {}, [__('Actions')])
                 ])
             ]));
@@ -1052,15 +1109,15 @@ class FreskoWorkspace {
                 tr.appendChild(create_dom_element('td', {}, [a.sale_line_key || '—']));
                 tr.appendChild(create_dom_element('td', {}, [(a.outward || '—') + ' / ' + (a.outward_line_key || '—')]));
                 tr.appendChild(create_dom_element('td', {}, [String(a.qty) + ' ' + (a.uom || '')]));
-                tr.appendChild(create_dom_element('td', {}, [render_badge_node(a.status)]));
+                tr.appendChild(create_dom_element('td', {}, [render_badge_node(a.state === 'PROPOSED' && a.verified_by ? 'VERIFIED' : a.state)]));
                 tr.appendChild(create_dom_element('td', {}, [render_evidence_link_node(a.evidence)]));
-                tr.appendChild(create_dom_element('td', {}, [render_raw_alias_node(a.source_event_id)]));
+                tr.appendChild(create_dom_element('td', {}, [render_raw_alias_node(a.source_event_key)]));
 
                 var act_td = create_dom_element('td');
                 var act_group = create_dom_element('div', { style: { display: 'flex', gap: '6px', flexWrap: 'wrap' } });
 
-                if (a.status === 'PROPOSED') {
-                    if (self.user_context.can_verify) {
+                if (a.state === 'PROPOSED' && !a.verified_by) {
+                    if (self.user_context.can_verify && a.prepared_by !== frappe.session.user) {
                         act_group.appendChild(create_dom_element('button', {
                             class: 'fresko-btn-sm fresko-btn-primary',
                             onClick: function() { self.verify_allocation(a); }
@@ -1070,8 +1127,8 @@ class FreskoWorkspace {
                         class: 'fresko-btn-sm fresko-btn-danger',
                         onClick: function() { self.reject_allocation_dialog(a); }
                     }, [__('Reject')]));
-                } else if (a.status === 'VERIFIED') {
-                    if (self.user_context.can_approve) {
+                } else if (a.state === 'PROPOSED' && a.verified_by) {
+                    if (self.user_context.can_approve && a.prepared_by !== frappe.session.user && a.verified_by !== frappe.session.user) {
                         act_group.appendChild(create_dom_element('button', {
                             class: 'fresko-btn-sm fresko-btn-primary',
                             onClick: function() { self.approve_allocation(a); }
@@ -1081,7 +1138,7 @@ class FreskoWorkspace {
                         class: 'fresko-btn-sm fresko-btn-danger',
                         onClick: function() { self.reject_allocation_dialog(a); }
                     }, [__('Reject')]));
-                } else if (a.status === 'APPROVED') {
+                } else if (a.state === 'APPROVED' && self.user_context.can_approve) {
                     act_group.appendChild(create_dom_element('button', {
                         class: 'fresko-btn-sm fresko-btn-danger',
                         onClick: function() { self.reverse_allocation_dialog(a); }
@@ -1101,10 +1158,11 @@ class FreskoWorkspace {
     }
 
     verify_allocation(alloc) {
+        if (!this.require_mutation(alloc, 'version')) return;
         var self = this;
         frappe.call({
             method: 'fresko_universe.commercial.verify_sale_outward_allocation',
-            args: { allocation_name: alloc.name, expected_version: alloc.version || null }
+            args: { allocation_name: alloc.name, expected_version: alloc.version }
         }).then(function() {
             frappe.msgprint(__('Allocation verified successfully.'));
             self.load_container_data();
@@ -1114,10 +1172,11 @@ class FreskoWorkspace {
     }
 
     approve_allocation(alloc) {
+        if (!this.require_mutation(alloc, 'version')) return;
         var self = this;
         frappe.call({
             method: 'fresko_universe.commercial.approve_sale_outward_allocation',
-            args: { allocation_name: alloc.name, expected_version: alloc.version || null }
+            args: { allocation_name: alloc.name, expected_version: alloc.version }
         }).then(function() {
             frappe.msgprint(__('Allocation approved successfully.'));
             self.load_container_data();
@@ -1127,16 +1186,18 @@ class FreskoWorkspace {
     }
 
     reject_allocation_dialog(alloc) {
+        if (!this.require_mutation(alloc, 'version')) return;
         var self = this;
         frappe.prompt([
             { fieldname: 'reason', fieldtype: 'Small Text', label: __('Rejection Reason'), reqd: 1 }
         ], function(values) {
+            if (!self.require_live_view()) return;
             frappe.call({
                 method: 'fresko_universe.commercial.reject_sale_outward_allocation',
                 args: {
                     allocation_name: alloc.name,
                     reason: values.reason,
-                    expected_version: alloc.version || null
+                    expected_version: alloc.version
                 }
             }).then(function() {
                 frappe.msgprint(__('Allocation rejected.'));
@@ -1148,6 +1209,7 @@ class FreskoWorkspace {
     }
 
     reverse_allocation_dialog(alloc) {
+        if (!this.require_mutation(alloc, 'version')) return;
         var self = this;
         var d = new frappe.ui.Dialog({
             title: __('Reverse Physical Allocation: ') + alloc.name,
@@ -1168,13 +1230,14 @@ class FreskoWorkspace {
             ],
             primary_action_label: __('Reverse Allocation'),
             primary_action: function(values) {
+                if (!self.require_live_view()) return;
                 frappe.call({
                     method: 'fresko_universe.commercial.reverse_sale_outward_allocation',
                     args: {
                         allocation_name: alloc.name,
                         reason: values.reason,
                         evidence: values.evidence,
-                        expected_version: alloc.version || null
+                        expected_version: alloc.version
                     }
                 }).then(function() {
                     frappe.msgprint(__('Allocation reversed successfully.'));
@@ -1192,6 +1255,7 @@ class FreskoWorkspace {
     // Dialog 1: Sale Preparation (Multi-lot, Qty/Rate unknown supported)
     // -----------------------------------------------------
     open_sale_preparation_dialog() {
+        if (!this.require_live_view()) return;
         if (!this.user_context.can_prepare) {
             frappe.msgprint(__('Only Fresko Salesperson can prepare commercial sales.'));
             return;
@@ -1295,6 +1359,7 @@ class FreskoWorkspace {
             ],
             primary_action_label: __('Create Sale'),
             primary_action: function(values) {
+                if (!self.require_live_view()) return;
                 var prepared_lines = [];
                 var line_rows = d.$wrapper.find('.fresko-line-row');
                 if (line_rows.length === 0) {
@@ -1572,6 +1637,7 @@ class FreskoWorkspace {
     // Dialog 2: Propose Sale-Outward Allocation
     // -----------------------------------------------------
     open_allocation_dialog(sale, outward) {
+        if (!this.require_live_view()) return;
         var self = this;
         var initial_sale_name = sale ? sale.name : '';
         var initial_outward_name = outward ? (outward.outward || outward.name) : '';
@@ -1667,6 +1733,7 @@ class FreskoWorkspace {
             ],
             primary_action_label: __('Propose Allocation'),
             primary_action: function(values) {
+                if (!self.require_live_view()) return;
                 var sale_k = d.get_value('sale_line_key');
                 var out_k = d.get_value('outward_line_key');
                 var s_line = sale_lines_by_key[sale_k];
@@ -1739,8 +1806,8 @@ class FreskoWorkspace {
             }
 
             frappe.call({
-                method: 'fresko_universe.commercial.get_sale_as_of',
-                args: { sale_name: sale_name_val, as_of: self.as_of_value || frappe.datetime.now_datetime() }
+                method: 'fresko_universe.commercial.get_sale_current',
+                args: { sale_name: sale_name_val }
             }).then(function(r) {
                 if (seq !== sale_load_seq) return; // guard stale async response
                 var sale_data = r.message;
@@ -1827,6 +1894,7 @@ class FreskoWorkspace {
     // Dialog 3: Propose Rate for Sale Line
     // -----------------------------------------------------
     open_propose_rate_dialog(sale, line) {
+        if (!this.require_mutation(sale, 'current_version')) return;
         var self = this;
         var dialog_event_id = generate_uuid();
         var d = new frappe.ui.Dialog({
@@ -1862,6 +1930,7 @@ class FreskoWorkspace {
             ],
             primary_action_label: __('Propose Rate'),
             primary_action: function(values) {
+                if (!self.require_live_view()) return;
                 var rate_str = String(d.get_value('rate') || '').trim();
                 if (!is_valid_decimal_string(rate_str, 2)) {
                     frappe.msgprint(__('Valid decimal rate (up to 2 decimal places, no exponents or trailing junk) required.'));
@@ -1876,7 +1945,7 @@ class FreskoWorkspace {
                         evidence: values.evidence,
                         source_event_id: dialog_event_id,
                         reason: values.reason,
-                        expected_version: sale.version || null
+                        expected_version: sale.current_version
                     }
                 }).then(function() {
                     frappe.msgprint(__('Rate proposed successfully.'));
@@ -1898,6 +1967,7 @@ class FreskoWorkspace {
     // Dialog 4: Propose Alias Mapping
     // -----------------------------------------------------
     open_propose_alias_dialog() {
+        if (!this.require_live_view()) return;
         var self = this;
         var dialog_event_id = generate_uuid();
         var d = new frappe.ui.Dialog({
@@ -1946,6 +2016,7 @@ class FreskoWorkspace {
             ],
             primary_action_label: __('Propose Mapping'),
             primary_action: function(values) {
+                if (!self.require_live_view()) return;
                 var raw_alias_input = d.get_field('raw_alias').$input;
                 var raw_alias_val = raw_alias_input ? raw_alias_input.val() : values.raw_alias;
                 frappe.call({
@@ -1974,10 +2045,11 @@ class FreskoWorkspace {
     // Backend Workflow Actions (Version guarded)
     // -----------------------------------------------------
     submit_sale(sale) {
+        if (!this.require_mutation(sale, 'current_version')) return;
         var self = this;
         frappe.call({
             method: 'fresko_universe.commercial.submit_sale',
-            args: { sale_name: sale.name, expected_version: sale.version || null }
+            args: { sale_name: sale.name, expected_version: sale.current_version }
         }).then(function() {
             frappe.msgprint(__('Sale submitted successfully.'));
             self.load_container_data();
@@ -1987,10 +2059,11 @@ class FreskoWorkspace {
     }
 
     verify_sale(sale) {
+        if (!this.require_mutation(sale, 'current_version')) return;
         var self = this;
         frappe.call({
             method: 'fresko_universe.commercial.verify_sale',
-            args: { sale_name: sale.name, expected_version: sale.version || null }
+            args: { sale_name: sale.name, expected_version: sale.current_version }
         }).then(function() {
             frappe.msgprint(__('Sale verified successfully.'));
             self.load_container_data();
@@ -2000,10 +2073,11 @@ class FreskoWorkspace {
     }
 
     approve_sale(sale) {
+        if (!this.require_mutation(sale, 'current_version')) return;
         var self = this;
         frappe.call({
             method: 'fresko_universe.commercial.approve_sale',
-            args: { sale_name: sale.name, expected_version: sale.version || null }
+            args: { sale_name: sale.name, expected_version: sale.current_version }
         }).then(function() {
             frappe.msgprint(__('Sale approved successfully.'));
             self.load_container_data();
@@ -2013,16 +2087,18 @@ class FreskoWorkspace {
     }
 
     reject_sale_dialog(sale) {
+        if (!this.require_mutation(sale, 'current_version')) return;
         var self = this;
         frappe.prompt([
             { fieldname: 'reason', fieldtype: 'Small Text', label: __('Rejection Reason'), reqd: 1 }
         ], function(values) {
+            if (!self.require_live_view()) return;
             frappe.call({
                 method: 'fresko_universe.commercial.reject_sale',
                 args: {
                     sale_name: sale.name,
                     reason: values.reason,
-                    expected_version: sale.version || null
+                    expected_version: sale.current_version
                 }
             }).then(function() {
                 frappe.msgprint(__('Sale rejected.'));
@@ -2034,10 +2110,11 @@ class FreskoWorkspace {
     }
 
     verify_alias(mapping) {
+        if (!this.require_mutation(mapping, 'version')) return;
         var self = this;
         frappe.call({
             method: 'fresko_universe.commercial.verify_alias_mapping',
-            args: { mapping_name: mapping.name, expected_version: mapping.version || null }
+            args: { mapping_name: mapping.name, expected_version: mapping.version }
         }).then(function() {
             frappe.msgprint(__('Alias mapping verified.'));
             self.load_alias_mappings();
@@ -2047,10 +2124,11 @@ class FreskoWorkspace {
     }
 
     approve_alias(mapping) {
+        if (!this.require_mutation(mapping, 'version')) return;
         var self = this;
         frappe.call({
             method: 'fresko_universe.commercial.approve_alias_mapping',
-            args: { mapping_name: mapping.name, expected_version: mapping.version || null }
+            args: { mapping_name: mapping.name, expected_version: mapping.version }
         }).then(function() {
             frappe.msgprint(__('Alias mapping approved.'));
             self.load_alias_mappings();
@@ -2060,16 +2138,18 @@ class FreskoWorkspace {
     }
 
     reject_alias_dialog(mapping) {
+        if (!this.require_mutation(mapping, 'version')) return;
         var self = this;
         frappe.prompt([
             { fieldname: 'reason', fieldtype: 'Small Text', label: __('Rejection Reason'), reqd: 1 }
         ], function(values) {
+            if (!self.require_live_view()) return;
             frappe.call({
                 method: 'fresko_universe.commercial.reject_alias_mapping',
                 args: {
                     mapping_name: mapping.name,
                     reason: values.reason,
-                    expected_version: mapping.version || null
+                    expected_version: mapping.version
                 }
             }).then(function() {
                 frappe.msgprint(__('Alias mapping rejected.'));

@@ -942,13 +942,34 @@ def _state_at(doc, cutoff):
     return result
 
 
+def _version_at(doc, cutoff):
+    version = None
+    for event in json.loads(doc.decision_history or "[]"):
+        if get_datetime(event["recorded_at"]) <= cutoff:
+            version = event.get("version")
+    return version
+
+
 def get_sale_as_of(sale_name, as_of):
+    return _sale_projection(sale_name, _time(as_of, "as_of"), live=False)
+
+
+def get_sale_current(sale_name):
+    return _sale_projection(sale_name, None, live=True)
+
+
+def _sale_projection(sale_name, as_of, *, live):
     _roles()
     sale = _load(SALE, sale_name)
-    cutoff = get_datetime(_time(as_of, "as_of"))
-    state = _state_at(sale, cutoff)
+    # A current read may wait for another writer. Capture time only after its
+    # current document and parent locks have been acquired.
+    cutoff = get_datetime(_time(str(_now()) if live and as_of is None else as_of, "as_of"))
+    metadata = {"projection_mode": "LIVE" if live else "HISTORICAL", "version_at_cutoff": _version_at(sale, cutoff)}
+    if live:
+        metadata["current_version"] = sale.version
+    state = _snapshot(sale) if live else _state_at(sale, cutoff)
     if state is None:
-        return {"name": sale.name, "as_of": str(cutoff), "exists": False, "allocations": [], "lines": []}
+        return {**metadata, "name": sale.name, "as_of": str(cutoff), "exists": False, "allocations": [], "lines": []}
     if state.get("customer"):
         _linked("Customer", state["customer"])
     if state.get("alias_mapping"):
@@ -967,7 +988,7 @@ def get_sale_as_of(sale_name, as_of):
     for row in rows:
         doc = frappe.get_doc(ALLOCATION, row.name, for_update=True)
         _access(doc)
-        decision = _state_at(doc, cutoff)
+        decision = _snapshot(doc) if live else _state_at(doc, cutoff)
         if not decision or decision["state"] != "APPROVED":
             continue
         physical = frappe.get_doc("Fresko Outward", doc.outward, for_update=True)
@@ -983,7 +1004,7 @@ def get_sale_as_of(sale_name, as_of):
     movement = "NOT_EVIDENCED" if not allocations else "EVIDENCED" if all(line["allocation_state"] == "ALLOCATED" for line in lines) else "PARTIAL"
     known_amount = sum((Decimal(line["amount"]) for line in lines if line["amount"] is not None), Decimal(0))
     pending_amount_count = sum(line["amount"] is None for line in lines)
-    return {**payload, **state, "name": sale.name, "as_of": str(cutoff), "exists": True, "effective_at_cutoff": effective, "total_commercial_amount": format(known_amount, "f") if not pending_amount_count else None, "known_commercial_amount": format(known_amount, "f"), "pending_amount_line_count": pending_amount_count, "lines": lines, "allocations": allocations, "movement_status": movement, "reconciliation_state": "CONFIRMED" if effective and state["status"] == "APPROVED" and state["customer"] and movement == "EVIDENCED" and all(line["price_state"] == "FINAL" for line in lines) else "PENDING"}
+    return {**payload, **state, **metadata, "name": sale.name, "as_of": str(cutoff), "exists": True, "effective_at_cutoff": effective, "total_commercial_amount": format(known_amount, "f") if not pending_amount_count else None, "known_commercial_amount": format(known_amount, "f"), "pending_amount_line_count": pending_amount_count, "lines": lines, "allocations": allocations, "movement_status": movement, "reconciliation_state": "CONFIRMED" if effective and state["status"] == "APPROVED" and state["customer"] and movement == "EVIDENCED" and all(line["price_state"] == "FINAL" for line in lines) else "PENDING"}
 
 
 def _reader():
@@ -1012,7 +1033,8 @@ def get_container_reconciliation(container, as_of=None):
     _reader()
     parent = _linked("Fresko Container", container)
     _locks(parent.company, [container])
-    cutoff_text = _time(as_of or str(_now()), "as_of")
+    live = as_of is None or as_of == ""
+    cutoff_text = _time(str(_now()) if live else as_of, "as_of")
     cutoff = get_datetime(cutoff_text)
     rows = frappe.db.sql("SELECT name FROM `tabFresko Commercial Sale` WHERE container=%s ORDER BY sale_at,name FOR UPDATE", (container,), as_dict=True)
     sales = []
@@ -1020,7 +1042,7 @@ def get_container_reconciliation(container, as_of=None):
         doc = frappe.get_doc(SALE, row.name, for_update=True)
         if not commercial_has_permission(doc):
             continue
-        view = get_sale_as_of(row.name, cutoff_text)
+        view = _sale_projection(row.name, cutoff_text, live=live)
         if view["exists"] and get_datetime(view["sale_at"]) <= cutoff:
             sales.append(view)
     physical_rows = frappe.db.sql("SELECT name FROM `tabFresko Outward` WHERE container=%s AND movement_type='OUTWARD' AND status='Posted' ORDER BY movement_at,name FOR UPDATE", (container,), as_dict=True)
@@ -1077,7 +1099,7 @@ def get_container_reconciliation(container, as_of=None):
         for key in keys:
             groups[unit].setdefault(key, Decimal(0))
     confirmed = bool(accepted) and not pending_sales and not exception_kinds and all(sale["reconciliation_state"] == "CONFIRMED" for sale in accepted)
-    return {"container": container, "as_of": cutoff_text, "sales": sales, "totals_by_uom": _string_groups(groups), "confirmed_value_by_currency": {currency: format(value, "f") for currency, value in values.items()}, "unknown_quantity_count": unknown_qty_count, "unresolved_buyer_count": unresolved_buyer_count, "pending_sale_count": len(pending_sales), "exceptions": sorted(exception_kinds), "view_scope": "ASSIGNED" if not _roles() & {"Fresko Accounts", "Fresko Approver", "System Manager"} else "INTERNAL", "reconciliation_state": "CONFIRMED" if confirmed else "PENDING"}
+    return {"projection_mode": "LIVE" if live else "HISTORICAL", "container": container, "as_of": cutoff_text, "sales": sales, "totals_by_uom": _string_groups(groups), "confirmed_value_by_currency": {currency: format(value, "f") for currency, value in values.items()}, "unknown_quantity_count": unknown_qty_count, "unresolved_buyer_count": unresolved_buyer_count, "pending_sale_count": len(pending_sales), "exceptions": sorted(exception_kinds), "view_scope": "ASSIGNED" if not _roles() & {"Fresko Accounts", "Fresko Approver", "System Manager"} else "INTERNAL", "reconciliation_state": "CONFIRMED" if confirmed else "PENDING"}
 
 
 def get_outward_reconciliation(outward_name, as_of=None):

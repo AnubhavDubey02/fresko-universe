@@ -922,3 +922,48 @@ Exact-head GitHub Smoke and pinned Bench remain the merge gate.
 - Astra reviewed design; native Gemini 3.8 Flash produced the bounded pure policy/offline tests; Codex integrated and added database acceptance. Luna independently reviews the actual candidate diff. Exact-head pinned CI and review findings govern acceptance, not this candidate note.
 - Local complete offline/static: 222 tests passed; scripts: 41 passed; fixture/write/schema guards and both actual-source JavaScript harnesses passed. Pinned Bench/all migration proofs still require exact-head CI; final SHA/counts/run URLs will be supplied from immutable CI evidence.
 - Governing repair/limits: `docs/PILOT_SAFETY_CLOSE_POLICY.md`. No next milestone started. Next recommended bounded packet is deployment packaging and real browser baseline, after this packet is green and reviewed.
+
+
+## 2026-10-04 — Implementation 02 preparation
+
+Post-PR17 main is `104c488fa0765a7b13b1c99d553b3be65b36c848`; main CI
+[37193221292](https://github.com/AnubhavDubey02/fresko-universe/actions/runs/37193221292)
+is green. Work starts on `codex/deployment-browser-baseline`.
+
+Current deployment/browser/recovery authority is
+`docs/STAGING_DEPLOYMENT_BROWSER_BASELINE.md`. The user selected a new Frappe
+Cloud private bench but has no account/site connected and has prohibited paid
+purchases without approval. Complete preparation and review before the account
+connection/billing checkpoint. Temporary loopback/CI browser and restore sites
+are synthetic verification environments, not deployed Cloud staging. Preserve
+all previous handoff entries as historical evidence.
+
+Local baseline verification: 270 pinned Bench tests, 222 application/static
+tests, 49 script tests and both Node UI harnesses pass. Native browser execution
+is being completed; candidate files and these counts do not establish exact-head
+GitHub green or Cloud deployment. No DocType schema change is intended.
+
+### Implementation 02 — browser-derived Commercial repair
+
+Native Sale submission reproduced `STALE_VERSION`: historical snapshots omitted
+version and JavaScript null arrived as an empty form token. The runtime now
+distinguishes Live `current_version` from Historical `version_at_cutoff`;
+explicit Workspace cutoffs are read-only. All 15 existing-record Commercial
+HTTP mutations require valid tokens after role checks. Direct Python `None`
+compatibility and existing immutable audit snapshots remain unchanged.
+
+Minimal accompanying repairs preserve native Page filters, use actual allocation
+queue fields and reject obsolete Money/Workspace read responses. Independent
+Luna review covered the runtime contract, packaging and synthetic recovery guards;
+Astra reviewed the version design. No posted Physical/Commercial/Money truth or
+persisted schema is changed to manufacture reconciliation.
+
+Preparation checks: 228 application/static tests, 49 script tests, both Node
+harnesses and schema/write guards pass; focused Commercial Bench is 49/49.
+A complete rerun on the reused local site failed on durable legacy fixture
+collisions (275 tests; 3 failures, 10 errors). The full gate is being repeated
+on a new isolated site, with no assertion weakened. Pinned Frappe only propagates
+test failure exit status when `CI` is set, now explicit in the CI launcher.
+Native acceptance is continuing on a clean synthetic restored site; earlier
+partial Sales/alias decisions are preserved. Exact-head CI, completed browser
+flows and hosting evidence must be recorded before final acceptance.
