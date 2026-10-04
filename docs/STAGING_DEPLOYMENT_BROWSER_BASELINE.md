@@ -230,8 +230,11 @@ and callbacks check filter context and request generation before rendering.
 Duplicate writes remain serialized. Delayed **real** browser response evidence
 now passes locally for both Pages: the harness holds an actual successful
 server response, changes the native cutoff, then releases the old response and
-asserts that the newer projection remains displayed. Fresh exact-head CI still
-must run these checks with the complete desktop/mobile workflows.
+asserts that the newer projection remains displayed. It also holds a Workspace
+response across a native Container change and waits for completed callbacks.
+The Money race runs after the financial workflows and requires distinct actual
+old/new sales counts, so an empty fixture cannot satisfy that proof. Fresh
+exact-head CI still must run these checks with the complete desktop/mobile workflows.
 
 A delayed Workspace response could also repopulate a Container after its filter
 was cleared. Clearing the filter now advances the request generation before

@@ -633,8 +633,8 @@ class BrowserAcceptance(unittest.TestCase):
         self.assertEqual(payment_after, payment_before,
                          "Stale replay against approved Payment must leave posted truth unchanged")
 
-    def test_delayed_real_workspace_response_is_discarded_after_asof_switch(self):
-        """Hold a fetched live response, switch the native cutoff, then release it."""
+    def test_saved_state_delayed_real_responses(self):
+        """Use established financial truth so old/new Money renders differ."""
         async def exercise():
             scenarios = {s["width"]: s for s in self.fixture["scenarios"]}
             first = scenarios[1280]
@@ -666,7 +666,7 @@ class BrowserAcceptance(unittest.TestCase):
                     if await control.input_value() != value:
                         await control.fill(value)
                         options = holder.locator(".awesomplete ul:visible [role='option']:visible")
-                        await options.first.wait_for(state="visible", timeout=10000)
+                        await options.filter(has_text=value).first.wait_for(state="visible", timeout=10000)
                         match = None
                         for i in range(await options.count()):
                             option = options.nth(i)
@@ -730,10 +730,38 @@ class BrowserAcceptance(unittest.TestCase):
                 await wait_data(first["container"], "2099-01-01 00:00:00", "HISTORICAL")
                 release.set()
                 await asyncio.wait_for(fulfilled.wait(), timeout=10)
+                await page.wait_for_function("!frappe.request.ajax_count", timeout=30000)
                 await wait_data(first["container"], "2099-01-01 00:00:00", "HISTORICAL")
                 assert fetched == {"status": 200, "container": first["container"], "mode": "LIVE"}, \
                     "Held response was not an actual successful server response"
                 await page.unroute("**/api/method/fresko_universe.commercial.get_container_reconciliation", delayed_route)
+
+                # Hold a second actual response while the operator changes Container.
+                container_held, container_release, container_fulfilled = (asyncio.Event() for _ in range(3))
+                async def delayed_container_route(route):
+                    args = self.request_args(route.request.post_data or "")
+                    if args.get("container") == first["container"] and not container_held.is_set():
+                        response = await route.fetch()
+                        body = await response.json()
+                        result = body.get("message") or {}
+                        assert response.ok and result.get("container") == first["container"]
+                        container_held.set()
+                        await container_release.wait()
+                        await route.fulfill(response=response)
+                        container_fulfilled.set()
+                    else:
+                        await route.continue_()
+                await page.route("**/api/method/fresko_universe.commercial.get_container_reconciliation", delayed_container_route)
+                await page.get_by_role("button", name="Refresh", exact=True).click()
+                await asyncio.wait_for(container_held.wait(), timeout=30)
+                await page.keyboard.press("Escape")  # Page picker only; no dialog is open.
+                await set_link(first["alternate"])
+                await wait_data(first["alternate"], "2099-01-01 00:00:00", "HISTORICAL")
+                container_release.set()
+                await asyncio.wait_for(container_fulfilled.wait(), timeout=10)
+                await page.wait_for_function("!frappe.request.ajax_count", timeout=30000)
+                await wait_data(first["alternate"], "2099-01-01 00:00:00", "HISTORICAL")
+                await page.unroute("**/api/method/fresko_universe.commercial.get_container_reconciliation", delayed_container_route)
 
                 # Prove the Money reader also discards a stale, genuinely fetched
                 # Container receivable after a native cutoff refresh.
@@ -755,7 +783,7 @@ class BrowserAcceptance(unittest.TestCase):
                     if await control.input_value() != value:
                         await control.fill(value)
                         options = holder.locator(".awesomplete ul:visible [role='option']:visible")
-                        await options.first.wait_for(state="visible", timeout=10000)
+                        await options.filter(has_text=value).first.wait_for(state="visible", timeout=10000)
                         match = None
                         for i in range(await options.count()):
                             option = options.nth(i)
@@ -801,7 +829,7 @@ class BrowserAcceptance(unittest.TestCase):
                         result = body.get("message") or {}
                         assert response.ok and result.get("container") == first["container"], \
                             "Money delay must hold an actual successful Container receivable response"
-                        money_fetched.update(status=response.status, container=result.get("container"), as_of=result.get("as_of"))
+                        money_fetched.update(status=response.status, container=result.get("container"), as_of=result.get("as_of"), sales_count=result.get("sales_count"))
                         money_held.set()
                         await money_release.wait()
                         await route.fulfill(response=response)
@@ -816,7 +844,7 @@ class BrowserAcceptance(unittest.TestCase):
                     if args.get("container") == first["container"] and "2000" in str(args.get("as_of")):
                         body = await response.json()
                         result = body.get("message") or {}
-                        money_latest.update(status=response.status, container=result.get("container"), as_of=result.get("as_of"))
+                        money_latest.update(status=response.status, container=result.get("container"), as_of=result.get("as_of"), sales_count=result.get("sales_count"))
                         money_latest_received.set()
 
                 money_page.on("response", capture_latest_money_response)
@@ -827,17 +855,20 @@ class BrowserAcceptance(unittest.TestCase):
                 await money_page.locator("#btn-query-rec").click()
                 await asyncio.wait_for(money_latest_received.wait(), timeout=30)
                 await money_page.wait_for_function(
-                    """expected => { const result = document.querySelector('#fm-receivable-result');
-                        return result && result.innerText.includes(expected); }""",
-                    arg=first["container"], timeout=30000)
+                    """([container, count]) => { const result = document.querySelector('#fm-receivable-result');
+                        return result && result.innerText.includes(container) && Array.from(result.querySelectorAll('p'))
+                            .some(p => p.innerText.trim() === 'Sales Count: ' + count); }""",
+                    arg=[first["container"], money_latest.get("sales_count")], timeout=30000)
                 latest_text = await money_page.locator("#fm-receivable-result").inner_text()
                 assert money_fetched.get("status") == 200 and money_fetched.get("container") == first["container"], \
                     "Held Money response was not returned by the real endpoint"
                 assert money_latest.get("status") == 200 and money_latest.get("container") == first["container"] and "2000" in str(money_latest.get("as_of")), \
                     "Newer Money cutoff result was not a real response for the requested cutoff"
+                assert money_fetched.get("sales_count", 0) > money_latest.get("sales_count", 0), \
+                    "Race acceptance requires distinguishable financial states; missing workflow truth must fail"
                 money_release.set()
                 await asyncio.wait_for(money_fulfilled.wait(), timeout=10)
-                await money_page.wait_for_timeout(250)
+                await money_page.wait_for_function("!frappe.request.ajax_count", timeout=30000)
                 assert await money_page.locator("#fm-receivable-result").inner_text() == latest_text, \
                     "Obsolete Money response replaced the newer cutoff result"
                 await money_page.unroute("**/api/method/fresko_universe.money.get_container_receivable", delayed_money_route)
@@ -845,6 +876,7 @@ class BrowserAcceptance(unittest.TestCase):
                 await context.close()
                 await browser.close()
                 return {"workspace_held_response": fetched, "workspace_final_projection": "HISTORICAL",
+                        "workspace_container_switch": "held_response_discarded",
                         "money_held_response": money_fetched, "money_new_response": money_latest}
 
         self.current_stage = "workspace:delayed-live-response-after-asof-switch"
