@@ -1,0 +1,1157 @@
+{
+  "format_version": 1,
+  "source_repository": "https://github.com/AnubhavDubey02/fresko-universe",
+  "source_commit": "f593990dc3457bfa5c54e9c0524c2f7cd974cd11",
+  "source_subdirectory": "fresko_universe",
+  "source_tree": "137a370965e453c5768d4f7def250057100ca833",
+  "files": [
+    {
+      "path": ".gitignore",
+      "source_path": "fresko_universe/.gitignore",
+      "sha256": "9c911242e4837a212aa28fdb779aab17564bf657923f6565e5bd715047b26fbc",
+      "size_bytes": 109,
+      "mode": "100644"
+    },
+    {
+      "path": "README.md",
+      "source_path": "fresko_universe/README.md",
+      "sha256": "c987737b6144b51281d0047c820ba4e5e71f47506a4b49c372682ccaf4b95130",
+      "size_bytes": 2495,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/__init__.py",
+      "source_path": "fresko_universe/fresko_universe/__init__.py",
+      "sha256": "b172e1ee0dca0b84021717191814e91b6b1c47b866981b0c8eae8ba91a6d9118",
+      "size_bytes": 22,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/approvals.py",
+      "source_path": "fresko_universe/fresko_universe/approvals.py",
+      "sha256": "9fa2717a888746326281753eb7b72620fd5d6f212f31757419e51fa3d8bd487e",
+      "size_bytes": 10441,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/ask_fresko.py",
+      "source_path": "fresko_universe/fresko_universe/ask_fresko.py",
+      "sha256": "878a6ca8fb1c213fdf69aa354fa567ed6b61a1a92cec25ddacfc1b4df69e37ff",
+      "size_bytes": 3174,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/ats.py",
+      "source_path": "fresko_universe/fresko_universe/ats.py",
+      "sha256": "b024c7628f1338d288925d6acd300ade8968acfe1dc1ec54c8082915b81f19a6",
+      "size_bytes": 240,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/commercial.py",
+      "source_path": "fresko_universe/fresko_universe/commercial.py",
+      "sha256": "d1131649b329d1527cd04ee6405ee7fff89c0060256e1d6e6c2672879d33a72b",
+      "size_bytes": 7435,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/constants.py",
+      "source_path": "fresko_universe/fresko_universe/constants.py",
+      "sha256": "a0185d03bbfa2244b9d9c1ea17ec17ca692aa6a81015caa584002a9ed1a497a8",
+      "size_bytes": 7533,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/container.py",
+      "source_path": "fresko_universe/fresko_universe/container.py",
+      "sha256": "5db03853e99ab385a48ba778521e8b165664a1d93d36dcda3831a58438b71ec1",
+      "size_bytes": 552,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/deals.py",
+      "source_path": "fresko_universe/fresko_universe/deals.py",
+      "sha256": "f0e58a381af60855cf25ca887c2a7a47dfbe3a7dec62d79297e25eec4fa5889b",
+      "size_bytes": 28500,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fixtures/drive/README.md",
+      "source_path": "fresko_universe/fresko_universe/fixtures/drive/README.md",
+      "sha256": "1c4d13b8a7cc00c8663f766ee0303c3b7ffbb18fc8429429f40344b05793270c",
+      "size_bytes": 513,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fixtures/drive/SAMPLE_container_header.xlsx",
+      "source_path": "fresko_universe/fresko_universe/fixtures/drive/SAMPLE_container_header.xlsx",
+      "sha256": "c6627c157632fea56e7cf36dc76fc4cc0518f29b379647855681f998586e76c0",
+      "size_bytes": 4964,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fixtures/drive/SAMPLE_lots_buyers_rates.xlsx",
+      "source_path": "fresko_universe/fresko_universe/fixtures/drive/SAMPLE_lots_buyers_rates.xlsx",
+      "sha256": "3ea1ddf1dba4b5e30622c82b91c7c97d8e7cf76bd210565de52b7ec8cf0cfa86",
+      "size_bytes": 6272,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fixtures/real_data_shadow/manifest.json",
+      "source_path": "fresko_universe/fresko_universe/fixtures/real_data_shadow/manifest.json",
+      "sha256": "8afb7eb148d58ef8a0e551450d03b539984b1bce08d5ea53db54f51d97e9e94e",
+      "size_bytes": 4268,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fixtures/role.json",
+      "source_path": "fresko_universe/fresko_universe/fixtures/role.json",
+      "sha256": "a102d1989f852b1acee134ce7ab3cc45bb7cc90c56e25790876cf65b45b3a22d",
+      "size_bytes": 339,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fixtures/whatsapp_readiness/README.md",
+      "source_path": "fresko_universe/fresko_universe/fixtures/whatsapp_readiness/README.md",
+      "sha256": "d2df297a9c124e438e8e6ee8950afb133459256e2f837138191ca46ed217824e",
+      "size_bytes": 629,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fixtures/whatsapp_readiness/cases.json",
+      "source_path": "fresko_universe/fresko_universe/fixtures/whatsapp_readiness/cases.json",
+      "sha256": "f8ebf3e76bb01adff9bc894c1bc73f135b77e9b3668b6b23b434b9ea7725f86f",
+      "size_bytes": 22245,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fixtures/whatsapp_readiness/manifest.json",
+      "source_path": "fresko_universe/fresko_universe/fixtures/whatsapp_readiness/manifest.json",
+      "sha256": "2ecf6613ac0aef408a9dd83c2261272eefa8e75444a216e21f880797334d9e44",
+      "size_bytes": 931,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/__init__.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/ats.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/ats.py",
+      "sha256": "d56595ab476712e9852b30db8be12a6473229a99bb9c316d4f862772356f1686",
+      "size_bytes": 7475,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/constants.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/constants.py",
+      "sha256": "01591ca1da254e0d2725246269d117ce37ae060ee4377227cb80a32cd4859660",
+      "size_bytes": 94,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/__init__.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_adjustment_application/__init__.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_adjustment_application/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_adjustment_application/fresko_adjustment_application.json",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_adjustment_application/fresko_adjustment_application.json",
+      "sha256": "34af6f564ad5277fe56ae68b1dcb03cd23d8d9186a0932f1ca7ab0f65491b8be",
+      "size_bytes": 5594,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_adjustment_application/fresko_adjustment_application.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_adjustment_application/fresko_adjustment_application.py",
+      "sha256": "1c50683b8a3db00f38c7713ff5170cef8489d1a8c6de39bdd628d2cb4ba9022e",
+      "size_bytes": 407,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_approval/__init__.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_approval/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_approval/fresko_approval.json",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_approval/fresko_approval.json",
+      "sha256": "58289b67b63c53668495a8bf5e1fe064738410f32d9a8edc5c6fdd47e3897161",
+      "size_bytes": 3164,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_approval/fresko_approval.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_approval/fresko_approval.py",
+      "sha256": "06f4d974c22300a9de8234e1df8346f5f419e383dbc9731895743bd7ff0ce3bc",
+      "size_bytes": 1992,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_collection/__init__.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_collection/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_collection/fresko_collection.json",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_collection/fresko_collection.json",
+      "sha256": "e8857f3e4901ec411f54afdf837be2e9f0e414c5977c3e65bbe4dcf59767de61",
+      "size_bytes": 7424,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_collection/fresko_collection.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_collection/fresko_collection.py",
+      "sha256": "ccd41b6f5a1d30a42220b3a31d0b3fd91bd9b325567ee975cf51782aaa0f0e1f",
+      "size_bytes": 396,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_commercial_sale/__init__.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_commercial_sale/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_commercial_sale/fresko_commercial_sale.json",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_commercial_sale/fresko_commercial_sale.json",
+      "sha256": "0c05341dca356b2460eb4c1fa4f005fe0dafe12ca68def065320a2c957535c6a",
+      "size_bytes": 6530,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_commercial_sale/fresko_commercial_sale.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_commercial_sale/fresko_commercial_sale.py",
+      "sha256": "c840b0ae738ccb262c6fc260897fb9c6e997aa49c4c804c0101271805e5daf86",
+      "size_bytes": 686,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_commercial_sale_line/__init__.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_commercial_sale_line/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_commercial_sale_line/fresko_commercial_sale_line.json",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_commercial_sale_line/fresko_commercial_sale_line.json",
+      "sha256": "3aab413067653f54aeb1b90bdcf2351702dbb8ae6ff5c438a63dce7c2da92f80",
+      "size_bytes": 2673,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_commercial_sale_line/fresko_commercial_sale_line.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_commercial_sale_line/fresko_commercial_sale_line.py",
+      "sha256": "438a6a83b4aa4ea678cb306c5663eff3902a7d21de12c041ffcfce6e9c0877cb",
+      "size_bytes": 690,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_container/__init__.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_container/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_container/fresko_container.js",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_container/fresko_container.js",
+      "sha256": "f335abd75ac418425326ccb0f3ef0e089358952a52065584c6c4092214b6e96e",
+      "size_bytes": 179,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_container/fresko_container.json",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_container/fresko_container.json",
+      "sha256": "d349d502e82f605b7f5cb51e4966c0e1c4e9df866a6f3060d52ef3bfe0a5678b",
+      "size_bytes": 4346,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_container/fresko_container.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_container/fresko_container.py",
+      "sha256": "ab247ee4a304790bb80e9135285cf35b72f5077071f10045e8723a03793d2621",
+      "size_bytes": 14267,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_container/test_fresko_container.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_container/test_fresko_container.py",
+      "sha256": "44af703785fc92647549bf3ef13b49e70b5f0bc950287a556718c6c60f866f76",
+      "size_bytes": 110,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_container_lot/__init__.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_container_lot/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_container_lot/fresko_container_lot.json",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_container_lot/fresko_container_lot.json",
+      "sha256": "5dac56abb98235392cff1e3a1068e153bebb32286463772d128c2ebab2bc5ca3",
+      "size_bytes": 1031,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_container_lot/fresko_container_lot.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_container_lot/fresko_container_lot.py",
+      "sha256": "80eb19f44ebedf440cbb21a6cbc0fdf8c4ec79434ecf467e69c67ea7246b51b6",
+      "size_bytes": 143,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_container_quantity_assertion/__init__.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_container_quantity_assertion/__init__.py",
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+      "size_bytes": 1,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_container_quantity_assertion/fresko_container_quantity_assertion.json",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_container_quantity_assertion/fresko_container_quantity_assertion.json",
+      "sha256": "27604dfe7379c7840cfcedf61b3a80cda2e3b6db5fc7432ddf4083478b26c848",
+      "size_bytes": 3446,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_container_quantity_assertion/fresko_container_quantity_assertion.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_container_quantity_assertion/fresko_container_quantity_assertion.py",
+      "sha256": "e22c6241f9f2e28b4cbee58a2a2a65c5e02ab689c82b6ec78f4949bdfe20d51d",
+      "size_bytes": 4586,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_container_rate_rule/__init__.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_container_rate_rule/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_container_rate_rule/fresko_container_rate_rule.json",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_container_rate_rule/fresko_container_rate_rule.json",
+      "sha256": "ce426809f9a254ea845d13de175e385014c742d6897e83186f7710e50165db82",
+      "size_bytes": 620,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_container_rate_rule/fresko_container_rate_rule.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_container_rate_rule/fresko_container_rate_rule.py",
+      "sha256": "cf1052064411933cb92e19ccbd5a1e14340a8b6c7778606a4e13669e7ebed619",
+      "size_bytes": 91,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_container_source_document/__init__.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_container_source_document/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_container_source_document/fresko_container_source_document.json",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_container_source_document/fresko_container_source_document.json",
+      "sha256": "32f6428acdef1f3d1300076d99d27db5501c06e5e5295614dddee1f26fa6cc72",
+      "size_bytes": 796,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_container_source_document/fresko_container_source_document.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_container_source_document/fresko_container_source_document.py",
+      "sha256": "6385918f90df6782f9432492214b68d7acdfaa850865137cecb2570ea48f3e64",
+      "size_bytes": 154,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_evidence/__init__.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_evidence/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_evidence/fresko_evidence.js",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_evidence/fresko_evidence.js",
+      "sha256": "e57f07de9c951c2f6b2c74b8f710904f0303529150c9aaac15e73049fcf52e15",
+      "size_bytes": 178,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_evidence/fresko_evidence.json",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_evidence/fresko_evidence.json",
+      "sha256": "dd84152589a79343747ba0b2c01cc314f99ff9ac06631ce42ef42f4d3fc147df",
+      "size_bytes": 5234,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_evidence/fresko_evidence.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_evidence/fresko_evidence.py",
+      "sha256": "e332998a08ad2a4ccf1a34f9dafe1b2de44459f2d4e4bebcc98626777011978a",
+      "size_bytes": 5253,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_evidence/test_f2_corrective.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_evidence/test_f2_corrective.py",
+      "sha256": "5f78ff5ed136565a31934201660a7d718ade92c477c9e287f81b983c3efb3f47",
+      "size_bytes": 11122,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_evidence/test_fresko_evidence.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_evidence/test_fresko_evidence.py",
+      "sha256": "0c676b60607f0173e16dee26227a78b83c5b0d58c1ab68c4ad676d9baa18df57",
+      "size_bytes": 50324,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_evidence_attachment/__init__.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_evidence_attachment/__init__.py",
+      "sha256": "05381900ddc51dc90cbbbf3fb2108acf8f9c14e7a1388c087fc5a988138e0c8e",
+      "size_bytes": 53,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_evidence_attachment/fresko_evidence_attachment.json",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_evidence_attachment/fresko_evidence_attachment.json",
+      "sha256": "683a1ac18bfcbf8dde349a6db9dc19779589bc09964640f953b1f88d0aaa71b4",
+      "size_bytes": 4999,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_evidence_attachment/fresko_evidence_attachment.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_evidence_attachment/fresko_evidence_attachment.py",
+      "sha256": "ff5605f658bc94346d6b00c78ea96046ecaaebd7ced60285ee15ef7d0373d441",
+      "size_bytes": 3709,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_evidence_attempt/__init__.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_evidence_attempt/__init__.py",
+      "sha256": "05381900ddc51dc90cbbbf3fb2108acf8f9c14e7a1388c087fc5a988138e0c8e",
+      "size_bytes": 53,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_evidence_attempt/fresko_evidence_attempt.json",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_evidence_attempt/fresko_evidence_attempt.json",
+      "sha256": "b57c901c8a24d48d2a2427f9acd8d97a2b55d3fcc2cf6a57c28fcb260329e5e9",
+      "size_bytes": 5172,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_evidence_attempt/fresko_evidence_attempt.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_evidence_attempt/fresko_evidence_attempt.py",
+      "sha256": "9f877b293724f0bb28d66832d3d7540c2763401e74a731407f04b974335ea14e",
+      "size_bytes": 982,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_exception/__init__.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_exception/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_exception/fresko_exception.js",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_exception/fresko_exception.js",
+      "sha256": "8c60abb4432e8a9d51225b74a43bd9b540d9c54f483d8c574cfaae6664fc07df",
+      "size_bytes": 179,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_exception/fresko_exception.json",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_exception/fresko_exception.json",
+      "sha256": "331ce1a393823ea7ee79164bb5a12343981338d203ee3ad037550cb94b96fc67",
+      "size_bytes": 5459,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_exception/fresko_exception.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_exception/fresko_exception.py",
+      "sha256": "773c0bc8496ec45389222a3d95eb56c37875bed0f6401844000b5ba958674f55",
+      "size_bytes": 9398,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_field_assertion/__init__.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_field_assertion/__init__.py",
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+      "size_bytes": 1,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_field_assertion/fresko_field_assertion.json",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_field_assertion/fresko_field_assertion.json",
+      "sha256": "41f80e533b24c34433f2f8a7dbc3780fd8ff6fefd5381eb75b8793afb660d08d",
+      "size_bytes": 4722,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_field_assertion/fresko_field_assertion.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_field_assertion/fresko_field_assertion.py",
+      "sha256": "820dfcda3c801d3c794e79749b142d32e254623cb388f169edf0c2f23b1487eb",
+      "size_bytes": 6722,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_integrity_seal/__init__.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_integrity_seal/__init__.py",
+      "sha256": "98991a673bd88019f1b01006bfccbf3f5cb3a271ea5a0c3a545d99b38ae62440",
+      "size_bytes": 7,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_integrity_seal/fresko_integrity_seal.json",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_integrity_seal/fresko_integrity_seal.json",
+      "sha256": "92195733cc3866694c6988412173b6655b8a4ca495011ef72fb366618c82d28e",
+      "size_bytes": 2536,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_integrity_seal/fresko_integrity_seal.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_integrity_seal/fresko_integrity_seal.py",
+      "sha256": "eb79fc0d426f1a336f028741408f508a5949ab08ee22cfb612de060bce4d6f84",
+      "size_bytes": 2090,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_outward/__init__.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_outward/__init__.py",
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+      "size_bytes": 1,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_outward/fresko_outward.json",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_outward/fresko_outward.json",
+      "sha256": "d4a503b4db1bd12eb99f725df4269840f3a15cf23d17679b0f3c2f67261cbda9",
+      "size_bytes": 5163,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_outward/fresko_outward.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_outward/fresko_outward.py",
+      "sha256": "dfe8757fa3937514b3b1490e3e1e7769244a36f6eef9cc1f18a4d8308b24192e",
+      "size_bytes": 4713,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_outward_line/__init__.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_outward_line/__init__.py",
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+      "size_bytes": 1,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_outward_line/fresko_outward_line.json",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_outward_line/fresko_outward_line.json",
+      "sha256": "f9f0256ef1f7ee2257043f22093845a781a6e492ac01ff41eb92752f968f11e0",
+      "size_bytes": 1386,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_outward_line/fresko_outward_line.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_outward_line/fresko_outward_line.py",
+      "sha256": "6a91123491b9b032cf525a0e617df379fb32286ceaa6d8ce8378c462a499f925",
+      "size_bytes": 230,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_party_alias_mapping/__init__.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_party_alias_mapping/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_party_alias_mapping/fresko_party_alias_mapping.json",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_party_alias_mapping/fresko_party_alias_mapping.json",
+      "sha256": "6b4a3933dcb971790c4fb98c634d2ad69cf9248493197343facf9b52fa08322b",
+      "size_bytes": 4422,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_party_alias_mapping/fresko_party_alias_mapping.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_party_alias_mapping/fresko_party_alias_mapping.py",
+      "sha256": "d8dd4f1b5d742909e5f25d6764281722f65c61e257858d5aa7b88446ec388ad5",
+      "size_bytes": 689,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_payment_allocation/__init__.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_payment_allocation/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_payment_allocation/fresko_payment_allocation.json",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_payment_allocation/fresko_payment_allocation.json",
+      "sha256": "643c57d6bf04653e592e6159749e8118e6966cf2043f68d58250029e00848c98",
+      "size_bytes": 5828,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_payment_allocation/fresko_payment_allocation.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_payment_allocation/fresko_payment_allocation.py",
+      "sha256": "cbe8a72f634ab132c440c76e368cced37c74e33b5c1dbd96cea438903fc9ee94",
+      "size_bytes": 403,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_receivable_adjustment/__init__.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_receivable_adjustment/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_receivable_adjustment/fresko_receivable_adjustment.json",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_receivable_adjustment/fresko_receivable_adjustment.json",
+      "sha256": "32645361617bbe1689fad53e8a0cdacc753f974185fa1fb3caa69e9871fb76f0",
+      "size_bytes": 5841,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_receivable_adjustment/fresko_receivable_adjustment.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_receivable_adjustment/fresko_receivable_adjustment.py",
+      "sha256": "91a6ae1bd2437e3325ca740e34ebeff720150097b72c28d6562783c3aa9ee426",
+      "size_bytes": 406,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_revision/__init__.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_revision/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_revision/fresko_revision.json",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_revision/fresko_revision.json",
+      "sha256": "ed9a6a1f16788766a09b68e96af6621534702595cae9bb88cc533ade18b921fe",
+      "size_bytes": 2731,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_revision/fresko_revision.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_revision/fresko_revision.py",
+      "sha256": "c32ab107c0b32697c3f2364f15dc8db90b03fd8b5e903312a81550ed677fcdc5",
+      "size_bytes": 2922,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_sale_outward_allocation/__init__.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_sale_outward_allocation/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_sale_outward_allocation/fresko_sale_outward_allocation.json",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_sale_outward_allocation/fresko_sale_outward_allocation.json",
+      "sha256": "ea5e7159489a840a7856fff4bfcbbbfe3dc3ebe6b1ca1ccf8d7546020a8d7e5e",
+      "size_bytes": 4824,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/doctype/fresko_sale_outward_allocation/fresko_sale_outward_allocation.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/doctype/fresko_sale_outward_allocation/fresko_sale_outward_allocation.py",
+      "sha256": "90e52ac69e9bc4fca824ce4b6f60edd341c66776ba1e9b932c8d4218e4877359",
+      "size_bytes": 693,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/page/fresko_money/__init__.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/page/fresko_money/__init__.py",
+      "sha256": "3a9e4ee662a2e9f2eda131d1b5068bc3a607add4701721875d0aedca6416fbed",
+      "size_bytes": 96,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/page/fresko_money/fresko_money.css",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/page/fresko_money/fresko_money.css",
+      "sha256": "1e8e4c7ff6970d08923ab2c269f46d34831d4faafe7b74cb2696976092a3cfc9",
+      "size_bytes": 1629,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/page/fresko_money/fresko_money.js",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/page/fresko_money/fresko_money.js",
+      "sha256": "672aad68358555bbf75ec13e86e7f2f15c985c22a49c03f881c3f3b1cf02f53d",
+      "size_bytes": 30909,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/page/fresko_money/fresko_money.json",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/page/fresko_money/fresko_money.json",
+      "sha256": "6501c2ccaef4daa9b27dc272827dea81a38b4083c21e9cd23d76868e74a0e81d",
+      "size_bytes": 452,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/page/fresko_workspace/__init__.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/page/fresko_workspace/__init__.py",
+      "sha256": "026b7a33815c48e6ff9a1c5b7a3405a63b69630383b9c84d1420f5e7932ba5d8",
+      "size_bytes": 42,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/page/fresko_workspace/fresko_workspace.css",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/page/fresko_workspace/fresko_workspace.css",
+      "sha256": "5520bb7edd42cd3bd2e56aa58543ae031eb17635eac061b1764df369d5c9cdea",
+      "size_bytes": 6988,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/page/fresko_workspace/fresko_workspace.js",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/page/fresko_workspace/fresko_workspace.js",
+      "sha256": "67b16b0dfdfbd1d10cfb52ebf56bbfdf2bb4417f40779b8e0ff3ba17b31ff20b",
+      "size_bytes": 100563,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/page/fresko_workspace/fresko_workspace.json",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/page/fresko_workspace/fresko_workspace.json",
+      "sha256": "4c1c4906fab2fbfa4df5eb453396e7c290bef22caffb0dfef42f698001bd42fc",
+      "size_bytes": 532,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/page/fresko_workspace/fresko_workspace.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/page/fresko_workspace/fresko_workspace.py",
+      "sha256": "d3bfb01a11c0f8e76f33d262fd2619cdbabd91fde5e23db3187ccc4f94a423ad",
+      "size_bytes": 1484,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/physical.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/physical.py",
+      "sha256": "1e62467e944096fca1af854cb1b4d0404a84c0ef4d967d493b64f2d6f10db1da",
+      "size_bytes": 6135,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/services/__init__.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/services/__init__.py",
+      "sha256": "05381900ddc51dc90cbbbf3fb2108acf8f9c14e7a1388c087fc5a988138e0c8e",
+      "size_bytes": 53,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/services/close_gate_service.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/services/close_gate_service.py",
+      "sha256": "b2e0d3ee7a6abea017bca906680022ded7d0d66f4d21f981a34e52e9a6be13c8",
+      "size_bytes": 3076,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/services/close_policy.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/services/close_policy.py",
+      "sha256": "08d2d405bdff11042ef380f38ba9fe88e5ea02579d87d2e2c9838d6d6e7a14fd",
+      "size_bytes": 2817,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/services/commercial_service.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/services/commercial_service.py",
+      "sha256": "5fc64ae8b4a22ec700e39cda6df1e745e136aa78e009a8a99886f157440283c6",
+      "size_bytes": 66385,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/services/evidence_service.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/services/evidence_service.py",
+      "sha256": "0b1317b2abb95254bc13f758687ca1b6ff67072856d2647d334568e5903004b7",
+      "size_bytes": 87448,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/services/integrity_service.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/services/integrity_service.py",
+      "sha256": "fdd9b2cd9619ab71a09da3ad534010bbb08af71a8a2c91c9d4779701c753484a",
+      "size_bytes": 17373,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/services/money_service.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/services/money_service.py",
+      "sha256": "f7063c7ee7177a55b17a90b61f2f11010fac1d8aad0dd2c43535c9f65c702e2e",
+      "size_bytes": 96474,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/services/outward_service.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/services/outward_service.py",
+      "sha256": "3b7ee1cba48c0856712c2e3d1b1bbd6f7d6610b7882649a0def6d85798473b58",
+      "size_bytes": 37477,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_core/services/quantity_assertion_service.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_core/services/quantity_assertion_service.py",
+      "sha256": "1acdfaa8fb92ad10025acec885ec0792a455fabc30426811b9d0ce39300d1814",
+      "size_bytes": 16917,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_deals/__init__.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_deals/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_deals/doctype/__init__.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_deals/doctype/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_deals/doctype/fresko_deal/__init__.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_deals/doctype/fresko_deal/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_deals/doctype/fresko_deal/fresko_deal.js",
+      "source_path": "fresko_universe/fresko_universe/fresko_deals/doctype/fresko_deal/fresko_deal.js",
+      "sha256": "cb4bd14a4d0dd82102e5af63c607903d2849cd512f56a0bd43c31adf86c93962",
+      "size_bytes": 174,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_deals/doctype/fresko_deal/fresko_deal.json",
+      "source_path": "fresko_universe/fresko_universe/fresko_deals/doctype/fresko_deal/fresko_deal.json",
+      "sha256": "dd74c48639e83819453ad681d22b8a3b4cfec07fa63af50e4c01ae2091b12bcd",
+      "size_bytes": 5387,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_deals/doctype/fresko_deal/fresko_deal.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_deals/doctype/fresko_deal/fresko_deal.py",
+      "sha256": "337fc40e099d55b19f425c064599695c2dc44b61f1f0fc61d03beda9245df4fc",
+      "size_bytes": 11552,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/fresko_deals/doctype/fresko_deal/test_fresko_deal.py",
+      "source_path": "fresko_universe/fresko_universe/fresko_deals/doctype/fresko_deal/test_fresko_deal.py",
+      "sha256": "6e7b693d350f429056ed4cf3ad90916114b92c1284e8850911ed4406be076f5b",
+      "size_bytes": 67654,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/hooks.py",
+      "source_path": "fresko_universe/fresko_universe/hooks.py",
+      "sha256": "546af621d7d862bb78c70a6a1537eb6326d492800afbc62cd5665287ca53f27c",
+      "size_bytes": 4927,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/install.py",
+      "source_path": "fresko_universe/fresko_universe/install.py",
+      "sha256": "7440fe0db2e91ecae3feea8097b055a0d7474fafefd45f506087e721bd81d509",
+      "size_bytes": 4725,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/integrity.py",
+      "source_path": "fresko_universe/fresko_universe/integrity.py",
+      "sha256": "62f54d9381028e1afe33bbfeafedcb6a79bde74bd073b98aefb5a9d7045acef5",
+      "size_bytes": 509,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/modules.txt",
+      "source_path": "fresko_universe/fresko_universe/modules.txt",
+      "sha256": "56e40cc6c84771b14cc1b086c8dac3bc6e835dedbec9c3c361dc60c1ed799a76",
+      "size_bytes": 25,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/money.py",
+      "source_path": "fresko_universe/fresko_universe/money.py",
+      "sha256": "10db79256319b864f1960a32e4a2560839542ce51a7c1a52563a99bfd88949bd",
+      "size_bytes": 11480,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/outward.py",
+      "source_path": "fresko_universe/fresko_universe/outward.py",
+      "sha256": "53d07bf158b3fe04a747c1d0f981d39dff36dacd6305604301745c8f31c297c2",
+      "size_bytes": 2276,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/patches.txt",
+      "source_path": "fresko_universe/fresko_universe/patches.txt",
+      "sha256": "dcd5839e194d054215b6e71e1a57ccc3e025a917bebb56ef1eb8d2dc33dba3bc",
+      "size_bytes": 170,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/patches/__init__.py",
+      "source_path": "fresko_universe/fresko_universe/patches/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/patches/v1_0/__init__.py",
+      "source_path": "fresko_universe/fresko_universe/patches/v1_0/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/patches/v1_0/backfill_evidence_attempt_durability_state.py",
+      "source_path": "fresko_universe/fresko_universe/patches/v1_0/backfill_evidence_attempt_durability_state.py",
+      "sha256": "82c40e75f3305e83674bc2edf98a531964740952084b20cce2fc88b5665e0677",
+      "size_bytes": 841,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/patches/v1_0/backfill_evidence_capture_status.py",
+      "source_path": "fresko_universe/fresko_universe/patches/v1_0/backfill_evidence_capture_status.py",
+      "sha256": "408dc1b30a9eb3f1512c8b7dc00e9420cd32aa5e778a9fea1cc64edf751e18bd",
+      "size_bytes": 2400,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/permissions.py",
+      "source_path": "fresko_universe/fresko_universe/permissions.py",
+      "sha256": "c3fc4e7ddb3217a14b80cad6d8a4759a0119ed7c8ba5e24fe996564e9ed85c7a",
+      "size_bytes": 23721,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/public/css/fresko_universe.css",
+      "source_path": "fresko_universe/fresko_universe/public/css/fresko_universe.css",
+      "sha256": "6136ed57c9ef47815e2732bcd4fd965b7bf99d70cd7fc21adcde102be055c2bd",
+      "size_bytes": 30,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/public/js/fresko_universe.js",
+      "source_path": "fresko_universe/fresko_universe/public/js/fresko_universe.js",
+      "sha256": "d7c4292fc6128b1b8fa6553b84399160ff8a3c6b5c9c099a85add22b9a55723c",
+      "size_bytes": 27,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/quantity_assertion.py",
+      "source_path": "fresko_universe/fresko_universe/quantity_assertion.py",
+      "sha256": "6b3c76cae2415cddd36afd11309d82fe47335d4a77d1b83e15a08bd9041a3a76",
+      "size_bytes": 1482,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/rate_rules.py",
+      "source_path": "fresko_universe/fresko_universe/rate_rules.py",
+      "sha256": "e7b34f2dbf3a34f222affc58900f64b77be47910c4a46072b75c602ce55a225a",
+      "size_bytes": 3575,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/tests/__init__.py",
+      "source_path": "fresko_universe/fresko_universe/tests/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/tests/browser_fixture.py",
+      "source_path": "fresko_universe/fresko_universe/tests/browser_fixture.py",
+      "sha256": "01966893135610dac2f0cabccba641787f40c3a08eae36627112a77c3c94d8d2",
+      "size_bytes": 9221,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/tests/test_commercial_sale.py",
+      "source_path": "fresko_universe/fresko_universe/tests/test_commercial_sale.py",
+      "sha256": "7c8a86ff3de983e0d00fd74bf47e52b8491c0fc0e5871ef1244f2b209bec62b8",
+      "size_bytes": 61604,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/tests/test_constants_and_fingerprint.py",
+      "source_path": "fresko_universe/fresko_universe/tests/test_constants_and_fingerprint.py",
+      "sha256": "796d6e8d5144e1f7b228523203b2d46f934a176012ef546637b2a3ea3f740ecc",
+      "size_bytes": 4714,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/tests/test_container_quantity_assertion.py",
+      "source_path": "fresko_universe/fresko_universe/tests/test_container_quantity_assertion.py",
+      "sha256": "86c3bba636ebb2e6d8491b2260cec91528c8f33896478e880912b51bd520ef51",
+      "size_bytes": 35947,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/tests/test_fsec_permissions.py",
+      "source_path": "fresko_universe/fresko_universe/tests/test_fsec_permissions.py",
+      "sha256": "c3c9851e4d2dd5656d707490bb6296df7ae97f9e8b7502fb3127203ad60452a8",
+      "size_bytes": 17319,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/tests/test_integrity_check.py",
+      "source_path": "fresko_universe/fresko_universe/tests/test_integrity_check.py",
+      "sha256": "859b67e67e726cdba8fd8e7eecba88c1910c2ac007c25eb8f2cae0791f80d42d",
+      "size_bytes": 16372,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/tests/test_money_reconciliation.py",
+      "source_path": "fresko_universe/fresko_universe/tests/test_money_reconciliation.py",
+      "sha256": "840cd75999691aacac358ad9398354ee758755768a6d0eed1cf537a0984dc0e0",
+      "size_bytes": 54580,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/tests/test_phase1_acceptance.py",
+      "source_path": "fresko_universe/fresko_universe/tests/test_phase1_acceptance.py",
+      "sha256": "27fe5a8e41aa56545b0287fa938472418a397d7e225b79588922e954e254abb7",
+      "size_bytes": 12339,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/tests/test_phase2a_outward.py",
+      "source_path": "fresko_universe/fresko_universe/tests/test_phase2a_outward.py",
+      "sha256": "fd8d1e0c0c5a79795ac61a4954d9c70108dba5d960220c90a8503de4bc62cb6b",
+      "size_bytes": 47330,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/tests/test_pilot_safety.py",
+      "source_path": "fresko_universe/fresko_universe/tests/test_pilot_safety.py",
+      "sha256": "18a2c9b8de52e1a4f596c04ba5c37116ba9c749576f0b1ac02b177eabf9dc18d",
+      "size_bytes": 14553,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/tests/test_real_data_service_replay.py",
+      "source_path": "fresko_universe/fresko_universe/tests/test_real_data_service_replay.py",
+      "sha256": "73a1931bad280e7be23f89e78599d1cb45ea03ba52dc975aa4b5b1a27315dd8d",
+      "size_bytes": 5596,
+      "mode": "100644"
+    },
+    {
+      "path": "fresko_universe/tests/utils.py",
+      "source_path": "fresko_universe/fresko_universe/tests/utils.py",
+      "sha256": "249ec744aba84d6a6f648fe923bffb7c0b17c27f496dc79b9d63f1bf3e5afbde",
+      "size_bytes": 4407,
+      "mode": "100644"
+    },
+    {
+      "path": "license.txt",
+      "source_path": "fresko_universe/license.txt",
+      "sha256": "adc37366f403835c1470ab2df93d3837d4719372fc1ef8593d922e06f033f8b2",
+      "size_bytes": 4,
+      "mode": "100644"
+    },
+    {
+      "path": "pyproject.toml",
+      "source_path": "fresko_universe/pyproject.toml",
+      "sha256": "f0e8ebe2a27e0702de4b8474c0de367639cca3f9eccdb7235cdf9e40e63eee7a",
+      "size_bytes": 532,
+      "mode": "100644"
+    },
+    {
+      "path": "tests/__init__.py",
+      "source_path": "fresko_universe/tests/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0,
+      "mode": "100644"
+    },
+    {
+      "path": "tests/test_ask_fresko_contract.py",
+      "source_path": "fresko_universe/tests/test_ask_fresko_contract.py",
+      "sha256": "0728f4dd9850c3d93de1b8a5af4ca1b4fa8e1ff858f17340d0aec6f9d04aca50",
+      "size_bytes": 5532,
+      "mode": "100644"
+    },
+    {
+      "path": "tests/test_commercial_contract.py",
+      "source_path": "fresko_universe/tests/test_commercial_contract.py",
+      "sha256": "78195f15f754abe13c42e744599b68987cd1eb91878376d5967804dbba17b798",
+      "size_bytes": 7453,
+      "mode": "100644"
+    },
+    {
+      "path": "tests/test_commercial_version_contract.py",
+      "source_path": "fresko_universe/tests/test_commercial_version_contract.py",
+      "sha256": "71335c416adb4c2f3012540cb001e58c2a5c82849cf2ca6b8b90215abdef26b1",
+      "size_bytes": 11608,
+      "mode": "100644"
+    },
+    {
+      "path": "tests/test_integrity_static.py",
+      "source_path": "fresko_universe/tests/test_integrity_static.py",
+      "sha256": "28342af755cdfa04aeeea389b1cfdc212eac3e0c1e3019ad26d5ab03aaaa7104",
+      "size_bytes": 7771,
+      "mode": "100644"
+    },
+    {
+      "path": "tests/test_money_contract.py",
+      "source_path": "fresko_universe/tests/test_money_contract.py",
+      "sha256": "312591b7b1319067f6ddc5f9d2560836d8e0fd475ab3b54fb35ebcc3c5f1d915",
+      "size_bytes": 18109,
+      "mode": "100644"
+    },
+    {
+      "path": "tests/test_pilot_safety_contract.py",
+      "source_path": "fresko_universe/tests/test_pilot_safety_contract.py",
+      "sha256": "75fdd29441e7d4c6c5599b86712a455daaa9fe0b068c47ae053c51c33a69467e",
+      "size_bytes": 9037,
+      "mode": "100644"
+    },
+    {
+      "path": "tests/test_quantity_assertion_static.py",
+      "source_path": "fresko_universe/tests/test_quantity_assertion_static.py",
+      "sha256": "2dd432346359ceec2114243a68d0fdb9cbad99cdf22fee0f3fd4afc195a7df76",
+      "size_bytes": 6597,
+      "mode": "100644"
+    },
+    {
+      "path": "tests/test_smoke_unit.py",
+      "source_path": "fresko_universe/tests/test_smoke_unit.py",
+      "sha256": "c11996dc27b027d858791b57adedec8ed5c696040c9d66026162861e6326d8ea",
+      "size_bytes": 185425,
+      "mode": "100644"
+    },
+    {
+      "path": "tests/test_workspace_contract.py",
+      "source_path": "fresko_universe/tests/test_workspace_contract.py",
+      "sha256": "6bf2a48c75c5e8d2c16a68d71fef939dbd9436862523dd3d9b3c03c88e2b6534",
+      "size_bytes": 9566,
+      "mode": "100644"
+    }
+  ]
+}

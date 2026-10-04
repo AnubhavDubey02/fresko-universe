@@ -1,0 +1,250 @@
+{
+ "doctype": "DocType",
+ "name": "Fresko Exception",
+ "module": "Fresko Core",
+ "engine": "InnoDB",
+ "autoname": "hash",
+ "track_changes": 1,
+ "allow_rename": 0,
+ "title_field": "exception_type",
+ "search_fields": "exception_type,severity,status,container,deal,outward",
+ "fields": [
+  {
+   "fieldname": "exception_type",
+   "fieldtype": "Select",
+   "label": "Exception Type",
+   "reqd": 1,
+   "in_list_view": 1,
+   "options": "BUYER_UNRESOLVED\nDUPLICATE_MESSAGE\nOVERSELL_OVERRIDE\nSTOCK_SHORTFALL\nRATE_FLOOR_BREACH\nRATE_POLICY_MISSING\nOUTWARD_UNPRICED\nOUTWARD_WITHOUT_DEAL\nLOT_UNRESOLVED\nDUPLICATE_GATEPASS\nPHYSICAL_VARIANCE\nDATA_INTEGRITY\nOTHER\nALIAS_UNRESOLVED\nALIAS_CONFLICT\nRATE_UNKNOWN\nRATE_EVIDENCE_MISSING\nPRICE_BUCKET_UNALLOCATED\nLOT_UNKNOWN\nPARTY_UNKNOWN\nMOVEMENT_TIME_UNKNOWN\nSALE_WITHOUT_OUTWARD\nOUTWARD_WITHOUT_SALE\nALLOCATION_OVERDRAW\nIDEMPOTENCY_PAYLOAD_CONFLICT\nCONCURRENT_STATE_CONFLICT\nMONEY_UNALLOCATED\nBANK_PENDING\nRECEIPT_AMOUNT_UNKNOWN\nRECEIPT_DIRECTION_UNKNOWN"
+  },
+  {
+   "fieldname": "severity",
+   "fieldtype": "Select",
+   "label": "Severity",
+   "reqd": 1,
+   "default": "Medium",
+   "in_list_view": 1,
+   "options": "Info\nLow\nMedium\nHigh\nCritical\nMaterial"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "reqd": 1,
+   "default": "Open",
+   "in_list_view": 1,
+   "options": "Open\nIn Progress\nResolved\nWaived\nCancelled"
+  },
+  {
+   "fieldname": "container",
+   "fieldtype": "Link",
+   "label": "Container",
+   "options": "Fresko Container"
+  },
+  {
+   "fieldname": "deal",
+   "fieldtype": "Link",
+   "label": "Deal",
+   "options": "Fresko Deal"
+  },
+  {
+   "fieldname": "outward",
+   "fieldtype": "Link",
+   "label": "Outward",
+   "options": "Fresko Outward",
+   "read_only": 1
+  },
+  {
+   "fieldname": "related_outward",
+   "fieldtype": "Link",
+   "label": "Related Outward",
+   "options": "Fresko Outward",
+   "description": "Second immutable Outward reference for pairwise controls such as duplicate gatepass review.",
+   "read_only": 1
+  },
+  {
+   "fieldname": "declared_quantity_assertion",
+   "fieldtype": "Link",
+   "label": "Declared Quantity Assertion",
+   "options": "Fresko Container Quantity Assertion",
+   "read_only": 1
+  },
+  {
+   "fieldname": "operating_quantity_assertion",
+   "fieldtype": "Link",
+   "label": "Operating Quantity Assertion",
+   "options": "Fresko Container Quantity Assertion",
+   "read_only": 1
+  },
+  {
+   "fieldname": "variance_quantity",
+   "fieldtype": "Data",
+   "label": "Variance Quantity",
+   "read_only": 1
+  },
+  {
+   "fieldname": "variance_uom",
+   "fieldtype": "Link",
+   "label": "Variance UOM",
+   "options": "UOM",
+   "read_only": 1
+  },
+  {
+   "fieldname": "variance_key",
+   "fieldtype": "Data",
+   "label": "Variance Key",
+   "unique": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description",
+   "reqd": 1
+  },
+  {
+   "fieldname": "resolution_notes",
+   "fieldtype": "Small Text",
+   "label": "Resolution Notes"
+  },
+  {
+   "fieldname": "opened_by",
+   "fieldtype": "Link",
+   "label": "Opened By",
+   "options": "User",
+   "default": "__user",
+   "read_only": 1
+  },
+  {
+   "fieldname": "opened_at",
+   "fieldtype": "Datetime",
+   "label": "Opened At",
+   "default": "Now",
+   "read_only": 1
+  },
+  {
+   "fieldname": "resolved_by",
+   "fieldtype": "Link",
+   "label": "Resolved By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "resolved_at",
+   "fieldtype": "Datetime",
+   "label": "Resolved At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sale",
+   "fieldtype": "Link",
+   "label": "Commercial Sale",
+   "options": "Fresko Commercial Sale",
+   "read_only": 1
+  },
+  {
+   "fieldname": "commercial_scope_key",
+   "fieldtype": "Data",
+   "label": "Commercial Scope Key",
+   "unique": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "as_of_recorded_at",
+   "fieldtype": "Datetime",
+   "label": "Commercial Exception Recorded At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "money_scope_key",
+   "fieldtype": "Data",
+   "label": "Money Scope Key",
+   "read_only": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "money_company",
+   "fieldtype": "Link",
+   "options": "Company",
+   "label": "Money Company",
+   "read_only": 1
+  },
+  {
+   "fieldname": "collection",
+   "fieldtype": "Link",
+   "options": "Fresko Collection",
+   "label": "Collection",
+   "read_only": 1
+  }
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "report": 1,
+   "export": 1,
+   "import": 0,
+   "share": 0,
+   "print": 1,
+   "email": 0,
+   "if_owner": 0
+  },
+  {
+   "role": "Fresko Approver",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "report": 1,
+   "export": 1,
+   "import": 0,
+   "share": 0,
+   "print": 1,
+   "email": 0,
+   "if_owner": 0
+  },
+  {
+   "role": "Fresko Accounts",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "report": 1,
+   "export": 1,
+   "import": 0,
+   "share": 0,
+   "print": 1,
+   "email": 0,
+   "if_owner": 0
+  },
+  {
+   "role": "Fresko Salesperson",
+   "read": 1,
+   "write": 0,
+   "create": 1,
+   "delete": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "report": 1,
+   "export": 0,
+   "import": 0,
+   "share": 0,
+   "print": 1,
+   "email": 0,
+   "if_owner": 0
+  }
+ ]
+}

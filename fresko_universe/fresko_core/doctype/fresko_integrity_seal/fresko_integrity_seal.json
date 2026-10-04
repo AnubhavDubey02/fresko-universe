@@ -1,0 +1,30 @@
+{
+ "doctype": "DocType",
+ "name": "Fresko Integrity Seal",
+ "module": "Fresko Core",
+ "engine": "InnoDB",
+ "autoname": "hash",
+ "track_changes": 0,
+ "allow_rename": 0,
+ "fields": [
+  {"fieldname": "record_doctype", "fieldtype": "Select", "label": "Record DocType", "options": "Fresko Outward\nFresko Field Assertion\nFresko Container Quantity Assertion", "reqd": 1, "read_only": 1},
+  {"fieldname": "record_name", "fieldtype": "Data", "label": "Record Name", "reqd": 1, "read_only": 1},
+  {"fieldname": "seal_key", "fieldtype": "Data", "label": "Seal Key", "unique": 1, "reqd": 1, "read_only": 1},
+  {"fieldname": "seal_version", "fieldtype": "Data", "label": "Seal Version", "reqd": 1, "read_only": 1},
+  {"fieldname": "container", "fieldtype": "Link", "label": "Container", "options": "Fresko Container", "read_only": 1},
+  {"fieldname": "payload_sha256", "fieldtype": "Data", "label": "Payload SHA256", "reqd": 1, "read_only": 1},
+  {"fieldname": "sealed_at", "fieldtype": "Datetime", "label": "Sealed At", "reqd": 1, "read_only": 1},
+  {"fieldname": "terminal_status", "fieldtype": "Data", "label": "Terminal Status", "read_only": 1},
+  {"fieldname": "terminal_sha256", "fieldtype": "Data", "label": "Terminal SHA256", "read_only": 1},
+  {"fieldname": "terminal_sealed_at", "fieldtype": "Datetime", "label": "Terminal Sealed At", "read_only": 1},
+  {"fieldname": "mismatch_kind", "fieldtype": "Select", "label": "Mismatch Kind", "options": "\nPAYLOAD_CHANGED\nTERMINAL_CHANGED\nRECORD_MISSING", "read_only": 1},
+  {"fieldname": "mismatch_observed_sha256", "fieldtype": "Data", "label": "Mismatch Observed SHA256", "read_only": 1},
+  {"fieldname": "mismatch_detected_at", "fieldtype": "Datetime", "label": "Mismatch Detected At", "read_only": 1},
+  {"fieldname": "mismatch_exception", "fieldtype": "Link", "label": "Mismatch Exception", "options": "Fresko Exception", "read_only": 1}
+ ],
+ "permissions": [
+  {"role": "System Manager", "read": 1, "write": 0, "create": 0, "delete": 0, "submit": 0, "cancel": 0, "amend": 0, "report": 1, "export": 0, "import": 0, "share": 0, "print": 0, "email": 0, "if_owner": 0},
+  {"role": "Fresko Approver", "read": 1, "write": 0, "create": 0, "delete": 0, "submit": 0, "cancel": 0, "amend": 0, "report": 1, "export": 0, "import": 0, "share": 0, "print": 0, "email": 0, "if_owner": 0},
+  {"role": "Fresko Accounts", "read": 1, "write": 0, "create": 0, "delete": 0, "submit": 0, "cancel": 0, "amend": 0, "report": 1, "export": 0, "import": 0, "share": 0, "print": 0, "email": 0, "if_owner": 0}
+ ]
+}

@@ -1,0 +1,247 @@
+"""Locked Phase 1 constants — do not drift from PHASE1_BLUEPRINT_FINAL.md."""
+
+from __future__ import annotations
+
+DEAL_STATUSES = [
+    "Proposed",
+    "Auto Approved",
+    "Approval Required",
+    "Approved",
+    "Countered",
+    "Rejected",
+    "Outward Pending",
+    "Dispatched",
+    "Partially Dispatched",
+    "Payment Pending",
+    "Paid",
+    "Partially Paid",
+    "Reconciled",
+    "Cancelled",
+    "Disputed",
+]
+
+# D4: Countered → Approved only via accept_counter
+DEAL_TRANSITIONS = {
+    "Proposed": {"Auto Approved", "Approval Required", "Cancelled"},
+    "Approval Required": {"Approved", "Countered", "Rejected", "Cancelled"},
+    "Auto Approved": {"Outward Pending", "Cancelled", "Disputed"},
+    "Approved": {"Outward Pending", "Cancelled", "Disputed"},
+    "Countered": {"Approved", "Cancelled"},
+    "Rejected": {"Cancelled"},
+    "Outward Pending": {"Dispatched", "Partially Dispatched", "Cancelled", "Disputed"},
+    "Dispatched": {"Payment Pending", "Disputed"},
+    "Partially Dispatched": {"Dispatched", "Payment Pending", "Cancelled", "Disputed"},
+    "Payment Pending": {"Paid", "Partially Paid", "Disputed", "Cancelled"},
+    "Paid": {"Reconciled", "Disputed"},
+    "Partially Paid": {"Paid", "Reconciled", "Disputed"},
+    "Reconciled": set(),
+    "Cancelled": set(),
+    "Disputed": {"Outward Pending", "Payment Pending", "Cancelled"},
+}
+
+# D3: PROPOSED / Approval Required / Countered do NOT reduce ATS
+ATS_ACTIVE_STATUSES = frozenset(
+    {
+        "Auto Approved",
+        "Approved",
+        "Outward Pending",
+        "Dispatched",
+        "Partially Dispatched",
+        "Payment Pending",
+        "Paid",
+        "Partially Paid",
+        "Reconciled",
+        "Disputed",
+        "Cancelled",  # reserves dispatched_qty only via commercial_qty_for_ats
+    }
+)
+ATS_REDUCING_STATUSES = ATS_ACTIVE_STATUSES
+
+COMMERCIAL_LOCK_STATUSES = frozenset(
+    {
+        "Approval Required",  # F-H4: freeze qty/lot/container after apply_rate_rules
+        "Auto Approved",
+        "Approved",
+        "Countered",
+        "Rejected",  # ChatGPT blocker 1: freeze after leave Proposed
+        "Outward Pending",
+        "Dispatched",
+        "Partially Dispatched",
+        "Payment Pending",
+        "Paid",
+        "Partially Paid",
+        "Reconciled",
+        "Cancelled",
+        "Disputed",
+    }
+)
+
+LOCKED_COMMERCIAL_FIELDS = frozenset(
+    {
+        "container",
+        "buyer_alias",
+        "item",
+        "lot_no",
+        "container_lot",
+        "qty",
+        "proposed_rate",
+        "uom",
+        "company",
+        "approved_rate",
+        "customer",
+        "count_size",
+        # G-M1 / D4: cannot Desk-reassign salesperson on Countered to steal accept_counter
+        "salesperson_user",
+    }
+)
+
+CONTAINER_STATUS_TRANSITIONS = {
+    "Draft": {"Expected", "Arrived", "Cancelled"},
+    "Expected": {"Arrived", "Cancelled"},
+    "Arrived": {"In Cold Storage", "Selling", "Cancelled"},
+    "In Cold Storage": {"Selling", "Closing", "Cancelled"},
+    "Selling": {"Closing", "Cancelled"},
+    "Closing": {"Closed", "Selling"},
+    "Closed": set(),
+    "Cancelled": set(),
+}
+
+# Current runtime vocabulary and closure materiality share one explicit policy.
+from fresko_universe.fresko_core.services.close_policy import (
+    CLOSE_EXCEPTION_POLICY,
+    EXCEPTION_OPEN_STATUSES,
+    MATERIAL_EXCEPTION_TYPES,
+)
+
+EXCEPTION_TYPES = frozenset(CLOSE_EXCEPTION_POLICY)
+
+OVERSELL_OVERRIDE_ROLES = frozenset({"System Manager"})  # D10 / DV4: Approver cannot oversell
+
+# Canonical server-side allowlist for Fresko Deal revisions.  This is deliberately
+# narrower than LOCKED_COMMERCIAL_FIELDS: container reassignment needs an atomic
+# destination-lot / ATS validation flow and is therefore immutable in Phase 1.
+REVISION_ELIGIBLE_FIELDS = frozenset(
+    {
+        "approved_rate",
+        "qty",
+        "lot_no",
+        "container_lot",
+        "customer",
+        "item",
+        "count_size",
+    }
+)
+
+# Post-approval commercial revisions require Approval + evidence (Controls B2)
+MATERIAL_REVISION_FIELDS = frozenset(
+    {
+        "approved_rate",
+        "qty",
+        "lot_no",
+        "container_lot",
+        "customer",
+    }
+)
+
+# Cancelled still reduces ATS by already-dispatched qty (QA: cancel-after-partial)
+ATS_CANCEL_KEEPS_DISPATCHED = True
+
+# FSEC-004 / FSEC-005 Evidence Capture & Scoped Identity Constants
+EVIDENCE_OVERALL_VERIFICATION_STATUSES = [
+    "PENDING",
+    "COMPLETE",
+    "PARTIAL",
+    "CONFLICT",
+]
+
+EVIDENCE_MANIFEST_STATUSES = [
+    "UNKNOWN",
+    "FINALIZED",
+]
+
+EVIDENCE_ATTACHMENT_CAPTURE_STATUSES = [
+    "PENDING",
+    "VERIFYING",
+    "CAPTURED",
+    "FAILED_RETRYABLE",
+    "FAILED_PERMANENT",
+    "PARTIAL",
+    "HASH_MISMATCH",
+    "SUPERSEDED",
+]
+
+EVIDENCE_PROVENANCE_TYPES = [
+    "OFFLINE_IMPORT_MANIFEST",
+    "PROVIDER_HEADER_CONTENT_LENGTH",
+    "PROVIDER_PAYLOAD_DIGEST",
+    "UNTRUSTED_CALLER",
+    "MISSING_PROVENANCE",
+]
+
+TRUSTED_PROVENANCE_TYPES = frozenset(
+    {
+        "OFFLINE_IMPORT_MANIFEST",
+        "PROVIDER_HEADER_CONTENT_LENGTH",
+        "PROVIDER_PAYLOAD_DIGEST",
+    }
+)
+
+EVIDENCE_ATTEMPT_OPERATIONS = [
+    "MESSAGE_INGEST",
+    "ATTACHMENT_INGEST",
+    "ATTACHMENT_VERIFY",
+    "CORRECTION_SUPERSEDE",
+    "OUTWARD_CREATE",
+]
+
+EVIDENCE_ATTEMPT_OUTCOMES = [
+    "SUCCESS_NEW",
+    "SUCCESS_IDEMPOTENT_REDELIVERY",
+    "CONFLICT_PAYLOAD_MISMATCH",
+    "CONFLICT_KEY_COLLISION",
+    # Source-reported provenance (sender / sent time) differs from what was
+    # already established under the same canonical message identity. Distinct
+    # from a payload mismatch: the body may be identical while the source
+    # provenance disagrees, and labelling it as a payload conflict would itself
+    # be untruthful.
+    "CONFLICT_PROVENANCE_MISMATCH",
+    "VERIFICATION_SUCCESS",
+    "VERIFICATION_HASH_MISMATCH",
+    "VERIFICATION_PARTIAL_BYTES",
+    "VERIFICATION_FAILURE_RETRYABLE",
+    "VERIFICATION_FAILURE_PERMANENT",
+    "FAILED_STORAGE",
+    "FAILED_DB_WRITE",
+    "ACCESS_DENIED",
+    "VALIDATION_FAILED",
+]
+
+# F2-001 / Gate 9: audit durability is a SEPARATE dimension from business outcome.
+# An attempt row describes what the operation concluded; durability_state describes
+# how certain we are that the row itself survives. Never conflate the two.
+#   COMMITTED_INDEPENDENT    — written and committed on an independent connection;
+#                              survives caller rollback.
+#   CALLER_TRANSACTION_BOUND — written inside the caller's transaction; will be
+#                              destroyed if the caller rolls back.
+#   UNKNOWN                  — durability was never recorded (legacy rows written
+#                              before this dimension existed). Not an assertion of
+#                              either state; genuinely unknown.
+EVIDENCE_ATTEMPT_DURABILITY_STATES = [
+    "COMMITTED_INDEPENDENT",
+    "CALLER_TRANSACTION_BOUND",
+    "UNKNOWN",
+]
+
+# F2-003: an actor that cannot be established is UNKNOWN, never a real identity.
+# Used for the `actor` audit claim on Fresko Evidence Attempt. owner/modified_by
+# are ORM bookkeeping (Link -> User) and must stay a real user; `actor` is the
+# authoritative provenance field.
+EVIDENCE_ACTOR_UNKNOWN = "UNKNOWN"
+
+SCOPED_MESSAGE_KEY_VERSION = "fresko-message-v1"
+SCOPED_ATTACHMENT_LOGICAL_VERSION = "fresko-attachment-logical-v1"
+SCOPED_ATTACHMENT_VERSION = "fresko-attachment-version-v1"
+HASH_ALGORITHM_SHA256_V1 = "sha256-v1"
+HASH_ALGORITHM_LEGACY_PATH_V0 = "legacy-path-url-v0"
+HASH_ALGORITHM_LEGACY_UNVERIFIED = "legacy-unverified"
+

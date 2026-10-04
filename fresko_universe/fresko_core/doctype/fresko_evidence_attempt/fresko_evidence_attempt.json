@@ -1,0 +1,220 @@
+{
+ "doctype": "DocType",
+ "name": "Fresko Evidence Attempt",
+ "module": "Fresko Core",
+ "engine": "InnoDB",
+ "autoname": "hash",
+ "track_changes": 0,
+ "allow_rename": 0,
+ "fields": [
+  {
+   "fieldname": "evidence",
+   "fieldtype": "Data",
+   "label": "Evidence Identifier Snapshot",
+   "description": "Immutable identifier observed during this attempt, NOT a relational existence claim. Independent audit may survive rollback of the named entity. Resolve access against a currently existing Evidence; never create a parent for this identifier.",
+   "reqd": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "evidence_attachment",
+   "fieldtype": "Data",
+   "label": "Attachment Identifier Snapshot",
+   "description": "Immutable observed attachment identifier; may refer to an entity whose caller transaction rolled back. Not a relational link.",
+   "read_only": 1
+  },
+  {
+   "fieldname": "scoped_message_key",
+   "fieldtype": "Data",
+   "label": "Scoped Message Key",
+   "read_only": 1
+  },
+  {
+   "fieldname": "logical_attachment_key",
+   "fieldtype": "Data",
+   "label": "Logical Attachment Key",
+   "read_only": 1
+  },
+  {
+   "fieldname": "scoped_attachment_version_key",
+   "fieldtype": "Data",
+   "label": "Scoped Attachment Version Key",
+   "read_only": 1
+  },
+  {
+   "fieldname": "attempt_time",
+   "fieldtype": "Datetime",
+   "label": "Attempt Time",
+   "reqd": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "delivery_received_at",
+   "fieldtype": "Datetime",
+   "label": "Delivery Received At Ingress",
+   "description": "Receipt time of this particular delivery, explicitly supplied by ingress. NULL when unknown; independent of audit attempt_time and source_sent_at.",
+   "read_only": 1
+  },
+  {
+   "fieldname": "audit_payload_sha256",
+   "fieldtype": "Data",
+   "label": "Independent Attempt Fingerprint",
+   "description": "SHA-256 of the immutable write envelope used to confirm identical duplicate-key retries. NULL on historical or caller-bound attempts; never backfilled.",
+   "read_only": 1
+  },
+  {
+   "fieldname": "actor",
+   "fieldtype": "Data",
+   "label": "Actor",
+   "reqd": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "operation",
+   "fieldtype": "Select",
+   "label": "Operation",
+   "options": "MESSAGE_INGEST\nATTACHMENT_INGEST\nATTACHMENT_VERIFY\nCORRECTION_SUPERSEDE\nOUTWARD_CREATE",
+   "reqd": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "outcome",
+   "fieldtype": "Select",
+   "label": "Outcome",
+   "options": "SUCCESS_NEW\nSUCCESS_IDEMPOTENT_REDELIVERY\nCONFLICT_PAYLOAD_MISMATCH\nCONFLICT_KEY_COLLISION\nCONFLICT_PROVENANCE_MISMATCH\nVERIFICATION_SUCCESS\nVERIFICATION_HASH_MISMATCH\nVERIFICATION_PARTIAL_BYTES\nVERIFICATION_FAILURE_RETRYABLE\nVERIFICATION_FAILURE_PERMANENT\nFAILED_STORAGE\nFAILED_DB_WRITE\nACCESS_DENIED\nVALIDATION_FAILED",
+   "reqd": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "durability_state",
+   "fieldtype": "Select",
+   "label": "Durability State",
+   "options": "COMMITTED_INDEPENDENT\nCALLER_TRANSACTION_BOUND\nUNKNOWN",
+   "default": "UNKNOWN",
+   "read_only": 1
+  },
+  {
+   "fieldname": "payload_sha256",
+   "fieldtype": "Data",
+   "label": "Payload SHA256",
+   "read_only": 1
+  },
+  {
+   "fieldname": "existing_payload_sha256",
+   "fieldtype": "Data",
+   "label": "Existing Payload SHA256",
+   "read_only": 1
+  },
+  {
+   "fieldname": "source_payload",
+   "fieldtype": "Long Text",
+   "label": "Source Payload",
+   "read_only": 1
+  },
+  {
+   "fieldname": "existing_payload",
+   "fieldtype": "Long Text",
+   "label": "Existing Payload",
+   "read_only": 1
+  },
+  {
+   "fieldname": "old_doc_ref",
+   "fieldtype": "Data",
+   "label": "Old Document Reference",
+   "read_only": 1
+  },
+  {
+   "fieldname": "new_doc_ref",
+   "fieldtype": "Data",
+   "label": "New Document Reference",
+   "read_only": 1
+  },
+  {
+   "fieldname": "observed_byte_count",
+   "fieldtype": "Int",
+   "label": "Observed Byte Count",
+   "read_only": 1
+  },
+  {
+   "fieldname": "observed_sha256",
+   "fieldtype": "Data",
+   "label": "Observed SHA256",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
+   "label": "Reason",
+   "read_only": 1
+  }
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "delete": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "report": 1,
+   "export": 1,
+   "import": 0,
+   "share": 0,
+   "print": 1,
+   "email": 0,
+   "if_owner": 0
+  },
+  {
+   "role": "Fresko Approver",
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "delete": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "report": 1,
+   "export": 1,
+   "import": 0,
+   "share": 0,
+   "print": 1,
+   "email": 0,
+   "if_owner": 0
+  },
+  {
+   "role": "Fresko Accounts",
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "delete": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "report": 1,
+   "export": 1,
+   "import": 0,
+   "share": 0,
+   "print": 1,
+   "email": 0,
+   "if_owner": 0
+  },
+  {
+   "role": "Fresko Salesperson",
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "delete": 0,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "report": 1,
+   "export": 0,
+   "import": 0,
+   "share": 0,
+   "print": 1,
+   "email": 0,
+   "if_owner": 0
+  }
+ ]
+}
