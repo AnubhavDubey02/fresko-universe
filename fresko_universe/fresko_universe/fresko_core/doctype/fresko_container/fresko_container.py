@@ -10,6 +10,10 @@ from fresko_universe.constants import CONTAINER_STATUS_TRANSITIONS
 
 class FreskoContainer(Document):
     def validate(self):
+        if self.closing_status == "Fully Reconciled":
+            from fresko_universe.fresko_core.services.close_gate_service import lock_close_gate_company
+
+            lock_close_gate_company(self.company)
         if not self.is_new():
             from fresko_universe.fresko_core.ats import lock_container_for_update
 
@@ -200,35 +204,9 @@ class FreskoContainer(Document):
             return
         if self.status != "Closed":
             frappe.throw("Set Status to Closed before Fully Reconciled")
-        open_material = frappe.get_all(
-            "Fresko Exception",
-            filters={
-                "container": self.name,
-                "status": ("in", ["Open", "In Progress"]),
-                "exception_type": (
-                    "in",
-                    [
-                        "BUYER_UNRESOLVED",
-                        "OVERSELL_OVERRIDE",
-                        "STOCK_SHORTFALL",
-                        "DATA_INTEGRITY",
-                        "DUPLICATE_MESSAGE",
-                        "RATE_FLOOR_BREACH",
-                        "RATE_POLICY_MISSING",
-                        "OUTWARD_UNPRICED",
-                        "OUTWARD_WITHOUT_DEAL",
-                        "LOT_UNRESOLVED",
-                        "DUPLICATE_GATEPASS",
-                        "PHYSICAL_VARIANCE",
-                    ],
-                ),
-            },
-            limit=1,
-        )
-        if open_material:
-            frappe.throw(
-                "Cannot set Fully Reconciled while open material Exceptions exist on this container"
-            )
+        from fresko_universe.fresko_core.services.close_gate_service import assert_container_can_fully_reconcile
+
+        assert_container_can_fully_reconcile(self.name, self.company)
 
 
 @frappe.whitelist()

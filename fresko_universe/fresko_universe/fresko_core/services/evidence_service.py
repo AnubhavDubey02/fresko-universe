@@ -978,6 +978,42 @@ def _same_reported_value(
     return str(existing_value).strip() == str(incoming_value).strip()
 
 
+def ingest_provider_message_evidence(
+    *,
+    provider: str,
+    provider_account_id: str,
+    conversation_id: str,
+    provider_message_id: str,
+    raw_payload: Any = None,
+    deal: str | None = None,
+    container: str | None = None,
+    notes: str | None = None,
+    source_sender_id: str | None = None,
+    source_sent_at: Any = None,
+    received_at: Any = None,
+) -> tuple[Any, str]:
+    """Required entry contract for future authenticated live-provider adapters.
+
+    Not a public endpoint or transport adapter. Signature/account verification
+    belongs to the future adapter before this call. Four exact opaque scope IDs
+    must exist before any writes; incomplete identity cannot enter legacy ingest.
+    Manifest completeness remains UNKNOWN/-1 at this entry; trusted manifest
+    finalization is a separate server concern. No caller-supplied capture or
+    verification metadata is accepted. Historical and
+    offline sources may continue using ingest_message_evidence with unknown IDs.
+    """
+    scope = (provider, provider_account_id, conversation_id, provider_message_id)
+    if not all(isinstance(value, str) and value for value in scope):
+        frappe.throw("Live-provider Evidence requires four nonempty string scope identifiers", frappe.ValidationError)
+    return ingest_message_evidence(
+        provider=provider, provider_account_id=provider_account_id,
+        conversation_id=conversation_id, provider_message_id=provider_message_id,
+        raw_payload=raw_payload, deal=deal, container=container, notes=notes,
+        manifest_status="UNKNOWN", expected_attachment_count=-1,
+        source_sender_id=source_sender_id, source_sent_at=source_sent_at, received_at=received_at,
+    )
+
+
 def ingest_message_evidence(
     provider: str | None = None,
     provider_account_id: str | None = None,
@@ -1889,17 +1925,6 @@ def aggregate_parent_evidence_status(evidence_name: str) -> str:
         (evidence_name,),
         as_dict=True,
     )
-
-    has_conflict = any(a.capture_status == "CONFLICT" for a in attachments)
-    if has_conflict:
-        frappe.db.set_value(
-            "Fresko Evidence",
-            evidence_name,
-            "overall_verification_status",
-            "CONFLICT",
-            update_modified=False,
-        )
-        return "CONFLICT"
 
     has_failing = any(
         getattr(a, "capture_status", None) in ("PARTIAL", "HASH_MISMATCH", "FAILED_PERMANENT")

@@ -912,3 +912,13 @@ Exact-head GitHub Smoke and pinned Bench remain the merge gate.
 
 - Run [37149479176](https://github.com/AnubhavDubey02/fresko-universe/actions/runs/37149479176) at `f4ec6900ae06fd94a95047d528dbfeb136082cba`: Smoke passed; 258 Bench tests, zero failures and one File-identity ambiguity error. Pinned `attach_files_to_document` requires the attachment field as well as parent identity, and creates a field-specific reference when an existing upload omits it.
 - The source fixture now passes `df="file"` and asserts the exact shared-URL File ID set after both Evidence saves. The resolver prefers the exact Evidence `file` attachment, then a unique parent-only or legacy URL match; same-specificity ambiguity still rejects. This narrow framework escalation was independently checked, with no skipped tests or weakened identity assertions. Fresh exact-head CI remains required.
+
+## 2026-10-04 — Implementation 01 pilot safety repair candidate
+
+- Base/current merged main verified live: `335974c6562dbb91b56ba0df0f3457483e3fb1da`.
+- Branch: `codex/pilot-safety-debt`, reused clean managed worktree; original dirty checkout preserved.
+- Reproduced old close gate admitting all eight specifically requested current Commercial/Money types, unreachable child CONFLICT branch, and incomplete provider identity reaching unscoped legacy insert (offline actual-function reproduction).
+- Added current explicit policy and Company-before-Container/current-read validation with receipt attribution; no ledger refresh or source mutation. Provider guard is non-whitelisted; historical ingest retained. No persisted schema changes; six existing proofs remain required.
+- Astra reviewed design; native Gemini 3.8 Flash produced the bounded pure policy/offline tests; Codex integrated and added database acceptance. Luna independently reviews the actual candidate diff. Exact-head pinned CI and review findings govern acceptance, not this candidate note.
+- Local complete offline/static: 222 tests passed; scripts: 41 passed; fixture/write/schema guards and both actual-source JavaScript harnesses passed. Pinned Bench/all migration proofs still require exact-head CI; final SHA/counts/run URLs will be supplied from immutable CI evidence.
+- Governing repair/limits: `docs/PILOT_SAFETY_CLOSE_POLICY.md`. No next milestone started. Next recommended bounded packet is deployment packaging and real browser baseline, after this packet is green and reviewed.

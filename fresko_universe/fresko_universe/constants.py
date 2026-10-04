@@ -106,43 +106,15 @@ CONTAINER_STATUS_TRANSITIONS = {
     "Cancelled": set(),
 }
 
-EXCEPTION_TYPES = frozenset(
-    {
-        "BUYER_UNRESOLVED",
-        "DUPLICATE_MESSAGE",
-        "OVERSELL_OVERRIDE",
-        "STOCK_SHORTFALL",
-        "RATE_FLOOR_BREACH",
-        "RATE_POLICY_MISSING",
-        "OUTWARD_UNPRICED",
-        "OUTWARD_WITHOUT_DEAL",
-        "LOT_UNRESOLVED",
-        "DUPLICATE_GATEPASS",
-        "PHYSICAL_VARIANCE",
-        "DATA_INTEGRITY",
-        "OTHER",
-    }
+# Current runtime vocabulary and closure materiality share one explicit policy.
+from fresko_universe.fresko_core.services.close_policy import (
+    CLOSE_EXCEPTION_POLICY,
+    EXCEPTION_OPEN_STATUSES,
+    MATERIAL_EXCEPTION_TYPES,
 )
 
-MATERIAL_EXCEPTION_TYPES = frozenset(
-    {
-        "BUYER_UNRESOLVED",
-        "DUPLICATE_MESSAGE",
-        "OVERSELL_OVERRIDE",
-        "STOCK_SHORTFALL",
-        "RATE_FLOOR_BREACH",
-        "RATE_POLICY_MISSING",
-        "OUTWARD_UNPRICED",
-        "OUTWARD_WITHOUT_DEAL",
-        "LOT_UNRESOLVED",
-        "DUPLICATE_GATEPASS",
-        "PHYSICAL_VARIANCE",
-        "DATA_INTEGRITY",
-        "OTHER",
-    }
-)
+EXCEPTION_TYPES = frozenset(CLOSE_EXCEPTION_POLICY)
 
-EXCEPTION_OPEN_STATUSES = frozenset({"Open", "In Progress"})
 OVERSELL_OVERRIDE_ROLES = frozenset({"System Manager"})  # D10 / DV4: Approver cannot oversell
 
 # Canonical server-side allowlist for Fresko Deal revisions.  This is deliberately
