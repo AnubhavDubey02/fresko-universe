@@ -5,6 +5,9 @@ Run via: bench --site <site> run-tests --app fresko_universe --module fresko_uni
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+from unittest.mock import patch
+
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
@@ -16,7 +19,15 @@ from fresko_universe.deals import (
     record_dispatch,
     request_revision,
 )
-from fresko_universe.permissions import deal_has_permission, deal_permission_query
+from fresko_universe.permissions import (
+    deal_has_permission,
+    deal_permission_query,
+    evidence_attachment_has_permission,
+    evidence_attachment_permission_query,
+    evidence_attempt_has_permission,
+    evidence_attempt_permission_query,
+    deny_supplier_http_access,
+)
 from fresko_universe.tests.utils import ensure_masters, make_container, make_deal
 
 
@@ -64,6 +75,137 @@ class TestFSECPermissions(FrappeTestCase):
 
     def tearDown(self):
         frappe.set_user("Administrator")
+
+    def test_evidence_children_supplier_first_and_orphan_attempt(self):
+        evidence = frappe.get_doc({
+            "doctype": "Fresko Evidence",
+            "evidence_type": "Note",
+            "container": self.container.name,
+            "notes": "evidence child permission regression",
+        }).insert(ignore_permissions=True)
+        roles = {
+            "supplier": {"Fresko Supplier Viewer"},
+            "mixed_accounts": {"Fresko Supplier Viewer", "Fresko Accounts"},
+            "mixed_manager": {"Fresko Supplier Viewer", "System Manager"},
+            "accounts": {"Fresko Accounts"},
+            "approver": {"Fresko Approver"},
+        }
+        with patch("fresko_universe.permissions.current_roles", side_effect=lambda user: roles[user]):
+            for user in ("supplier", "mixed_accounts", "mixed_manager"):
+                self.assertEqual(evidence_attachment_permission_query(user), "1=0")
+                self.assertEqual(evidence_attempt_permission_query(user), "1=0")
+                attachment = SimpleNamespace(evidence="missing-evidence", flags=SimpleNamespace(in_service=True))
+                attempt = SimpleNamespace(evidence="missing-evidence")
+                self.assertFalse(evidence_attachment_has_permission(attachment, "read", user))
+                self.assertFalse(evidence_attachment_has_permission(attachment, "create", user))
+                self.assertFalse(evidence_attachment_has_permission(attachment, "write", user))
+                self.assertFalse(evidence_attempt_has_permission(attempt, "read", user))
+
+            self.assertEqual(evidence_attachment_permission_query("accounts"), "")
+            self.assertEqual(evidence_attachment_permission_query("approver"), "")
+            self.assertNotEqual(evidence_attempt_permission_query("accounts"), "1=0")
+            self.assertNotEqual(evidence_attempt_permission_query("approver"), "1=0")
+            attachment = SimpleNamespace(evidence=evidence.name)
+            attempt = SimpleNamespace(evidence=evidence.name)
+            for user in ("accounts", "approver"):
+                self.assertTrue(evidence_attachment_has_permission(attachment, "read", user))
+                self.assertTrue(evidence_attempt_has_permission(attempt, "read", user))
+
+    def test_pinned_validate_auth_resolves_api_identity_before_supplier_hook(self):
+        from frappe.auth import validate_auth
+
+        order = []
+        def resolve_api_identity(_header):
+            order.append("api_key")
+            frappe.set_user("fsec_accounts@example.com")
+
+        def run_guard():
+            order.append("auth_hook")
+            deny_supplier_http_access()
+
+        request = SimpleNamespace(method="GET", path="/api/resource/Fresko Evidence Attachment")
+        with patch.object(frappe, "request", request), patch.object(
+            frappe, "get_request_header", return_value="token fake:key"
+        ), patch("frappe.auth.validate_oauth"), patch(
+            "frappe.auth.validate_auth_via_api_keys", side_effect=resolve_api_identity
+        ), patch.object(
+            frappe, "get_hooks", return_value=["fresko_universe.permissions.deny_supplier_http_access"]
+        ), patch.object(
+            frappe, "get_attr", return_value=run_guard
+        ), patch("fresko_universe.permissions.current_roles", return_value={"Fresko Supplier Viewer"}):
+            old_form_dict = frappe.local.form_dict
+            try:
+                frappe.local.form_dict = {}
+                with self.assertRaises(frappe.PermissionError):
+                    validate_auth()
+            finally:
+                frappe.local.form_dict = old_form_dict
+                frappe.set_user("Administrator")
+        self.assertEqual(order, ["api_key", "auth_hook"])
+    def test_authenticated_supplier_http_guard(self):
+        def reject(message, error_type):
+            raise error_type(message)
+
+        cases = (
+            ("POST", "/api/method/login", None, True),
+            ("POST", "/api/method/login", "login", True),
+            ("POST", "/api/method/logout", "logout", True),
+            ("GET", "/api/method/frappe.auth.get_logged_user", None, True),
+            ("GET", "/api/method/frappe.auth.get_logged_user", "frappe.auth.get_logged_user", True),
+            ("POST", "/api/method/login", "frappe.client.get_list", False),
+            ("POST", "/api/method/logout", "frappe.client.get_list", False),
+            ("GET", "/api/method/frappe.auth.get_logged_user", "logout", False),
+            ("GET", "/api/method/logout", None, False),
+            ("GET", "/api/resource/File", None, False),
+            ("GET", "/private/files/evidence.pdf", None, False),
+            ("GET", "/api/resource/Fresko Evidence Attachment", None, False),
+            ("GET", "/api/resource/Fresko Evidence Attempt", None, False),
+        )
+        for roles in (
+            {"Fresko Supplier Viewer"},
+            {"Fresko Supplier Viewer", "Fresko Accounts"},
+            {"Fresko Supplier Viewer", "System Manager"},
+        ):
+            for method, path, cmd, allowed in cases:
+                fake_frappe = SimpleNamespace(
+                    session=SimpleNamespace(user="supplier-user"),
+                    request=SimpleNamespace(method=method, path=path),
+                    local=SimpleNamespace(form_dict={} if cmd is None else {"cmd": cmd}),
+                    PermissionError=frappe.PermissionError,
+                    throw=reject,
+                )
+                with patch("fresko_universe.permissions.frappe", fake_frappe), patch(
+                    "fresko_universe.permissions.current_roles", return_value=roles
+                ):
+                    if allowed:
+                        self.assertIsNone(deny_supplier_http_access())
+                    else:
+                        with self.assertRaises(frappe.PermissionError):
+                            deny_supplier_http_access()
+
+        fake_admin = SimpleNamespace(
+            session=SimpleNamespace(user="Administrator"),
+            request=SimpleNamespace(method="GET", path="/api/resource/File"),
+            local=SimpleNamespace(form_dict={}),
+            PermissionError=frappe.PermissionError,
+            throw=reject,
+        )
+        with patch("fresko_universe.permissions.frappe", fake_admin), patch(
+            "fresko_universe.permissions.current_roles", return_value={"System Manager", "Fresko Supplier Viewer"}
+        ):
+            with self.assertRaises(frappe.PermissionError):
+                deny_supplier_http_access()
+
+        for user in ("Guest", "accounts-user"):
+            fake_frappe = SimpleNamespace(
+                session=SimpleNamespace(user=user),
+                request=SimpleNamespace(method="GET", path="/private/files/evidence.pdf"),
+                local=SimpleNamespace(form_dict={}),
+            )
+            with patch("fresko_universe.permissions.frappe", fake_frappe), patch(
+                "fresko_universe.permissions.current_roles", return_value={"Fresko Accounts"}
+            ):
+                self.assertIsNone(deny_supplier_http_access())
 
     def test_accounts_denied_cancel_and_apply_rate(self):
         deal = make_deal(self.container, proposed_rate=50, qty=5)

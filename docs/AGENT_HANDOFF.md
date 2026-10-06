@@ -1008,3 +1008,31 @@ unpriced drafts are not acceptance truth. A separate native unpriced Sale read
 asserts null gross/debt and PENDING before rate approval. No app runtime/schema
 change accompanies this harness repair; a fresh exact-head complete gate is
 required before deployment-ref publication.
+
+## 2026-10-06 PR 18 GCP staging and Supplier security checkpoint
+
+GCP staging is live at `https://fresko-staging.34.93.162.135.sslip.io`
+(project `project-86f9787f-03f9-4f7e-b10`, VM `fresko-staging-vm`,
+`asia-south1-a`). The dated 2026-10-05 report proves source
+`f593990dc3457bfa5c54e9c0524c2f7cd974cd11`, app export
+`afea097fe5ada1e1f390e4b6b12daf08ee6876ba`, pinned Frappe/ERPNext,
+275 VM Bench tests, seven external browser tests, a GCS encrypted
+download/decrypt roundtrip and a separate isolated four-component restore.
+It does not prove a later source. See
+`docs/STAGING_DEPLOYMENT_BROWSER_BASELINE.md` for the staging infrastructure,
+manual off-VM replication and restore limits. The earlier Frappe Cloud
+pending state is superseded for this GCP deployment, while a physical touch
+device and disruptive reboot test remain pending.
+
+A live Supplier check on that deployed source reproduced mixed-role Evidence
+child list disclosure: 14 Attachments and 45 Attempts returned through list
+requests, although individual documents denied access. The PR 18 source
+repair now adds an authenticated HTTP Supplier guard and child list/document
+hooks. Exact-head CI, immutable export publication and live retesting of
+Supplier/API-key denial, Accounts private Evidence access and the three
+operator accounts are still required before claiming closure. Administrator
+is denied by the HTTP guard when carrying Supplier; trusted offline
+Administrator Evidence hooks retain their existing bootstrap exception.
+The three old operator credentials are held in an owner-only private handoff;
+the current rotation vault remains an owner-only recovery copy. Never print,
+commit or include passwords in artifacts.

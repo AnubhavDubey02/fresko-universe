@@ -298,3 +298,55 @@ Inspect native CLI `denied_actions` and the actual diff: a `SUCCESS` envelope an
 exit zero did not prove command execution. Avoid repeating command-based Flash
 delegation until that capability is resolved; integration owner applied this
 repair after the bounded attempt was denied.
+
+## 2026-10-06 GCP staging and supplier HTTP closure addendum
+
+The earlier Frappe Cloud setup and billing steps above record the original plan.
+The approved staging deployment instead ran on the dedicated GCP VM
+`fresko-staging-vm` in `asia-south1-a`, project
+`project-86f9787f-03f9-4f7e-b10`, at
+`https://fresko-staging.34.93.162.135.sslip.io`. This is a staging-only
+synthetic site. The 2026-10-05 proof used source
+`f593990dc3457bfa5c54e9c0524c2f7cd974cd11` and exported app commit
+`afea097fe5ada1e1f390e4b6b12daf08ee6876ba`; it does not prove any
+later source or deployment commit. Frappe was pinned to
+`9f8ae9cd25b6735be345da6cc12e9f5a96050c68` and ERPNext to
+`df8b7f9648c2ec4da12db8c4022edc8dd1018c6b`.
+
+The 2026-10-05 site passed 275 Bench tests and seven external browser tests
+across 1280, 390 and 360 pixel viewports. A GCS object was downloaded and
+round-trip decrypted, and a separate four-component backup was restored into
+an isolated site with selected protected records and file sentinels equal.
+The GCS roundtrip and isolated restore are separate proofs. The original
+restore sites are archived for inspection. A local backup runs every six
+hours; encrypted off-VM replication remains manual. Reboot recovery is
+supported by configuration evidence but has not been exercised by a reboot.
+The physical-device touch pass remains pending.
+
+Network access uses a dedicated VPC, public HTTP/HTTPS 80/443, and IAP-only
+SSH from `35.235.240.0/20`. MariaDB and Redis bind to loopback. The VM
+service account has logging/monitoring writes, bucket-scoped objectCreator
+and objectViewer, and access to the named backup-key secret. The GCS bucket
+enforces public access prevention. No project-wide Viewer grant is needed.
+
+A live check on the prior deployed source reproduced a Supplier precedence
+defect: a mixed Supplier+Accounts identity could list 14 Evidence Attachments
+and 45 Evidence Attempts (HTTP 200) while individual reads were denied.
+The bounded source repair adds an Frappe `auth_hooks` guard after authentication
+and before dispatch, denying authenticated identities with any Supplier role,
+including Administrator, at internal HTTP endpoints. Only exact login, logout
+and current-user requests are allowed for those identities. Evidence child
+list/document hooks also deny mixed Supplier roles; their Administrator
+exception retains trusted offline bootstrap behavior. A new source commit
+requires exact-head CI and a new immutable app export, followed by live
+Supplier/API-key, Accounts/private-file and operator denial checks before
+the security closure is claimed. The earlier 2026-10-05 browser/Bench proof
+must not be applied to the repaired source.
+
+The three previously exposed staging operator credentials have a private
+owner-only handoff. Any scoped password proof must verify old-password
+failure, current-password success and only its own new-session logout without
+printing credentials or changing further accounts. Keep the recoverable
+owner-only rotation vault. Staging flags and service state need a fresh
+read-only check after security deployment; the latest values must be recorded
+with the final source and app export identities.
