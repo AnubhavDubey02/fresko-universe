@@ -1060,3 +1060,20 @@ Root cause diagnosis established:
 
 All offline unit tests (228/228) and script suites (49/49) pass. No financial or
 commercial runtime semantics, money calculations, or database schemas were altered.
+
+## 2026-10-06 PR 18 browser harness login synchronization repair
+
+Exact-head CI run 37403417243 confirmed that the modal dismissal and backdrop purge
+resolved all 6 core workflow tests (`test_desktop`, `test_mobile_360`, `test_mobile_390`,
+`test_native_links_preserve_collection_dialog`, `test_saved_state_delayed_real_responses`,
+and `test_saved_state_historical_receivables_and_exceptions`). The only remaining failure
+was `test_supplier_and_mixed_denials` at `browser_support.py:_authenticate:47`.
+Root cause:
+- `BrowserSession._authenticate` used `page.wait_for_function` with an async promise that
+  resolved to false on the first frame before the login AJAX call arrived. Playwright's
+  `wait_for_function` treated the fulfilled promise as completing the wait, causing
+  immediate assertion against `frappe.auth.get_logged_user` before session cookies settled.
+- Repaired `_authenticate` to explicitly synchronize on the login POST response (`cmd=login`)
+  via `expect_response`, and poll `context.request.get` for `frappe.auth.get_logged_user`
+  with bounded retries until the session identity matches the expected user.
+- Offline unit tests (228/228) and script suites (49/49) remain fully green.
