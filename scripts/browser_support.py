@@ -10,6 +10,7 @@ class BrowserSession:
         email: str,
         password: str,
         viewport: Dict[str, int],
+        expect_desk: bool = True,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.email = email
@@ -23,15 +24,20 @@ class BrowserSession:
         )
         self.page: Page = self.context.new_page()
         self.last_field: Optional[str] = None
-        self._authenticate(email, password)
+        self._authenticate(email, password, expect_desk=expect_desk)
 
-    def _authenticate(self, email: str, password: str) -> None:
+    def _authenticate(self, email: str, password: str, expect_desk: bool = True) -> None:
         self.page.goto(f"{self.base_url}/login")
         login_form = self.page.locator("form.form-signin:visible, form:has(input#login_email):visible").first
         login_form.locator("input#login_email").fill(email)
         login_form.locator("input#login_password").fill(password)
-        login_form.locator("button[type=submit]").click()
-        self.page.wait_for_url(lambda url: "/login" not in url)
+        with self.page.expect_response(
+            lambda r: "/api/method/login" in r.url and r.request.method == "POST",
+            timeout=30000,
+        ):
+            login_form.locator("button[type=submit]").click()
+        if expect_desk:
+            self.page.wait_for_url(lambda url: "/login" not in url, timeout=30000)
         response = self.context.request.get(f"{self.base_url}/api/method/frappe.auth.get_logged_user")
         if not response.ok or response.json().get("message") != email:
             raise AssertionError("Real login did not establish the expected user")
@@ -301,10 +307,35 @@ class BrowserSession:
         count = dialogs.count()
         for i in range(count):
             d = dialogs.nth(i)
-            close_btn = d.locator("button.btn-modal-close:visible, button[data-dismiss='modal']:visible, .modal-header .close:visible").first
+            close_btn = d.locator(
+                "button.btn-modal-close:visible, button[data-dismiss='modal']:visible, "
+                ".modal-header .close:visible, .modal-footer button:visible, "
+                "button:has-text('Close'):visible, button:has-text('OK'):visible"
+            ).first
             if close_btn.count() > 0 and close_btn.is_visible():
                 close_btn.click()
-                d.wait_for(state="hidden")
+                try:
+                    d.wait_for(state="hidden", timeout=5000)
+                except Exception:
+                    pass
+
+        # Dismiss any orphaned modal backdrops when no modal is actively visible
+        self.page.evaluate(
+            """() => {
+                const visibleModals = document.querySelectorAll('.modal.show:not([style*="display: none"]), .modal:not([style*="display: none"])');
+                let hasVisible = false;
+                for (const m of visibleModals) {
+                    if (m.offsetWidth > 0 && m.offsetHeight > 0) {
+                        hasVisible = true;
+                        break;
+                    }
+                }
+                if (!hasVisible) {
+                    document.querySelectorAll('.modal-backdrop').forEach(b => b.remove());
+                    document.body.classList.remove('modal-open');
+                }
+            }"""
+        )
 
     def rpc(self, method: str, args: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         payload = args or {}

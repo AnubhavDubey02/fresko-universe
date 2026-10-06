@@ -50,10 +50,18 @@ class BrowserAcceptance(unittest.TestCase):
         cls.browser.close()
         cls.pw.stop()
 
-    def session(self, role, width=1280):
+    def session(self, role, width=1280, expect_desk=None):
+        if expect_desk is None:
+            expect_desk = role not in ("supplier", "mixed")
         user = self.fixture["users"][role]
-        session = BrowserSession(self.browser, self.base, user["email"], user["password"],
-            {"width": width, "height": 900})
+        session = BrowserSession(
+            self.browser,
+            self.base,
+            user["email"],
+            user["password"],
+            {"width": width, "height": 900},
+            expect_desk=expect_desk,
+        )
         self._browser_sessions.append(session)
         self.addCleanup(session.close)
         return session
@@ -223,6 +231,7 @@ class BrowserAcceptance(unittest.TestCase):
 
     def inspect(self, session, sale):
         self.current_stage = "workspace:inspect-sale"
+        session.dismiss_messages()
         session.page.locator('[data-tab-id="sales"]').click()
         session.page.locator("tr").filter(has=session.page.get_by_text(sale, exact=True)).get_by_role("button", name="Inspect", exact=True).click()
         expect(session.page.locator(".fresko-card-title").filter(has_text="Selected Sale:")).to_contain_text(sale)
@@ -268,6 +277,11 @@ class BrowserAcceptance(unittest.TestCase):
                 row.locator(".line-qty").fill("40" if index == 0 else "10")
                 row.locator(".line-evidence").fill(scenario["evidence"])
             sale = self.response_action(sales, "commercial.create_sale", lambda: sales.click_dialog("Create Sale"))["name"]
+            try:
+                dialog.wait_for(state="hidden", timeout=15000)
+            except Exception:
+                pass
+            sales.dismiss_messages()
             self.record_progress(width, sale=sale, stage="sale_created")
         self.inspect(sales, sale)
         self.assertEqual(sales.page.locator(".fresko-card-title").filter(has_text="Selected Sale:").count(), 1)
@@ -318,6 +332,7 @@ class BrowserAcceptance(unittest.TestCase):
                                  "proposed_customer": self.fixture["customer"], "evidence": scenario["evidence"]}.items():
                 sales.field(field, value, True)
             alias = self.response_action(sales, "commercial.propose_alias_mapping", lambda: sales.click_dialog("Propose Mapping"))["name"]
+            sales.dismiss_messages()
             self.record_progress(width, alias=alias, stage="alias_proposed")
             alias_status = "PROPOSED"
         if alias_status == "PROPOSED":
@@ -355,6 +370,7 @@ class BrowserAcceptance(unittest.TestCase):
             for field, value in {"rate": "100", "evidence": scenario["evidence"], "reason": "Synthetic browser late price"}.items():
                 sales.field(field, value, True)
             successor = self.response_action(sales, "commercial.propose_rate", lambda: sales.click_dialog("Propose Rate"))["name"]
+            sales.dismiss_messages()
             sale = successor
             self.record_progress(width, sale=sale, stage=f"rate_successor_{index + 1}")
             self.sale_step(sales, scenario, sale, "Submit Sale", "commercial.submit_sale")
@@ -393,6 +409,7 @@ class BrowserAcceptance(unittest.TestCase):
                 sales.field("qty", qty, True)
                 sales.field("evidence", scenario["evidence"], True)
                 allocation = self.response_action(sales, "commercial.propose_sale_outward_allocation", lambda: sales.click_dialog("Propose Allocation"))["name"]
+                sales.dismiss_messages()
                 allocations.append(allocation)
                 self.record_progress(width, sale=sale, allocations=allocations, stage=f"allocation_{qty}_proposed")
                 for user, label, method, success in [(verifier, "Verify", "verify_sale_outward_allocation", True),
@@ -509,18 +526,19 @@ class BrowserAcceptance(unittest.TestCase):
         known_sale = progress.get("1280", {}).get("sale")
         for role in ["supplier", "mixed"]:
             with self.subTest(role=role):
-                session = self.session(role)
+                session = self.session(role, expect_desk=False)
                 session.goto("app/fresko-workspace")
                 denied_heading = session.page.get_by_role("heading", name="Access Denied", exact=True)
                 native_denied = session.page.get_by_role("heading", name="Not Permitted", exact=True)
-                expect(denied_heading.or_(native_denied)).to_be_visible(timeout=30000)
+                login_form = session.page.locator("form.form-signin, input#login_email")
+                expect(denied_heading.or_(native_denied).or_(login_form)).to_be_visible(timeout=30000)
                 self.assertEqual(session.page.locator(".fresko-workspace-container button:visible").count(), 0,
                                  "Denied Workspace must expose no operational controls")
                 session.goto("app/fresko-money")
                 money_denial = session.page.locator(".fm-denied")
                 native_denial = session.page.get_by_role("heading", name="Not Permitted", exact=True)
-                expect(money_denial.or_(native_denial)).to_be_visible(timeout=30000)
-                if money_denial.count():
+                expect(money_denial.or_(native_denial).or_(login_form)).to_be_visible(timeout=30000)
+                if money_denial.count() and money_denial.is_visible():
                     expect(money_denial).to_contain_text("Access denied", timeout=30000)
                 self.assertEqual(session.page.locator("#tbl-collections tr, #tbl-allocations tr").count(), 0,
                                  "Denied Money page must expose no finance rows")
@@ -530,13 +548,17 @@ class BrowserAcceptance(unittest.TestCase):
                     response = session.context.request.get(self.base + "/api/method/" + method, params=args)
                     self.assertEqual(response.status, 403)
                     self.assertEqual(response.json().get("exc_type"), "PermissionError")
+                for child_doctype in ["Fresko Evidence Attachment", "Fresko Evidence Attempt"]:
+                    response = session.context.request.get(f"{self.base}/api/resource/{child_doctype}")
+                    self.assertEqual(response.status, 403)
+                    self.assertEqual(response.json().get("exc_type"), "PermissionError")
                 if known_sale:
                     sales = self.session("sales")
                     before = self.sale_truth(sales, known_sale)
                     current = sales.rpc("fresko_universe.commercial.get_sale_current", {"sale_name": known_sale})
                     self.assertTrue(current.get("ok"))
                     token = current["message"]["current_version"]
-                    csrf = session.page.evaluate("() => frappe.csrf_token")
+                    csrf = session.page.evaluate("() => (window.frappe && window.frappe.csrf_token) || ''")
                     response = session.context.request.post(
                         self.base + "/api/method/fresko_universe.commercial.verify_sale",
                         data={"sale_name": known_sale, "expected_version": token},

@@ -1036,3 +1036,27 @@ Administrator Evidence hooks retain their existing bootstrap exception.
 The three old operator credentials are held in an owner-only private handoff;
 the current rotation vault remains an owner-only recovery copy. Never print,
 commit or include passwords in artifacts.
+
+## 2026-10-06 PR 18 browser harness repair checkpoint
+
+The exact-head CI run 37395548094 on commit 5f25019a10b54620cd6e64da91dafbdf3ef1e06e
+passed Smoke unit, Bench initialization, app installation, migrations, backend Fresko
+tests (275 passed), and migration proofs, but failed at the browser gate (1 failure, 5 errors).
+Root cause diagnosis established:
+1. `test_supplier_and_mixed_denials`: BrowserSession._authenticate previously waited for
+   the browser URL to leave `/login`. Under the new HTTP Supplier guard, navigation to
+   internal Desk routes is denied at the HTTP boundary, causing the browser to remain
+   on `/login` or render 403. The harness now supports `expect_desk=False` for Supplier
+   identities and verifies authenticated session state via `frappe.auth.get_logged_user`
+   which is explicitly permitted for authentication verification.
+2. `test_desktop`, `test_mobile_360`, `test_mobile_390`: Following sale creation, the native
+   workspace issues a `frappe.msgprint` alert alongside dialog hiding. Without explicit
+   dismissal, the message modal and backdrop obstructed the subsequent click on the
+   `[data-tab-id="sales"]` navigation element, triggering a 30s actionability timeout.
+   `inspect()` now dismisses pending messages and purges orphaned backdrops, and `scenario()`
+   waits for dialogs to hide and dismisses messages after operational creation steps.
+3. `test_saved_state_historical_receivables_and_exceptions`: Failed due to missing saved
+   progress after `test_desktop` timed out prematurely.
+
+All offline unit tests (228/228) and script suites (49/49) pass. No financial or
+commercial runtime semantics, money calculations, or database schemas were altered.
