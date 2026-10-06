@@ -31,13 +31,17 @@ class BrowserSession:
         login_form = self.page.locator("form.form-signin:visible, form:has(input#login_email):visible").first
         login_form.locator("input#login_email").fill(email)
         login_form.locator("input#login_password").fill(password)
-        with self.page.expect_response(
-            lambda r: "/api/method/login" in r.url and r.request.method == "POST",
-            timeout=30000,
-        ):
-            login_form.locator("button[type=submit]").click()
+        login_form.locator("button[type=submit]").click()
         if expect_desk:
             self.page.wait_for_url(lambda url: "/login" not in url, timeout=30000)
+        else:
+            self.page.wait_for_function(
+                """() => fetch('/api/method/frappe.auth.get_logged_user')
+                    .then(r => r.json())
+                    .then(d => d.message && d.message !== 'Guest')
+                    .catch(() => false)""",
+                timeout=30000,
+            )
         response = self.context.request.get(f"{self.base_url}/api/method/frappe.auth.get_logged_user")
         if not response.ok or response.json().get("message") != email:
             raise AssertionError("Real login did not establish the expected user")
