@@ -14,6 +14,8 @@ import threading
 import time
 from decimal import Decimal
 from queue import Queue
+from contextlib import contextmanager
+from werkzeug.wrappers import Request
 
 import frappe
 from frappe import client
@@ -1039,3 +1041,89 @@ class TestCommercialSale(FrappeTestCase):
                                 for event in json.loads(allocation.decision_history)))
         self.assertEqual(physical_snapshot(container_a.name), before_a)
         self.assertEqual(physical_snapshot(self.container.name), before_b)
+
+    @contextmanager
+    def _http_request_context(self):
+        absent = object()
+        previous = getattr(frappe.local, "request", absent)
+        frappe.local.request = Request.from_values(method="POST")
+        try:
+            yield
+        finally:
+            if previous is absent:
+                del frappe.local.request
+            else:
+                frappe.local.request = previous
+
+    def test_live_and_historical_sale_versions_have_distinct_semantics(self):
+        sale = self._create()
+        before = physical_snapshot(self.container.name)
+        original_source = (sale.source_payload, sale.payload_sha256)
+        first = json.loads(sale.decision_history)[0]
+        live = commercial.get_sale_current(sale.name)
+        self.assertEqual((live["projection_mode"], live["current_version"]), ("LIVE", sale.version))
+        commercial.submit_sale(sale.name, expected_version=live["current_version"])
+        sale.reload()
+        historical = commercial.get_sale_as_of(sale.name, first["recorded_at"])
+        self.assertEqual(historical["projection_mode"], "HISTORICAL")
+        self.assertEqual(historical["version_at_cutoff"], first["version"])
+        self.assertEqual(historical["status"], "DRAFT")
+        self.assertNotIn("current_version", historical)
+        self.assertNotIn("version", historical)
+        self.assertEqual(commercial.get_sale_current(sale.name)["current_version"], sale.version)
+        for cutoff, mode in [(None, "LIVE"), ("", "LIVE"), (first["recorded_at"], "HISTORICAL")]:
+            view = commercial.get_container_reconciliation(self.container.name, as_of=cutoff)
+            row = next(row for row in view["sales"] if row["name"] == sale.name)
+            self.assertEqual(view["projection_mode"], mode)
+            self.assertEqual(row["projection_mode"], mode)
+            self.assertEqual("current_version" in row, mode == "LIVE")
+        self.assertEqual((sale.source_payload, sale.payload_sha256), original_source)
+        self.assertEqual(json.loads(sale.decision_history)[0], first)
+        self.assertEqual(physical_snapshot(self.container.name), before)
+
+    def test_http_sale_mutation_requires_valid_token_and_stale_remains_rejected(self):
+        sale = self._create()
+        before = (sale.status, sale.version, sale.decision_history)
+        with self._http_request_context():
+            for token in [None, "", " ", False, True, 0, -1, 1.0, "01", "1.0", "١"]:
+                with self.subTest(token=token):
+                    with self.assertRaisesRegex(frappe.ValidationError, "EXPECTED_VERSION_REQUIRED|INVALID_EXPECTED_VERSION"):
+                        commercial.submit_sale(sale.name, expected_version=token)
+                    sale.reload()
+                    self.assertEqual((sale.status, sale.version, sale.decision_history), before)
+            commercial.submit_sale(sale.name, expected_version=str(sale.version))
+            sale.reload()
+            after = (sale.status, sale.version, sale.decision_history)
+            with self.assertRaisesRegex(frappe.ValidationError, "STALE_VERSION"):
+                commercial.submit_sale(sale.name, expected_version=before[1])
+            sale.reload()
+            self.assertEqual((sale.status, sale.version, sale.decision_history), after)
+
+    def test_http_supplier_and_mixed_roles_denied_before_version_validation(self):
+        sale = self._create()
+        before = (sale.status, sale.version, sale.decision_history)
+        frappe.set_user(self.supplier)
+        with self._http_request_context():
+            with self.assertRaises(frappe.PermissionError):
+                commercial.submit_sale(sale.name)
+        sale.reload()
+        self.assertEqual((sale.status, sale.version, sale.decision_history), before)
+
+    def test_trusted_python_optional_version_compatibility_preserves_blank_rejection(self):
+        sale = self._create()
+        self.assertIsNone(getattr(frappe.local, "request", None))
+        with self.assertRaisesRegex(frappe.ValidationError, "STALE_VERSION"):
+            commercial.submit_sale(sale.name, expected_version="")
+        commercial.submit_sale(sale.name)
+        sale.reload()
+        self.assertEqual(sale.status, "REVIEW_PENDING")
+
+    def test_http_creation_replay_remains_idempotent_without_mutation_token(self):
+        before = physical_snapshot(self.container.name)
+        with self._http_request_context():
+            first = self._create(event="http-creation-replay")
+            replay = self._create(event="http-creation-replay")
+        self.assertEqual(first.name, replay.name)
+        self.assertEqual(first.decision_history, replay.decision_history)
+        self.assertEqual(first.version, replay.version)
+        self.assertEqual(physical_snapshot(self.container.name), before)

@@ -9,6 +9,8 @@ frappe.pages['fresko-money'].on_page_load = function(wrapper) {
 
 var fresko_money = {
 	in_flight: false,
+	read_generation: 0,
+	receivable_sequence: 0,
 	page: null,
 	company_field: null,
 	container_field: null,
@@ -88,6 +90,13 @@ var fresko_money = {
 	get_container: function() { return this.container_field ? this.container_field.get_value() : null; },
 	get_cutoff: function() { return this.cutoff_field ? this.cutoff_field.get_value() : null; },
 
+	read_context: function() {
+		return [this.read_generation, this.get_company(), this.get_container(), this.get_cutoff()];
+	},
+	context_is_current: function(context) {
+		return JSON.stringify(context) === JSON.stringify(this.read_context());
+	},
+
 	setup_layout: function() {
 		var me = this;
 		var html = [
@@ -119,7 +128,7 @@ var fresko_money = {
 			'</div>'
 		].join('');
 
-		$(me.page.main).html(html);
+		$(me.page.main).append(html); // Preserve the native Page filter form.
 
 		$(me.page.main).find('.fm-tab-btn').on('click', function() {
 			var tab = $(this).attr('data-tab');
@@ -139,17 +148,19 @@ var fresko_money = {
 		var me = this;
         var is_read = method.split('.').pop().indexOf('get_') === 0;
 		if (!me.get_company()) { frappe.msgprint(__('Select a Company first.')); return; }
-		if (me.in_flight) {
+		var context = me.read_context();
+		if (!is_read && me.in_flight) {
 			frappe.msgprint(__('A request is already in-flight. Please wait.'));
 			return;
 		}
-		me.in_flight = true;
+		if (!is_read) me.in_flight = true;
 		frappe.call({
 			method: method,
 			args: args,
-			freeze: true,
+			freeze: !is_read,
 			callback: function(r) {
-				me.in_flight = false;
+				if (!is_read) me.in_flight = false;
+				if (is_read && !me.context_is_current(context)) return;
 				if (r.exc) {
 					frappe.msgprint(__('Server error encountered. Refreshing state.'));
 					if (!is_read) me.refresh_all();
@@ -158,7 +169,8 @@ var fresko_money = {
 				if (callback) callback(r.message);
 			},
 			error: function() {
-				me.in_flight = false;
+				if (!is_read) me.in_flight = false;
+				if (is_read && !me.context_is_current(context)) return;
 				frappe.msgprint(__('Request failed. View error log and refreshed state.'));
 				if (!is_read) me.refresh_all();
 			}
@@ -167,6 +179,8 @@ var fresko_money = {
 
 	refresh_all: function() {
 		var me = this;
+		me.read_generation += 1;
+		$(me.page.main).find('#fm-receivable-result, #fm-projections, #fm-money-exceptions, #tbl-collections, #tbl-allocations, #tbl-adjustments, #tbl-applications').empty();
 		var company = me.get_company();
 		if (!company) return;
 		me.load_projections();
@@ -176,8 +190,9 @@ var fresko_money = {
 
 	load_exceptions: function() {
         var me = this, company = me.get_company();
+        var context = me.read_context();
         frappe.call({ method: 'fresko_universe.money.get_open_money_exceptions', args: {company: company} }).then(function(r) {
-            if (company !== me.get_company()) return;
+            if (!me.context_is_current(context)) return;
             var box = $(me.page.main).find('#fm-money-exceptions').empty();
             ((r.message || {}).exceptions || []).forEach(function(row) {
                 var link = $('<a></a>').attr('href', '/app/fresko-exception/' + encodeURIComponent(row.name)).text(row.exception_type + ': ' + row.collection);
@@ -254,6 +269,7 @@ var fresko_money = {
 
 	render_doctype_list: function(doctype, target_sel, query_cfg) {
 		var me = this;
+		var context = me.read_context();
 		var $wrap = $(target_sel);
 		$wrap.html('<div class="text-muted">' + __('Loading...') + '</div>');
 
@@ -263,6 +279,7 @@ var fresko_money = {
 			limit_page_length: 25,
 			order_by: 'modified desc'
 		}).then(function(rows) {
+			if (!me.context_is_current(context)) return;
 			$wrap.empty();
 			if (!rows || !rows.length) {
 				$wrap.html('<div class="text-muted fm-empty">' + __('No records found.') + '</div>');
@@ -309,6 +326,7 @@ var fresko_money = {
 			});
 			$wrap.append($table);
 		}).catch(function(err) {
+			if (!me.context_is_current(context)) return;
 			$wrap.html('<div class="text-danger">' + __('Failed to load data: ') + frappe.utils.escape_html(err.message || 'error') + '</div>');
 		});
 	},
@@ -546,6 +564,7 @@ var fresko_money = {
 
 	query_receivables: function() {
 		var me = this;
+		var sequence = ++me.receivable_sequence;
 		var comp = me.get_company();
 		var cutoff = me.get_cutoff();
 		var cust = $('#rec-customer').val().trim();
@@ -556,14 +575,17 @@ var fresko_money = {
 
 		if (sale) {
 			me.call_api('fresko_universe.money.get_sale_receivable', { sale: sale, as_of: cutoff }, function(sr) {
+				if (sequence !== me.receivable_sequence) return;
 				me.render_sale_position($res, sr);
 			});
 		} else if (cont) {
 			me.call_api('fresko_universe.money.get_container_receivable', { container: cont, as_of: cutoff }, function(cr) {
+				if (sequence !== me.receivable_sequence) return;
 				me.render_container_position($res, cr);
 			});
 		} else if (cust) {
 			me.call_api('fresko_universe.money.get_customer_receivable', { customer: cust, company: comp, as_of: cutoff }, function(cpos) {
+				if (sequence !== me.receivable_sequence) return;
 				me.render_customer_position($res, cpos);
 			});
 		} else {

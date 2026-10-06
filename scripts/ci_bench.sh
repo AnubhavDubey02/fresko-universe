@@ -12,6 +12,27 @@ ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin}"
 BASELINE_SHA="${FRESKO_PHASE1_SHA:-dbf6e2f57b8d250193d0db880ed3eb3bc9fbc8e3}"
 UPGRADE_SITE="${FRESKO_UPGRADE_SITE:-upgrade.localhost}"
 
+# This entry point vendors app code and rewrites bench-wide test configuration.
+# Refuse existing operational sites before any install/configuration mutation.
+python3 - "${BENCH_DIR}" <<'CHECK'
+import json
+from pathlib import Path
+import sys
+bench = Path(sys.argv[1])
+if bench.is_symlink():
+    raise SystemExit("CI bench must not be a symlink")
+sites = bench / "sites"
+if sites.is_symlink():
+    raise SystemExit("CI sites directory must not be a symlink")
+if sites.exists():
+    for site in sites.iterdir():
+        config = site / "site_config.json"
+        if site.is_symlink() or config.is_symlink():
+            raise SystemExit("CI bench contains a symlinked site")
+        if config.is_file() and not json.loads(config.read_text()).get("fresko_disposable_browser_site"):
+            raise SystemExit("CI bench contains an existing site without its disposable marker")
+CHECK
+
 if [[ ! -f "${PIN_FILE}" ]]; then
   echo "Missing pin file: ${PIN_FILE}" >&2
   exit 1
@@ -105,6 +126,7 @@ if [[ ! -d "sites/${SITE}" ]]; then
     --no-mariadb-socket \
     --db-host "${DB_HOST}" \
     --set-default
+  bench --site "${SITE}" set-config fresko_disposable_browser_site true
 fi
 
 echo "==> install-app erpnext"
@@ -133,8 +155,18 @@ vendor_fresko_app() {
   ./env/bin/pip install -q -e ./apps/fresko_universe
 }
 
-APP_SRC="${ROOT}/fresko_universe"
-vendor_fresko_app "${APP_SRC}" "current-gate-2"
+# Exercise the same normal app-root Git install boundary used by private benches.
+EXPORT_TMP="$(mktemp -d)"
+trap 'rm -rf "${EXPORT_TMP}"' EXIT
+FRESKO_SOURCE_SHA="$(git -C "${ROOT}" rev-parse HEAD)"
+python3 "${ROOT}/scripts/export_deployment_app.py" --repo "${ROOT}" --commit "${FRESKO_SOURCE_SHA}" --output "${EXPORT_TMP}/fresko_universe"
+APP_SRC="${EXPORT_TMP}/fresko_universe"
+git -C "${APP_SRC}" init -q
+git -C "${APP_SRC}" config user.email "ci@fresko.local"
+git -C "${APP_SRC}" config user.name "Fresko CI"
+git -C "${APP_SRC}" add -A
+git -C "${APP_SRC}" commit -qm "Deployment export ${FRESKO_SOURCE_SHA}"
+bench get-app --skip-assets "file://${APP_SRC}"
 
 # Register after pip install (must not be present during new-site).
 mkdir -p sites
@@ -160,7 +192,8 @@ bench --site "${SITE}" execute erpnext.setup.utils.before_tests
 echo "==> ERPNext before_tests finished"
 
 echo "==> run-tests --app fresko_universe"
-bench --site "${SITE}" run-tests --app fresko_universe
+# Pinned Frappe only propagates unittest failures to exit status when CI is set.
+CI=1 bench --site "${SITE}" run-tests --app fresko_universe
 
 echo "==> prove exact Phase 1-to-current schema migrations (registered seeded proofs)"
 MIGRATION_HARNESS="${ROOT}/scripts/run_schema_migration_harness.py"
@@ -171,7 +204,7 @@ if ! git -C "${ROOT}" merge-base --is-ancestor "${BASELINE_SHA}" HEAD; then
 fi
 
 UPGRADE_TMP="$(mktemp -d)"
-trap 'rm -rf "${UPGRADE_TMP}"' EXIT
+trap 'rm -rf "${UPGRADE_TMP}" "${EXPORT_TMP}"' EXIT
 git -C "${ROOT}" archive "${BASELINE_SHA}" fresko_universe | tar -x -C "${UPGRADE_TMP}"
 vendor_fresko_app "${UPGRADE_TMP}/fresko_universe" "phase1-${BASELINE_SHA}"
 

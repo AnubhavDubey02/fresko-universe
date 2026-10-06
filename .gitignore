@@ -12,3 +12,9 @@ venv/
 node_modules/
 sites/
 logs/
+
+# Browser artifacts and credential manifests stay outside source control.
+playwright-report/
+test-results/
+.browser-private/
+browser-artifacts/

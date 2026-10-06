@@ -22,6 +22,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Full history provides origin/<base> for the schema snapshot base check.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -36,11 +37,14 @@ jobs:
         run: |
           python3 -m unittest tests.test_smoke_unit -v
           python3 -m unittest tests.test_commercial_contract -v
+          python3 -m unittest tests.test_commercial_version_contract -v
           python3 -m unittest tests.test_money_contract -v
           python3 -m unittest tests.test_pilot_safety_contract -v
           python3 -m unittest tests.test_quantity_assertion_static tests.test_integrity_static -v
           python3 -m unittest tests.test_ask_fresko_contract -v
           python3 -m unittest tests.test_workspace_contract -v
+      - name: Test immutable deployment export
+        run: python3 -m unittest discover -s scripts -p 'test_deployment_package.py' -v
       - name: Run workspace UI offline checks
         run: |
           node scripts/test_workspace_ui.cjs
@@ -116,6 +120,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -164,6 +169,21 @@ jobs:
 
       - name: Init bench + pin SHAs + install + migrate + tests
         run: bash scripts/ci_bench.sh
+
+      - name: Real role-separated browser and recovery baseline
+        env:
+          FRESKO_BROWSER_MANIFEST: ${{ runner.temp }}/fresko-browser/credentials.json
+          FRESKO_BROWSER_ARTIFACTS: ${{ runner.temp }}/fresko-browser/public
+          FRESKO_BROWSER_URL: http://127.0.0.1:8000
+        run: bash scripts/ci_browser.sh
+
+      - name: Upload sanitized browser evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: browser-baseline
+          path: ${{ runner.temp }}/fresko-browser/public/
+          if-no-files-found: ignore
 
       - name: Upload bench logs on failure
         if: failure()

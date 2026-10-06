@@ -3,28 +3,48 @@ import frappe
 from fresko_universe.fresko_core.services import commercial_service as service
 
 
+def _http_version(expected_version, role):
+    # Frappe establishes request before both v1 and v2 RPC dispatch. Trusted
+    # direct Python callers retain the existing optional-token service contract.
+    if getattr(getattr(frappe, "local", None), "request", None) is None:
+        return expected_version
+    service._actor(role)
+    if expected_version is None or expected_version == "":
+        service._fail("EXPECTED_VERSION_REQUIRED")
+    if (isinstance(expected_version, bool) or not isinstance(expected_version, (int, str))
+            or not str(expected_version).isascii() or not str(expected_version).isdigit()
+            or str(expected_version).startswith("0")):
+        service._fail("INVALID_EXPECTED_VERSION")
+    return expected_version
+
+
 @frappe.whitelist(methods=["POST"])
 def submit_sale(sale_name, expected_version=None):
+    expected_version = _http_version(expected_version, "maker")
     return service.submit_sale(sale_name=sale_name, expected_version=expected_version)
 
 
 @frappe.whitelist(methods=["POST"])
 def verify_sale(sale_name, expected_version=None):
+    expected_version = _http_version(expected_version, "verify")
     return service.verify_sale(sale_name=sale_name, expected_version=expected_version)
 
 
 @frappe.whitelist(methods=["POST"])
 def approve_sale(sale_name, expected_version=None):
+    expected_version = _http_version(expected_version, "approve")
     return service.approve_sale(sale_name=sale_name, expected_version=expected_version)
 
 
 @frappe.whitelist(methods=["POST"])
 def reject_sale(sale_name, reason, expected_version=None):
+    expected_version = _http_version(expected_version, "approve")
     return service.reject_sale(sale_name=sale_name, reason=reason, expected_version=expected_version)
 
 
 @frappe.whitelist(methods=["POST"])
 def supersede_sale(sale_name, *, source_event_id, reason, source_evidence, changes, expected_version=None):
+    expected_version = _http_version(expected_version, "maker")
     return service.supersede_sale(sale_name=sale_name, source_event_id=source_event_id, reason=reason, source_evidence=source_evidence, changes=changes, expected_version=expected_version)
 
 
@@ -35,16 +55,19 @@ def create_sale(*, company, container, sale_at, source_evidence, source_event_id
 
 @frappe.whitelist(methods=["POST"])
 def propose_rate(sale_name, line_key, rate, evidence, source_event_id, reason, expected_version=None):
+    expected_version = _http_version(expected_version, "maker")
     return service.propose_rate(sale_name=sale_name, line_key=line_key, rate=rate, evidence=evidence, source_event_id=source_event_id, reason=reason, expected_version=expected_version)
 
 
 @frappe.whitelist(methods=["POST"])
 def verify_rate(sale_name, expected_version=None):
+    expected_version = _http_version(expected_version, "verify")
     return service.verify_rate(sale_name=sale_name, expected_version=expected_version)
 
 
 @frappe.whitelist(methods=["POST"])
 def approve_rate(sale_name, expected_version=None):
+    expected_version = _http_version(expected_version, "approve")
     return service.approve_rate(sale_name=sale_name, expected_version=expected_version)
 
 
@@ -55,16 +78,19 @@ def propose_alias_mapping(*, company, raw_alias, proposed_customer, evidence, so
 
 @frappe.whitelist(methods=["POST"])
 def verify_alias_mapping(mapping_name, expected_version=None):
+    expected_version = _http_version(expected_version, "verify")
     return service.verify_alias_mapping(mapping_name=mapping_name, expected_version=expected_version)
 
 
 @frappe.whitelist(methods=["POST"])
 def approve_alias_mapping(mapping_name, expected_version=None):
+    expected_version = _http_version(expected_version, "approve")
     return service.approve_alias_mapping(mapping_name=mapping_name, expected_version=expected_version)
 
 
 @frappe.whitelist(methods=["POST"])
 def reject_alias_mapping(mapping_name, reason, expected_version=None):
+    expected_version = _http_version(expected_version, "approve")
     return service.reject_alias_mapping(mapping_name=mapping_name, reason=reason, expected_version=expected_version)
 
 
@@ -75,21 +101,25 @@ def propose_sale_outward_allocation(*, sale_name, sale_line_key, outward, outwar
 
 @frappe.whitelist(methods=["POST"])
 def verify_sale_outward_allocation(allocation_name, expected_version=None):
+    expected_version = _http_version(expected_version, "verify")
     return service.verify_sale_outward_allocation(allocation_name=allocation_name, expected_version=expected_version)
 
 
 @frappe.whitelist(methods=["POST"])
 def approve_sale_outward_allocation(allocation_name, expected_version=None):
+    expected_version = _http_version(expected_version, "approve")
     return service.approve_sale_outward_allocation(allocation_name=allocation_name, expected_version=expected_version)
 
 
 @frappe.whitelist(methods=["POST"])
 def reject_sale_outward_allocation(allocation_name, reason, expected_version=None):
+    expected_version = _http_version(expected_version, "approve")
     return service.reject_sale_outward_allocation(allocation_name=allocation_name, reason=reason, expected_version=expected_version)
 
 
 @frappe.whitelist(methods=["POST"])
 def reverse_sale_outward_allocation(allocation_name, reason, evidence, expected_version=None):
+    expected_version = _http_version(expected_version, "approve")
     return service.reverse_sale_outward_allocation(allocation_name=allocation_name, reason=reason, evidence=evidence, expected_version=expected_version)
 
 
@@ -111,3 +141,8 @@ def get_outward_reconciliation(outward_name, as_of=None):
 @frappe.whitelist(methods=["POST"])
 def refresh_commercial_reconciliation(container):
     return service.refresh_commercial_reconciliation(container)
+
+
+@frappe.whitelist()
+def get_sale_current(sale_name):
+    return service.get_sale_current(sale_name=sale_name)

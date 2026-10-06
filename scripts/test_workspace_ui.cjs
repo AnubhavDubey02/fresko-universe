@@ -11,6 +11,8 @@ const assert = require('assert');
 
 const srcPath = path.resolve(__dirname, '../fresko_universe/fresko_universe/fresko_core/page/fresko_workspace/fresko_workspace.js');
 const srcCode = fs.readFileSync(srcPath, 'utf8');
+let capturedDialogConfig = null;
+const dialogValues = {};
 
 // Create sandbox providing minimal Frappe and DOM stubs for compiling actual workspace code
 const createdElements = [];
@@ -62,7 +64,8 @@ const sandbox = {
                 appendChild: (child) => { el.children.push(child); return child; },
                 setAttribute: (k, v) => { el.attrs[k] = v; },
                 getAttribute: (k) => el.attrs[k],
-                addEventListener: () => {}
+                listeners: {},
+                addEventListener: (name, callback) => { el.listeners[name] = callback; }
             };
             createdElements.push(el);
             return el;
@@ -190,19 +193,30 @@ const FreskoWorkspace = vm.runInContext('FreskoWorkspace', sandbox);
 {
     const ws = Object.create(FreskoWorkspace.prototype);
     ws.as_of_value = '2026-10-03 18:00:00';
-    let capturedDialogConfig = null;
+    const calls = [];
+    const messages = [];
+    const values = {};
+    sandbox.frappe.msgprint = (message) => messages.push(String(message));
+    sandbox.frappe.session = { user: 'maker@example.invalid' };
     sandbox.frappe.ui.Dialog = function(cfg) {
         capturedDialogConfig = cfg;
         this.fields = cfg.fields;
-        this.get_value = () => '';
-        this.set_value = () => {};
+        this.get_value = (name) => dialogValues[name] || '';
+        this.set_value = (name, value) => { dialogValues[name] = value; };
         this.set_df_property = () => {};
         this.get_field = () => ({ $input: { attr: () => {} } });
         this.show = () => {};
         this.hide = () => {};
     };
 
-    ws.open_allocation_dialog(null, null);
+    ws.container_name = 'SYNTHETIC-CONTAINER';
+    ws.container_data = { projection_mode: 'LIVE' };
+    ws.as_of_value = '';
+    sandbox.frappe.call = (request) => {
+        calls.push(request);
+        return Promise.resolve({ message: { lines: [] } });
+    };
+    ws.open_allocation_dialog({ name: 'SYNTHETIC-SALE', current_version: 7 }, null);
     assert(capturedDialogConfig, 'open_allocation_dialog did not instantiate Dialog');
     const fields = capturedDialogConfig.fields;
 
@@ -226,17 +240,184 @@ const FreskoWorkspace = vm.runInContext('FreskoWorkspace', sandbox);
     assert(evtField, 'source_event_id field missing');
     assert.strictEqual(evtField.hidden, 1, 'source_event_id must be hidden from user');
 
+    const saleLookup = calls.find(call => call.method === 'fresko_universe.commercial.get_sale_current');
+    assert(saleLookup, 'Live allocation sale lookup must use get_sale_current');
+    assert(!('as_of' in saleLookup.args), 'Live lookup must not synthesize a historical cutoff');
+    console.log('✓ Allocation dialog contract and live current-sale lookup verified');
+}
+
+async function runProjectionRegressionTests() {
+// 8. Live/Historical mode: exact current tokens, no fallback, programmatic guards,
+//    and a dialog opened live cannot mutate after switching to a historical cutoff.
+{
+    const ws = Object.create(FreskoWorkspace.prototype);
     const calls = [];
+    const messages = [];
+    sandbox.frappe.msgprint = (message) => messages.push(String(message));
     sandbox.frappe.call = (request) => {
         calls.push(request);
-        return Promise.resolve({ message: { lines: [] } });
+        return Promise.resolve({ message: {} });
+    };
+    ws.container_name = 'SYNTHETIC-CONTAINER';
+    ws.as_of_value = '';
+    ws.container_data = { projection_mode: 'LIVE' };
+    ws.user_context = { can_prepare: true, can_verify: true, can_approve: true, roles: ['Fresko Salesperson', 'Fresko Accounts', 'Fresko Approver'] };
+    ws.load_container_data = () => {};
+
+    const liveSale = { name: 'SALE-1', status: 'DRAFT', projection_mode: 'LIVE', current_version: 9, lines: [], allocations: [] };
+    ws.submit_sale(liveSale);
+    let mutation = calls.find(call => call.method === 'fresko_universe.commercial.submit_sale');
+    assert(mutation, 'Live sale submit should dispatch');
+    assert.strictEqual(mutation.args.expected_version, 9, 'Sale action must send the captured current_version exactly');
+    assert(!calls.some(call => call.args && call.args.expected_version === null), 'No mutation may fall back to null/version 1');
+
+    for (const [method, action] of [
+        ['fresko_universe.commercial.verify_sale', () => ws.verify_sale(liveSale)],
+        ['fresko_universe.commercial.approve_sale', () => ws.approve_sale(liveSale)]
+    ]) {
+        calls.length = 0;
+        action();
+        const request = calls.find(call => call.method === method);
+        assert(request, `${method} should dispatch in Live mode`);
+        assert.strictEqual(request.args.expected_version, 9, `${method} must forward current_version exactly`);
+    }
+
+    const currentMapping = { name: 'ALIAS-1', version: 4 };
+    const currentAllocation = { name: 'ALLOC-1', version: 6 };
+    for (const [method, action, expected] of [
+        ['fresko_universe.commercial.verify_alias_mapping', () => ws.verify_alias(currentMapping), 4],
+        ['fresko_universe.commercial.approve_alias_mapping', () => ws.approve_alias(currentMapping), 4],
+        ['fresko_universe.commercial.verify_sale_outward_allocation', () => ws.verify_allocation(currentAllocation), 6],
+        ['fresko_universe.commercial.approve_sale_outward_allocation', () => ws.approve_allocation(currentAllocation), 6]
+    ]) {
+        calls.length = 0;
+        action();
+        const request = calls.find(call => call.method === method);
+        assert(request, `${method} should dispatch in Live mode`);
+        assert.strictEqual(request.args.expected_version, expected, `${method} must forward the captured row version exactly`);
+    }
+
+    calls.length = 0;
+    ws.submit_sale({ name: 'SALE-MISSING-TOKEN', status: 'DRAFT' });
+    assert.strictEqual(calls.length, 0, 'Missing current_version must block programmatic mutation');
+    const missingVersionCard = ws.render_selected_sale_detail({ name: 'SALE-UNKNOWN', status: 'DRAFT', lines: [], allocations: [] });
+    const renderedText = allNodes(missingVersionCard).flatMap(node => node.children || []).filter(child => typeof child === 'string').join(' ');
+    assert(!renderedText.includes('Version 1'), 'Unknown current version must not be displayed as version 1');
+
+    ws.as_of_value = '2026-10-01 12:00:00';
+    ws.container_data = { projection_mode: 'HISTORICAL', as_of: ws.as_of_value };
+    calls.length = 0;
+    for (const action of [
+        () => ws.submit_sale(liveSale), () => ws.verify_sale(liveSale), () => ws.approve_sale(liveSale),
+        () => ws.verify_alias(currentMapping), () => ws.approve_alias(currentMapping),
+        () => ws.verify_allocation(currentAllocation), () => ws.approve_allocation(currentAllocation)
+    ]) action();
+    assert.strictEqual(calls.length, 0, 'Historical view must block all direct programmatic workflow mutations');
+    const historicalCard = ws.render_selected_sale_detail(liveSale);
+    function allNodes(node, result = []) {
+        if (!node || typeof node !== 'object') return result;
+        result.push(node);
+        (node.children || []).forEach(child => allNodes(child, result));
+        return result;
+    }
+    const actionNodes = allNodes(historicalCard).filter(node => node.listeners && node.listeners.click);
+    assert(actionNodes.every(node => node.attrs && node.attrs.disabled === 'disabled'), 'Historical Sale detail may show action affordances only as disabled');
+
+    // Open a rejection prompt while Live, then switch to History before submitting it.
+    ws.as_of_value = '';
+    ws.container_data = { projection_mode: 'LIVE' };
+    let promptSubmit;
+    sandbox.frappe.prompt = (_fields, callback) => { promptSubmit = callback; };
+    ws.reject_sale_dialog({ name: 'SALE-1', current_version: 9, projection_mode: 'LIVE' });
+    assert.strictEqual(typeof promptSubmit, 'function', 'Live reject dialog should open');
+    promptSubmit({ reason: 'synthetic reason' });
+    const liveReject = calls.find(call => call.method === 'fresko_universe.commercial.reject_sale');
+    assert(liveReject, 'Live Sale rejection should dispatch');
+    assert.strictEqual(liveReject.args.expected_version, 9, 'Reject must forward the captured current_version exactly');
+    ws.as_of_value = '2026-10-01 12:00:00';
+    ws.container_data = { projection_mode: 'HISTORICAL', as_of: ws.as_of_value };
+    calls.length = 0;
+    promptSubmit({ reason: 'synthetic reason' });
+    assert.strictEqual(calls.length, 0, 'Dialog opened in Live must re-check mode before historical submission');
+
+    // Use a proposal dialog primary action to prove the same check covers a delayed callback.
+    ws.as_of_value = '';
+    ws.container_data = { projection_mode: 'LIVE' };
+    dialogValues.sale_line_key = 'line-1';
+    dialogValues.outward_line_key = 'out-1';
+    dialogValues.qty = '1';
+    dialogValues.uom = 'BOX';
+    ws.open_allocation_dialog({ name: 'SALE-1', current_version: 9 }, null);
+    const proposal = capturedDialogConfig.primary_action;
+    ws.as_of_value = '2026-10-01 12:00:00';
+    ws.container_data = { projection_mode: 'HISTORICAL', as_of: ws.as_of_value };
+    calls.length = 0;
+    proposal({ sale_name: 'SALE-1', outward: 'OUT-1', evidence: 'EVIDENCE-1' });
+    assert.strictEqual(calls.length, 0, 'Allocation dialog opened in Live must re-check mode on submit');
+    console.log('✓ Live/Historical mutation guards and delayed dialog callbacks verified');
+}
+
+// 9. Historical queue suppression and late-read rejection; selected Sale must rebind
+//    to the fresh current token from the accepted response, never keep an old object.
+{
+    const ws = Object.create(FreskoWorkspace.prototype);
+    const calls = [];
+    ws.container_name = 'SYNTHETIC-CONTAINER';
+    ws.as_of_value = '2026-10-01 12:00:00';
+    ws.container_data = { projection_mode: 'HISTORICAL' };
+    ws.current_load_seq = 0;
+    ws.content_panel = { querySelector: () => ({ innerHTML: '', appendChild: () => {} }) };
+    sandbox.frappe.call = (request) => { calls.push(request); return Promise.resolve({ message: [] }); };
+    ws.load_alias_mappings();
+    ws.load_sale_allocations({ name: 'SALE-1' }, { innerHTML: '', appendChild: () => {} });
+    assert.strictEqual(calls.length, 0, 'Historical view must not load current alias/allocation review queues');
+
+    const pending = [];
+    sandbox.frappe.call = (request) => {
+        calls.push(request);
+        return new Promise(resolve => pending.push(resolve));
     };
     ws.as_of_value = '';
-    ws.open_allocation_dialog({ name: 'SYNTHETIC-SALE' }, null);
-    const saleLookup = calls.find(call => call.method === 'fresko_universe.commercial.get_sale_as_of');
-    assert(saleLookup, 'sale line lookup must call get_sale_as_of');
-    assert.strictEqual(saleLookup.args.as_of, '2026-10-03 18:00:00', 'required as_of must fall back to site time when the cutoff is empty');
-    console.log('✓ Allocation dialog contract (Select lines, Data decimal, no Float/BOX default) verified');
+    ws.container_data = { projection_mode: 'LIVE' };
+    ws.selected_sale = { name: 'SALE-1', current_version: 2, marker: 'stale' };
+    ws.update_header_banner = () => {};
+    ws.render_active_tab = () => {};
+    ws.render_loading = () => {};
+    ws.render_error = () => {};
+    ws.load_container_data();
+    assert.strictEqual(calls[calls.length - 1].args.as_of, null, 'Blank cutoff should request Live projection without a synthetic timestamp');
+    ws.as_of_value = '2026-10-01 12:00:00';
+    ws.load_container_data();
+    const liveRow = { name: 'SALE-1', current_version: 5, marker: 'latest' };
+    const staleRow = { name: 'SALE-1', version_at_cutoff: 1, marker: 'historical' };
+    pending[0]({ message: { projection_mode: 'LIVE', sales: [staleRow] } });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.notStrictEqual(ws.selected_sale, staleRow, 'Late response from the prior filter must be ignored');
+    pending[1]({ message: { projection_mode: 'HISTORICAL', sales: [liveRow] } });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.strictEqual(ws.selected_sale, liveRow, 'Accepted response must rebind selected Sale by name to its new row');
+    assert.strictEqual(ws.selected_sale.current_version, 5, 'Rebound selection must use its current captured version');
+    assert.strictEqual(ws.selected_sale.version, undefined, 'No version-1/null compatibility fallback is introduced');
+
+    // Clearing the selected Container while a request is in flight must invalidate it.
+    ws.container_name = 'SYNTHETIC-CONTAINER-2';
+    ws.as_of_value = '';
+    ws.selected_sale = { name: 'SALE-2', current_version: 1 };
+    ws.load_container_data();
+    const clearedContainerResponse = { projection_mode: 'LIVE', sales: [{ name: 'SALE-2', current_version: 2 }] };
+    ws.container_name = null;
+    ws.selected_sale = null;
+    ws.load_container_data();
+    pending[2]({ message: clearedContainerResponse });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.strictEqual(ws.container_data, null, 'A late response must not repopulate a container after its filter is cleared');
+    console.log('✓ Historical queue suppression and stale selection/token rebinding verified');
 }
 
 console.log('All offline VM UI logic tests passed. Full browser verification pending root bench execution.');
+}
+
+runProjectionRegressionTests().catch(error => {
+    console.error(error);
+    process.exitCode = 1;
+});

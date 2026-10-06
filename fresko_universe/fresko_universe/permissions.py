@@ -21,6 +21,27 @@ FRESKO_ROLES = frozenset({ROLE_SALESPERSON, ROLE_APPROVER, ROLE_ACCOUNTS})
 APPROVAL_APPLY_DECISIONS = frozenset({"APPROVE"})
 
 
+def deny_supplier_http_access() -> None:
+    """Keep authenticated supplier identities out of the internal Desk and API."""
+    user = frappe.session.user
+    if user in ("", "Guest") or not any(
+        "supplier" in role.casefold() for role in current_roles(user)
+    ):
+        return
+
+    request = frappe.request
+    allowed_methods = {
+        ("POST", "/api/method/login"): "login",
+        ("POST", "/api/method/logout"): "logout",
+        ("GET", "/api/method/frappe.auth.get_logged_user"): "frappe.auth.get_logged_user",
+    }
+    expected_cmd = allowed_methods.get((request.method, request.path))
+    cmd = frappe.local.form_dict.get("cmd")
+    if expected_cmd and cmd in (None, expected_cmd):
+        return
+    _throw_denied("access internal Fresko HTTP resources")
+
+
 def current_roles(user: str | None = None) -> set[str]:
     return set(frappe.get_roles(user or frappe.session.user))
 
@@ -410,6 +431,8 @@ def evidence_has_permission(doc, ptype: str | None = None, user: str | None = No
 
 def evidence_attachment_permission_query(user: str | None = None) -> str:
     user = user or frappe.session.user
+    if user != "Administrator" and any("supplier" in role.casefold() for role in current_roles(user)):
+        return "1=0"
     if user == "Administrator" or is_system_manager(current_roles(user)):
         return ""
     roles = current_roles(user)
@@ -427,6 +450,9 @@ def evidence_attachment_permission_query(user: str | None = None) -> str:
 
 
 def evidence_attachment_has_permission(doc, ptype: str | None = None, user: str | None = None) -> bool:
+    user = user or frappe.session.user
+    if user != "Administrator" and any("supplier" in role.casefold() for role in current_roles(user)):
+        return False
     ptype = ptype or "read"
     if ptype == "delete":
         return False
@@ -449,6 +475,8 @@ def evidence_attachment_has_permission(doc, ptype: str | None = None, user: str 
 
 def evidence_attempt_permission_query(user: str | None = None) -> str:
     user = user or frappe.session.user
+    if user != "Administrator" and any("supplier" in role.casefold() for role in current_roles(user)):
+        return "1=0"
     if user == "Administrator" or is_system_manager(current_roles(user)):
         return ""
     roles = current_roles(user)
@@ -466,6 +494,9 @@ def evidence_attempt_permission_query(user: str | None = None) -> str:
 
 
 def evidence_attempt_has_permission(doc, ptype: str | None = None, user: str | None = None) -> bool:
+    user = user or frappe.session.user
+    if user != "Administrator" and any("supplier" in role.casefold() for role in current_roles(user)):
+        return False
     ptype = ptype or "read"
     if ptype != "read":
         # Attempts are strictly append-only by system services; no Desk write/delete

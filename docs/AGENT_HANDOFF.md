@@ -922,3 +922,158 @@ Exact-head GitHub Smoke and pinned Bench remain the merge gate.
 - Astra reviewed design; native Gemini 3.8 Flash produced the bounded pure policy/offline tests; Codex integrated and added database acceptance. Luna independently reviews the actual candidate diff. Exact-head pinned CI and review findings govern acceptance, not this candidate note.
 - Local complete offline/static: 222 tests passed; scripts: 41 passed; fixture/write/schema guards and both actual-source JavaScript harnesses passed. Pinned Bench/all migration proofs still require exact-head CI; final SHA/counts/run URLs will be supplied from immutable CI evidence.
 - Governing repair/limits: `docs/PILOT_SAFETY_CLOSE_POLICY.md`. No next milestone started. Next recommended bounded packet is deployment packaging and real browser baseline, after this packet is green and reviewed.
+
+
+## 2026-10-04 — Implementation 02 preparation
+
+Post-PR17 main is `104c488fa0765a7b13b1c99d553b3be65b36c848`; main CI
+[37193221292](https://github.com/AnubhavDubey02/fresko-universe/actions/runs/37193221292)
+is green. Work starts on `codex/deployment-browser-baseline`.
+
+Current deployment/browser/recovery authority is
+`docs/STAGING_DEPLOYMENT_BROWSER_BASELINE.md`. The user selected a new Frappe
+Cloud private bench but has no account/site connected and has prohibited paid
+purchases without approval. Complete preparation and review before the account
+connection/billing checkpoint. Temporary loopback/CI browser and restore sites
+are synthetic verification environments, not deployed Cloud staging. Preserve
+all previous handoff entries as historical evidence.
+
+Local baseline verification: 270 pinned Bench tests, 222 application/static
+tests, 49 script tests and both Node UI harnesses pass. Native browser execution
+is being completed; candidate files and these counts do not establish exact-head
+GitHub green or Cloud deployment. No DocType schema change is intended.
+
+### Implementation 02 — browser-derived Commercial repair
+
+Native Sale submission reproduced `STALE_VERSION`: historical snapshots omitted
+version and JavaScript null arrived as an empty form token. The runtime now
+distinguishes Live `current_version` from Historical `version_at_cutoff`;
+explicit Workspace cutoffs are read-only. All 15 existing-record Commercial
+HTTP mutations require valid tokens after role checks. Direct Python `None`
+compatibility and existing immutable audit snapshots remain unchanged.
+
+Minimal accompanying repairs preserve native Page filters, use actual allocation
+queue fields and reject obsolete Money/Workspace read responses. Independent
+Luna review covered the runtime contract, packaging and synthetic recovery guards;
+Astra reviewed the version design. No posted Physical/Commercial/Money truth or
+persisted schema is changed to manufacture reconciliation.
+
+Preparation checks: 228 application/static tests, 49 script tests, both Node
+harnesses and schema/write guards pass; focused Commercial Bench is 49/49.
+A complete rerun on the reused local site failed on durable legacy fixture
+collisions (275 tests; 3 failures, 10 errors). The full gate is being repeated
+on a new isolated site, with no assertion weakened. Pinned Frappe only propagates
+test failure exit status when `CI` is set, now explicit in the CI launcher.
+Native acceptance is continuing on a clean synthetic restored site; earlier
+partial Sales/alias decisions are preserved. Exact-head CI, completed browser
+flows and hosting evidence must be recorded before final acceptance.
+
+Fresh-site result for preparation commit
+`26f8cd51702786f662d8a7a8ba0a9c4710a8ae1c`: installation and migration succeeded;
+275 pinned Bench tests passed in 605.661 seconds, zero failures/errors. This
+replaces the reused-site failure as the current local complete-test evidence;
+it remains separate from exact-head GitHub and hosting acceptance.
+
+Draft PR #18 is open. Exact-head run `37209321660` at `26f8cd5` passed Smoke,
+275 pinned Bench tests and all six migration proofs on first and second migrate.
+The overall Bench job failed in native browser acceptance (three timeouts and a
+Supplier denial assertion); the recovery CI step did not execute. Subsequent
+native harness repairs and missing race/replay coverage require a new exact-head
+run and independent review. No merge or Cloud deployment is claimed.
+
+Follow-up focused native checks passed: delayed actual Workspace/Money responses
+preserve the newer cutoff; historical/receivable/exception views and stale Money
+tokens preserve approved truth; exact Collection source replay returns one
+record; Supplier and mixed-role direct URL/API denial holds. The harness now
+fails required missing workflow IDs/skips and preserves a rejected artifact
+destination. Complete fresh desktop/mobile CI and final independent review
+remain required; existing approved desktop synthetic records were preserved.
+
+Mobile harness investigation reproduced Escape closing the Collection dialog
+after Customer selection and Tab opened its Datetime picker. Native dialog-heading
+click dismisses only the picker and retains Customer. The Page/dialog-aware Link
+getter remains required on both paths. Partial 390/360 allocation proposals are
+preserved; complete acceptance uses a fresh fixture instead of recreating them.
+
+Exact-head run `37229099731` at `b89e9e1` passed Smoke (228 app/static plus
+49 script tests), 275 pinned Bench tests and all six first/second migration
+proofs, including exact Commercial/Money baseline upgrades. Native desktop,
+360/390 financial workflows, dialog preservation, actual delayed-response races
+and Supplier/mixed denials passed. Seven browser tests ran in 507.353 seconds;
+one saved Container-receivable check failed, zero errors/skips. Recovery was not
+reached. The Link helper was reading visible input before native validation and
+its change callback completed. It now waits for the committed Control state.
+Clean-fixture Container/Customer debt assertions are 4000/12000; legacy local
+unpriced drafts are not acceptance truth. A separate native unpriced Sale read
+asserts null gross/debt and PENDING before rate approval. No app runtime/schema
+change accompanies this harness repair; a fresh exact-head complete gate is
+required before deployment-ref publication.
+
+## 2026-10-06 PR 18 GCP staging and Supplier security checkpoint
+
+GCP staging is live at `https://fresko-staging.34.93.162.135.sslip.io`
+(project `project-86f9787f-03f9-4f7e-b10`, VM `fresko-staging-vm`,
+`asia-south1-a`). The dated 2026-10-05 report proves source
+`f593990dc3457bfa5c54e9c0524c2f7cd974cd11`, app export
+`afea097fe5ada1e1f390e4b6b12daf08ee6876ba`, pinned Frappe/ERPNext,
+275 VM Bench tests, seven external browser tests, a GCS encrypted
+download/decrypt roundtrip and a separate isolated four-component restore.
+It does not prove a later source. See
+`docs/STAGING_DEPLOYMENT_BROWSER_BASELINE.md` for the staging infrastructure,
+manual off-VM replication and restore limits. The earlier Frappe Cloud
+pending state is superseded for this GCP deployment, while a physical touch
+device and disruptive reboot test remain pending.
+
+A live Supplier check on that deployed source reproduced mixed-role Evidence
+child list disclosure: 14 Attachments and 45 Attempts returned through list
+requests, although individual documents denied access. The PR 18 source
+repair now adds an authenticated HTTP Supplier guard and child list/document
+hooks. Exact-head CI, immutable export publication and live retesting of
+Supplier/API-key denial, Accounts private Evidence access and the three
+operator accounts are still required before claiming closure. Administrator
+is denied by the HTTP guard when carrying Supplier; trusted offline
+Administrator Evidence hooks retain their existing bootstrap exception.
+The three old operator credentials are held in an owner-only private handoff;
+the current rotation vault remains an owner-only recovery copy. Never print,
+commit or include passwords in artifacts.
+
+## 2026-10-06 PR 18 browser harness repair checkpoint
+
+The exact-head CI run 37395548094 on commit 5f25019a10b54620cd6e64da91dafbdf3ef1e06e
+passed Smoke unit, Bench initialization, app installation, migrations, backend Fresko
+tests (275 passed), and migration proofs, but failed at the browser gate (1 failure, 5 errors).
+Root cause diagnosis established:
+1. `test_supplier_and_mixed_denials`: BrowserSession._authenticate previously waited for
+   the browser URL to leave `/login`. Under the new HTTP Supplier guard, navigation to
+   internal Desk routes is denied at the HTTP boundary, causing the browser to remain
+   on `/login` or render 403. The harness now supports `expect_desk=False` for Supplier
+   identities and verifies authenticated session state via `frappe.auth.get_logged_user`
+   which is explicitly permitted for authentication verification.
+2. `test_desktop`, `test_mobile_360`, `test_mobile_390`: Following sale creation, the native
+   workspace issues a `frappe.msgprint` alert alongside dialog hiding. Without explicit
+   dismissal, the message modal and backdrop obstructed the subsequent click on the
+   `[data-tab-id="sales"]` navigation element, triggering a 30s actionability timeout.
+   `inspect()` now dismisses pending messages and purges orphaned backdrops, and `scenario()`
+   waits for dialogs to hide and dismisses messages after operational creation steps.
+3. `test_saved_state_historical_receivables_and_exceptions`: Failed due to missing saved
+   progress after `test_desktop` timed out prematurely.
+
+All offline unit tests (228/228) and script suites (49/49) pass. No financial or
+commercial runtime semantics, money calculations, or database schemas were altered.
+
+## 2026-10-06 PR 18 browser harness login synchronization repair
+
+Exact-head CI run 37403417243 confirmed that the modal dismissal and backdrop purge
+resolved all 6 core workflow tests (`test_desktop`, `test_mobile_360`, `test_mobile_390`,
+`test_native_links_preserve_collection_dialog`, `test_saved_state_delayed_real_responses`,
+and `test_saved_state_historical_receivables_and_exceptions`). The only remaining failure
+was `test_supplier_and_mixed_denials` at `browser_support.py:_authenticate:47`.
+Root cause:
+- `BrowserSession._authenticate` used `page.wait_for_function` with an async promise that
+  resolved to false on the first frame before the login AJAX call arrived. Playwright's
+  `wait_for_function` treated the fulfilled promise as completing the wait, causing
+  immediate assertion against `frappe.auth.get_logged_user` before session cookies settled.
+- Repaired `_authenticate` to explicitly synchronize on the login POST response (`cmd=login`)
+  via `expect_response`, and poll `context.request.get` for `frappe.auth.get_logged_user`
+  with bounded retries until the session identity matches the expected user.
+- Offline unit tests (228/228) and script suites (49/49) remain fully green.

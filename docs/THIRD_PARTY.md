@@ -43,11 +43,20 @@ Pins for Frappe/ERPNext are authoritative in `docs/VERSIONS.md` and `.github/fra
 |---|---|
 | **Repository** | https://github.com/pypa/flit |
 | **License** | BSD-3-Clause (permissive) |
-| **Pin** | Declared in `fresko_universe/pyproject.toml` as `flit_core >=3.4,<4` for build-backend — **tighten to an exact pin before production release packaging** |
+| **Pin** | `flit_core==3.12.0` in `fresko_universe/pyproject.toml`; BSD-3-Clause, build only |
 | **Purpose** | PEP 517 build backend for the `fresko_universe` Python package |
 | **Note** | Build-only; not imported by Fresko business logic |
 
 ---
+
+## Browser acceptance (development only)
+
+Playwright Python **1.61.0**, [Microsoft source](https://github.com/microsoft/playwright-python),
+Apache-2.0. Explicitly requested for Implementation 02. Pinned in
+`scripts/browser-requirements.txt`; Chromium is installed by this exact release.
+It runs native Frappe browser acceptance, adds no application runtime dependency,
+and is replaceable independently of business services. Framework/OS/transitive
+packages remain inherited from their pinned environments.
 
 ## Application runtime Python dependencies
 

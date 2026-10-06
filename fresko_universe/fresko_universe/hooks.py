@@ -8,6 +8,8 @@ app_version = "0.0.1"
 
 required_apps = ["frappe", "erpnext"]
 
+auth_hooks = ["fresko_universe.permissions.deny_supplier_http_access"]
+
 after_install = "fresko_universe.install.after_install"
 after_migrate = "fresko_universe.install.after_migrate"
 
@@ -85,5 +87,4 @@ scheduler_events = {
         "fresko_universe.integrity.scheduled_integrity_check",
     ],
 }
-
 
