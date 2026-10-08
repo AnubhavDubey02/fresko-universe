@@ -739,3 +739,13 @@ var fresko_money = {
 		$target.html(card);
 	}
 };
+
+// Desk may keep a Page mounted while routing away and back to it. Consume a
+// pending handoff after route rendering as well as the Page show callback.
+if (frappe.router && typeof frappe.router.on === 'function') {
+	frappe.router.on('change', function() {
+		if (frappe.get_route && frappe.get_route()[0] === 'fresko-money') {
+			return fresko_money.consume_action_target();
+		}
+	});
+}
