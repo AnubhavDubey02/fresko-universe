@@ -139,9 +139,16 @@ def extend_bootinfo(bootinfo: dict | None = None, **kwargs) -> None:
     else:
         primary_route = None
 
+    allowed_routes = []
+    if "view_operations" in caps:
+        allowed_routes.append("fresko-workspace")
+    if "view_money" in caps:
+        allowed_routes.append("fresko-money")
+
     bootinfo["fresko"] = {
         "persona": persona,
         "capabilities": sorted(list(caps)),
+        "allowed_routes": allowed_routes,
         "default_route": primary_route,
         "is_operator": bool(caps),
     }

@@ -14,11 +14,11 @@ Governed by PR #19 Operator UX P0 contract & Sol High review invariants:
 from __future__ import annotations
 
 import json
+from decimal import Decimal
+from typing import Any
 import frappe
 from frappe import _
 from frappe.utils import now_datetime
-
-from fresko_universe.fresko_core.services import money_service
 
 
 def _deny_supplier_and_unauthorized() -> tuple[str, set[str]]:
@@ -69,7 +69,7 @@ def _validate_company(company: str | None) -> str:
         return default_company
 
     comps = frappe.get_list("Company", fields=["name"], limit_page_length=1)
-    if comps:
+    if comps and frappe.has_permission("Company", doc=_row(comps[0]).name, ptype="read"):
         return _row(comps[0]).name
 
     frappe.throw(_("No authorized company available for operator feeds"), frappe.PermissionError)
@@ -103,12 +103,10 @@ def check_action_eligibility(
     if user_roles is None:
         user_roles = set()
 
+    # FR-QA-010: Fail closed if status/state is missing. Do not synthesize status fallback.
     status = doc.get("status") or doc.get("state")
     if status is None:
-        if action == "verify_sale":
-            status = "REVIEW_PENDING"
-        elif action == "approve_sale":
-            status = "VERIFIED"
+        return False, "Missing workflow status"
 
     maker = doc.get("prepared_by") or doc.get("proposed_by")
     verifier = doc.get("verified_by")
@@ -139,10 +137,12 @@ def check_action_eligibility(
             return False, f"Cannot approve sale in state {status}"
         if not maker:
             return False, "Record missing prepared_by identity"
-        if actor == maker:
-            return False, "Awaiting another approver — you prepared this record"
         if not verifier:
             return False, "Record missing verified_by identity"
+        if maker == verifier:
+            return False, "Maker and verifier cannot be the same user"
+        if actor == maker:
+            return False, "Awaiting another approver — you prepared this record"
         if actor == verifier:
             return False, "Awaiting another approver — you verified this record"
         return True, None
@@ -168,6 +168,8 @@ def check_action_eligibility(
             return False, "Record missing prepared_by identity"
         if not verifier:
             return False, "Record missing verified_by identity"
+        if maker == verifier:
+            return False, "Maker and verifier cannot be the same user"
         if actor in (maker, verifier):
             return False, "Awaiting another approver — self-approval prohibited"
         return True, None
@@ -198,6 +200,8 @@ def check_action_eligibility(
             return False, "Record missing proposed_by identity"
         if not verifier:
             return False, "Record missing verified_by identity"
+        if maker == verifier:
+            return False, "Maker and verifier cannot be the same user"
         if actor in (maker, verifier):
             return False, "Awaiting another approver — self-approval prohibited"
         return True, None
@@ -219,21 +223,28 @@ def check_action_eligibility(
             return False, "Awaiting another verifier — you prepared this allocation"
         return True, None
 
+    # FR-QA-011: Require recorded verification, distinct maker/verifier/approver
     if action == "approve_sale_outward_allocation":
         if "Fresko Approver" not in user_roles:
             return False, "Requires Fresko Approver role"
         if status != "PROPOSED":
-            return False, f"Cannot approve allocation in state {status}"
+            return False, f"Cannot approve allocation in state {status} (requires PROPOSED)"
         if not maker:
             return False, "Record missing prepared_by identity"
+        if not verifier:
+            return False, "Allocation requires Accounts verification (missing verified_by)"
+        if maker == verifier:
+            return False, "Maker and verifier cannot be the same user"
         if actor == maker:
             return False, "Awaiting another approver — you prepared this allocation"
+        if actor == verifier:
+            return False, "Awaiting another approver — you verified this allocation"
         return True, None
 
     # Payment Allocations
     if action == "propose_payment_allocation":
-        if "Fresko Accounts" not in user_roles:
-            return False, "Requires Fresko Accounts role"
+        if "Fresko Accounts" not in user_roles and "Fresko Approver" not in user_roles:
+            return False, "Requires Fresko Accounts or Approver role"
         return True, None
 
     if action == "verify_payment_allocation":
@@ -256,6 +267,8 @@ def check_action_eligibility(
             return False, "Record missing prepared_by identity"
         if not verifier:
             return False, "Record missing verified_by identity"
+        if maker == verifier:
+            return False, "Maker and verifier cannot be the same user"
         if actor in (maker, verifier):
             return False, "Awaiting another approver — self-approval prohibited"
         return True, None
@@ -275,6 +288,146 @@ def scope_evidence(evidence_name: str | None) -> dict:
         return {"evidence_state": "RESTRICTED", "evidence_name": None}
 
     return {"evidence_state": "AVAILABLE", "evidence_name": evidence_name}
+
+
+def compute_outward_capacity(outward_name: str, active_company: str) -> dict:
+    """Compute canonical remaining allocatable quantity for a posted Outward.
+
+    Governed by PR #19 / FR-QA-012 capacity invariants:
+    1. Only unreversed 'Posted' physical OUTWARD movements have capacity.
+    2. Physical quantity is derived from Outward Line items.
+    3. Allocations with state='APPROVED' (and not reversed) consume physical capacity.
+    4. Reversed allocations (state='REVERSED' or reversed_by set) do NOT consume capacity.
+    5. Inaccessible linked Sales consume capacity without leaking their identity.
+    6. If physical quantity is missing or unparseable, returns capacity_state='UNKNOWN'.
+    7. Fully allocated outwards (remaining <= 0) have capacity_state='EXHAUSTED'.
+    8. Unallocated or partially allocated outwards have capacity_state='AVAILABLE'.
+    """
+    reversals = frappe.get_list(
+        "Fresko Outward",
+        filters={
+            "reverses_outward": outward_name,
+            "status": "Posted",
+            "movement_type": "REVERSAL",
+        },
+        fields=["name"],
+    )
+    if reversals:
+        return {
+            "capacity_state": "REVERSED",
+            "remaining_qty": Decimal("0"),
+            "total_qty": Decimal("0"),
+            "allocated_qty": Decimal("0"),
+            "uom": None,
+            "is_allocatable": False,
+            "reason": "Outward physical movement was reversed",
+        }
+
+    lines = frappe.get_list(
+        "Fresko Outward Line",
+        filters={"parent": outward_name},
+        fields=["line_key", "qty", "uom"],
+    )
+    if not lines and hasattr(frappe, "get_doc"):
+        try:
+            odoc = frappe.get_doc("Fresko Outward", outward_name)
+            lines = [
+                {"line_key": l.line_key, "qty": l.qty, "uom": l.uom}
+                for l in getattr(odoc, "lines", [])
+            ]
+        except Exception:
+            lines = []
+
+    if not lines:
+        return {
+            "capacity_state": "UNKNOWN",
+            "remaining_qty": None,
+            "total_qty": None,
+            "allocated_qty": None,
+            "uom": None,
+            "is_allocatable": False,
+            "reason": "No physical lines recorded on Outward",
+        }
+
+    total_qty = Decimal("0")
+    primary_uom = None
+
+    for line in lines:
+        l_qty = line.get("qty")
+        if l_qty is None:
+            return {
+                "capacity_state": "UNKNOWN",
+                "remaining_qty": None,
+                "total_qty": None,
+                "allocated_qty": None,
+                "uom": line.get("uom"),
+                "is_allocatable": False,
+                "reason": "Physical line quantity is UNKNOWN",
+            }
+        try:
+            val = Decimal(str(l_qty))
+        except Exception:
+            return {
+                "capacity_state": "UNKNOWN",
+                "remaining_qty": None,
+                "total_qty": None,
+                "allocated_qty": None,
+                "uom": line.get("uom"),
+                "is_allocatable": False,
+                "reason": "Invalid physical line quantity",
+            }
+        total_qty += val
+        if not primary_uom:
+            primary_uom = line.get("uom")
+
+    allocs = frappe.get_list(
+        "Fresko Sale Outward Allocation",
+        filters={"outward": outward_name, "company": active_company},
+        fields=["name", "sale", "outward_line_key", "qty", "uom", "state", "reversed_by"],
+    )
+
+    total_allocated = Decimal("0")
+    for al in allocs:
+        state = al.get("state")
+        reversed_by = al.get("reversed_by")
+        if state == "APPROVED" and not reversed_by:
+            try:
+                al_qty = Decimal(str(al.get("qty") or "0"))
+                total_allocated += al_qty
+            except Exception:
+                pass
+
+    remaining_qty = total_qty - total_allocated
+    if remaining_qty <= Decimal("0"):
+        return {
+            "capacity_state": "EXHAUSTED",
+            "remaining_qty": Decimal("0"),
+            "total_qty": total_qty,
+            "allocated_qty": total_allocated,
+            "uom": primary_uom,
+            "is_allocatable": False,
+            "reason": "Outward fully allocated",
+        }
+    elif total_allocated > Decimal("0"):
+        return {
+            "capacity_state": "PARTIAL",
+            "remaining_qty": remaining_qty,
+            "total_qty": total_qty,
+            "allocated_qty": total_allocated,
+            "uom": primary_uom,
+            "is_allocatable": True,
+            "reason": f"Partially allocated ({total_allocated} {primary_uom or ''} allocated of {total_qty} {primary_uom or ''})".strip(),
+        }
+    else:
+        return {
+            "capacity_state": "UNALLOCATED",
+            "remaining_qty": remaining_qty,
+            "total_qty": total_qty,
+            "allocated_qty": Decimal("0"),
+            "uom": primary_uom,
+            "is_allocatable": True,
+            "reason": f"Unallocated physical movement ({remaining_qty} {primary_uom or ''} available)".strip(),
+        }
 
 
 @frappe.whitelist()
@@ -303,6 +456,7 @@ def get_operator_action_feed(
     counts = {
         "unpriced_sales": 0,
         "draft_sales": 0,
+        "unresolved_buyers": 0,
         "commercial_verifications": 0,
         "commercial_approvals": 0,
         "commercial_allocation_reviews": 0,
@@ -328,7 +482,7 @@ def get_operator_action_feed(
                 "status": ["in", ["DRAFT", "REVIEW_PENDING", "APPROVED"]],
                 "company": active_company,
             },
-            fields=["name", "container", "status", "prepared_by", "version", "source_payload", "source_evidence", "modified"],
+            fields=["name", "company", "container", "status", "prepared_by", "verified_by", "version", "source_payload", "source_evidence", "modified"],
             order_by="modified desc",
             limit_page_length=limit,
         )
@@ -410,7 +564,64 @@ def get_operator_action_feed(
                 "items": draft_items,
             })
 
-    # 3. Commercial Sale Verifications (Accounts: REVIEW_PENDING)
+    # 3. Unresolved Buyer Aliases (Sales with unresolved buyers)
+    if user_roles & {"Fresko Salesperson", "Fresko Accounts", "Fresko Trader"}:
+        unresolved_sales = frappe.get_list(
+            "Fresko Commercial Sale",
+            filters={
+                "party_state": "UNRESOLVED",
+                "company": active_company,
+            },
+            fields=["name", "company", "container", "party_state", "raw_party_alias", "customer", "status", "prepared_by", "version", "source_evidence", "modified"],
+            order_by="modified desc",
+            limit_page_length=limit,
+        )
+        if len(unresolved_sales) == limit:
+            truncated = True
+
+        unresolved_buyer_items = []
+        for s in unresolved_sales:
+            s = _row(s)
+            if not frappe.has_permission("Fresko Commercial Sale", doc=s.name, ptype="read"):
+                continue
+            ev_info = scope_evidence(s.get("source_evidence"))
+            can_propose, p_reason = check_action_eligibility("propose_alias", s, actor, user_roles)
+            unresolved_buyer_items.append({
+                "kind": "unresolved_buyer_alias",
+                "doc_ref": s.name,
+                "document_name": s.name,
+                "human_title": f"Unresolved Buyer: {s.raw_party_alias or s.name}",
+                "subtitle": f"Sale {s.name} • Container {s.container or '—'}",
+                "amount_string": "—",
+                "qty_string": "—",
+                "state": s.party_state or "UNRESOLVED",
+                "state_reason": "Raw party alias requires customer mapping proposal",
+                "container": s.container,
+                "version": s.version,
+                "current_version": s.version,
+                "evidence_state": ev_info["evidence_state"],
+                "evidence_name": ev_info["evidence_name"],
+                "source_evidence": ev_info["evidence_name"],
+                "actions": [
+                    {
+                        "action": "propose_alias",
+                        "label": "Propose Alias",
+                        "allowed": can_propose,
+                        "blocked_reason": p_reason,
+                    }
+                ],
+            })
+        counts["unresolved_buyers"] = len(unresolved_buyer_items)
+        if unresolved_buyer_items:
+            sections.append({
+                "id": "unresolved_buyers",
+                "section_id": "unresolved_buyers",
+                "title": "Unresolved Buyer Aliases",
+                "count": len(unresolved_buyer_items),
+                "items": unresolved_buyer_items,
+            })
+
+    # 4. Commercial Sale Verifications (Accounts: REVIEW_PENDING)
     if "Fresko Accounts" in user_roles:
         review_sales = frappe.get_list(
             "Fresko Commercial Sale",
@@ -418,7 +629,7 @@ def get_operator_action_feed(
                 "status": "REVIEW_PENDING",
                 "company": active_company,
             },
-            fields=["name", "container", "prepared_by", "version", "source_evidence", "modified"],
+            fields=["name", "company", "container", "status", "prepared_by", "verified_by", "version", "source_evidence", "modified"],
             order_by="modified desc",
             limit_page_length=limit,
         )
@@ -467,7 +678,7 @@ def get_operator_action_feed(
                 "items": comm_verifications,
             })
 
-    # 4. Commercial Sale Approvals (Approver: VERIFIED)
+    # 5. Commercial Sale Approvals (Approver: VERIFIED)
     if "Fresko Approver" in user_roles:
         verified_sales = frappe.get_list(
             "Fresko Commercial Sale",
@@ -475,7 +686,7 @@ def get_operator_action_feed(
                 "status": "VERIFIED",
                 "company": active_company,
             },
-            fields=["name", "container", "prepared_by", "verified_by", "version", "source_evidence", "modified"],
+            fields=["name", "company", "container", "status", "prepared_by", "verified_by", "version", "source_evidence", "modified"],
             order_by="modified desc",
             limit_page_length=limit,
         )
@@ -524,7 +735,7 @@ def get_operator_action_feed(
                 "items": comm_approvals,
             })
 
-    # 5. Commercial Allocation Reviews (Fresko Sale Outward Allocation: state == PROPOSED)
+    # 6. Commercial Allocation Reviews (Fresko Sale Outward Allocation: state == PROPOSED)
     if "Fresko Accounts" in user_roles or "Fresko Approver" in user_roles:
         proposed_allocs = frappe.get_list(
             "Fresko Sale Outward Allocation",
@@ -532,7 +743,7 @@ def get_operator_action_feed(
                 "state": "PROPOSED",
                 "company": active_company,
             },
-            fields=["name", "sale", "outward", "prepared_by", "qty", "uom", "evidence", "version", "modified"],
+            fields=["name", "company", "sale", "sale_line_key", "outward", "outward_line_key", "prepared_by", "prepared_at", "verified_by", "verified_at", "qty", "uom", "evidence", "state", "version", "modified"],
             order_by="modified desc",
             limit_page_length=limit,
         )
@@ -548,6 +759,10 @@ def get_operator_action_feed(
             can_a, a_reason = check_action_eligibility("approve_sale_outward_allocation", al, actor, user_roles)
             ev_info = scope_evidence(al.get("evidence"))
 
+            # FR-QA-019: Suppress confidential linked Sale identifier if unauthorized
+            can_read_sale = frappe.has_permission("Fresko Commercial Sale", doc=al.sale, ptype="read")
+            sale_label = al.sale if can_read_sale else "[Restricted Sale]"
+
             actions = []
             if "Fresko Accounts" in user_roles:
                 actions.append({"action": "verify_sale_outward_allocation", "label": "Verify Allocation", "allowed": can_v, "blocked_reason": v_reason})
@@ -558,13 +773,15 @@ def get_operator_action_feed(
                 "kind": "commercial_allocation_review",
                 "doc_ref": al.name,
                 "document_name": al.name,
-                "human_title": f"Allocation: {al.sale} ➔ {al.outward}",
-                "subtitle": f"Prepared by {al.prepared_by or 'UNKNOWN'}",
+                "human_title": f"Allocation: {sale_label} ➔ {al.outward}",
+                "subtitle": f"Prepared by {al.prepared_by or 'UNKNOWN'}" + (f" • Verified by {al.verified_by}" if al.verified_by else " • Awaiting verification"),
                 "amount_string": "—",
                 "qty_string": f"{al.qty or '—'} {al.uom or ''}".strip(),
-                "state": "PROPOSED",
+                "state": al.state or "PROPOSED",
                 "state_reason": "Proposed commercial allocation awaiting verification/approval",
                 "container": None,
+                "sale": sale_label,
+                "outward": al.outward,
                 "version": al.version,
                 "current_version": al.version,
                 "evidence_state": ev_info["evidence_state"],
@@ -582,15 +799,18 @@ def get_operator_action_feed(
                 "items": alloc_items,
             })
 
-    # 6. Unassigned Outwards (Posted outwards with remaining unallocated qty)
+    # 7. Unassigned Outwards (Posted outwards with remaining unallocated capacity)
+    # FR-QA-009: Removed nonexistent 'version' field from Outward query.
+    # FR-QA-012: Checked canonical capacity; fully allocated outwards are excluded.
     if user_roles & {"Fresko Salesperson", "Fresko Trader"}:
         posted_outwards = frappe.get_list(
             "Fresko Outward",
             filters={
                 "status": "Posted",
+                "movement_type": "OUTWARD",
                 "company": active_company,
             },
-            fields=["name", "container", "prepared_by", "source_evidence", "version", "modified"],
+            fields=["name", "company", "container", "movement_type", "status", "prepared_by", "source_evidence", "modified"],
             order_by="modified desc",
             limit_page_length=limit,
         )
@@ -602,20 +822,33 @@ def get_operator_action_feed(
             o = _row(o)
             if not frappe.has_permission("Fresko Outward", doc=o.name, ptype="read"):
                 continue
+
+            cap = compute_outward_capacity(o.name, active_company)
+            if not cap["is_allocatable"]:
+                continue
+
             ev_info = scope_evidence(o.get("source_evidence"))
+            allowed, blocked_reason = check_action_eligibility(
+                "propose_commercial_allocation", o, actor, user_roles
+            )
+
+            rem_str = f"{cap['remaining_qty']} {cap['uom'] or ''}".strip()
+            tot_str = f"{cap['total_qty']} {cap['uom'] or ''}".strip()
+            qty_label = f"{rem_str} remaining of {tot_str}" if cap["capacity_state"] == "PARTIAL" else f"{rem_str} available"
+
             unassigned_outwards.append({
                 "kind": "unassigned_outward",
                 "doc_ref": o.name,
                 "document_name": o.name,
                 "human_title": f"Outward {o.name}",
-                "subtitle": f"Container {o.container or '—'} • Prepared by {o.prepared_by or 'UNKNOWN'}",
+                "subtitle": f"Container {o.container or '—'} • {cap['reason']}",
                 "amount_string": "—",
-                "qty_string": "Posted",
+                "qty_string": qty_label,
                 "state": "Posted",
-                "state_reason": "Posted outward awaiting sale allocation",
+                "state_reason": cap["reason"],
                 "container": o.container,
-                "version": o.version,
-                "current_version": o.version,
+                "version": None,
+                "current_version": None,
                 "evidence_state": ev_info["evidence_state"],
                 "evidence_name": ev_info["evidence_name"],
                 "source_evidence": ev_info["evidence_name"],
@@ -623,8 +856,8 @@ def get_operator_action_feed(
                     {
                         "action": "propose_commercial_allocation",
                         "label": "Allocate Outward",
-                        "allowed": True,
-                        "blocked_reason": None,
+                        "allowed": allowed,
+                        "blocked_reason": blocked_reason,
                     }
                 ],
             })
@@ -638,16 +871,15 @@ def get_operator_action_feed(
                 "items": unassigned_outwards,
             })
 
-    # 7. Unresolved Aliases & Mapping Reviews (Separate PROPOSED from VERIFIED)
+    # 8. Unresolved Aliases & Mapping Reviews (Separate PROPOSED from VERIFIED)
     if user_roles & {"Fresko Salesperson", "Fresko Accounts", "Fresko Approver", "Fresko Trader"}:
-        # Proposed mappings (awaiting Accounts verification)
         proposed_aliases = frappe.get_list(
             "Fresko Party Alias Mapping",
             filters={
                 "status": "PROPOSED",
                 "company": active_company,
             },
-            fields=["name", "raw_alias", "proposed_customer", "proposed_by", "version", "evidence", "modified"],
+            fields=["name", "company", "raw_alias", "proposed_customer", "status", "proposed_by", "proposed_at", "verified_by", "verified_at", "version", "evidence", "modified"],
             order_by="modified desc",
             limit_page_length=limit,
         )
@@ -693,7 +925,6 @@ def get_operator_action_feed(
                 "items": proposed_items,
             })
 
-        # Verified mappings (awaiting Approver sign-off)
         if "Fresko Approver" in user_roles:
             verified_aliases = frappe.get_list(
                 "Fresko Party Alias Mapping",
@@ -701,7 +932,7 @@ def get_operator_action_feed(
                     "status": "VERIFIED",
                     "company": active_company,
                 },
-                fields=["name", "raw_alias", "proposed_customer", "proposed_by", "verified_by", "version", "evidence", "modified"],
+                fields=["name", "company", "raw_alias", "proposed_customer", "status", "proposed_by", "proposed_at", "verified_by", "verified_at", "version", "evidence", "modified"],
                 order_by="modified desc",
                 limit_page_length=limit,
             )
@@ -715,7 +946,7 @@ def get_operator_action_feed(
                 verified_items.append({
                     "kind": "verified_alias",
                     "doc_ref": a.name,
-                "document_name": a.name,
+                    "document_name": a.name,
                     "human_title": f"Verified Alias: {a.raw_alias or '—'}",
                     "subtitle": f"Customer: {a.proposed_customer or 'UNKNOWN'} • Verified by {a.verified_by or 'UNKNOWN'}",
                     "amount_string": "—",
@@ -727,7 +958,7 @@ def get_operator_action_feed(
                     "current_version": a.version,
                     "evidence_state": ev_info["evidence_state"],
                     "evidence_name": ev_info["evidence_name"],
-                "source_evidence": ev_info["evidence_name"],
+                    "source_evidence": ev_info["evidence_name"],
                     "actions": [
                         {
                             "action": "approve_alias",
@@ -741,13 +972,13 @@ def get_operator_action_feed(
             if verified_items:
                 sections.append({
                     "id": "verified_aliases",
-                "section_id": "verified_aliases",
+                    "section_id": "verified_aliases",
                     "title": "Verified Aliases for Approval",
                     "count": len(verified_items),
                     "items": verified_items,
                 })
 
-    # 8. Collection Verifications (Accounts: REVIEW_PENDING)
+    # 9. Collection Verifications (Accounts: REVIEW_PENDING)
     if "Fresko Accounts" in user_roles:
         review_cols = frappe.get_list(
             "Fresko Collection",
@@ -755,7 +986,7 @@ def get_operator_action_feed(
                 "status": "REVIEW_PENDING",
                 "company": active_company,
             },
-            fields=["name", "customer", "prepared_by", "payment_channel", "bank_state", "version", "source_evidence", "modified"],
+            fields=["name", "company", "customer", "prepared_by", "prepared_at", "verified_by", "status", "payment_channel", "bank_state", "version", "source_evidence", "modified"],
             order_by="modified desc",
             limit_page_length=limit,
         )
@@ -805,7 +1036,7 @@ def get_operator_action_feed(
                 "items": col_verifications,
             })
 
-    # 9. Collection Approvals (Approver: VERIFIED)
+    # 10. Collection Approvals (Approver: VERIFIED)
     if "Fresko Approver" in user_roles:
         verified_cols = frappe.get_list(
             "Fresko Collection",
@@ -813,7 +1044,7 @@ def get_operator_action_feed(
                 "status": "VERIFIED",
                 "company": active_company,
             },
-            fields=["name", "customer", "prepared_by", "verified_by", "payment_channel", "bank_state", "version", "source_evidence", "modified"],
+            fields=["name", "company", "customer", "prepared_by", "prepared_at", "verified_by", "verified_at", "status", "payment_channel", "bank_state", "version", "source_evidence", "modified"],
             order_by="modified desc",
             limit_page_length=limit,
         )
@@ -863,7 +1094,7 @@ def get_operator_action_feed(
                 "items": col_approvals,
             })
 
-    # 10. Bank-Pending Receipts (Non-cash receipts awaiting bank clearance)
+    # 11. Bank-Pending Receipts (Non-cash receipts awaiting bank clearance)
     if "Fresko Accounts" in user_roles or "Fresko Approver" in user_roles:
         pending_bank_cols = frappe.get_list(
             "Fresko Collection",
@@ -871,13 +1102,20 @@ def get_operator_action_feed(
                 "bank_state": ["in", ["PENDING", "AUTHORIZATION_INPROCESS"]],
                 "company": active_company,
             },
-            fields=["name", "customer", "bank_state", "payment_channel", "version", "source_evidence", "modified"],
+            fields=["name", "company", "customer", "status", "bank_state", "payment_channel", "version", "source_evidence", "modified"],
             order_by="modified desc",
             limit_page_length=limit,
         )
         bank_pending_items = []
         for c in pending_bank_cols:
             c = _row(c)
+            # Exclude cash and terminal states
+            if c.payment_channel == "CASH":
+                continue
+            if c.status in ("REJECTED", "CANCELLED", "REVERSED"):
+                continue
+            if c.bank_state in ("CLEARED", "REJECTED", "CANCELLED", "SETTLED", "NONE", ""):
+                continue
             if not frappe.has_permission("Fresko Collection", doc=c.name, ptype="read"):
                 continue
             ev_info = scope_evidence(c.get("source_evidence") or c.get("evidence"))
@@ -910,7 +1148,68 @@ def get_operator_action_feed(
                 "items": bank_pending_items,
             })
 
-    # 11. Payment Allocation Reviews (REVIEW_PENDING and VERIFIED)
+    # 12. Unallocated Collections (Approved collections with unallocated funds)
+    if "Fresko Accounts" in user_roles or "Fresko Approver" in user_roles:
+        unalloc_cols = frappe.get_list(
+            "Fresko Collection",
+            filters={
+                "status": "APPROVED",
+                "company": active_company,
+            },
+            fields=["name", "company", "customer", "status", "payment_channel", "unallocated_amount", "amount", "currency", "version", "source_evidence", "modified"],
+            order_by="modified desc",
+            limit_page_length=limit,
+        )
+        unalloc_items = []
+        for c in unalloc_cols:
+            c = _row(c)
+            try:
+                unalloc_amt = Decimal(str(c.unallocated_amount or "0"))
+            except Exception:
+                unalloc_amt = Decimal("0")
+            if unalloc_amt <= Decimal("0"):
+                continue
+            if not frappe.has_permission("Fresko Collection", doc=c.name, ptype="read"):
+                continue
+            ev_info = scope_evidence(c.get("source_evidence"))
+            can_act, reason = check_action_eligibility("propose_payment_allocation", c, actor, user_roles)
+            unalloc_items.append({
+                "kind": "unallocated_collection",
+                "payment_channel": c.payment_channel,
+                "doc_ref": c.name,
+                "document_name": c.name,
+                "human_title": f"Unallocated Collection: {c.customer or c.name}",
+                "subtitle": f"Unallocated: {unalloc_amt} {c.currency or ''} • Channel: {c.payment_channel or 'UNKNOWN'}".strip(),
+                "amount_string": f"{unalloc_amt} {c.currency or ''}".strip(),
+                "qty_string": "—",
+                "state": "APPROVED",
+                "state_reason": "Approved collection awaiting payment allocation to sale",
+                "container": None,
+                "version": c.version,
+                "current_version": c.version,
+                "evidence_state": ev_info["evidence_state"],
+                "evidence_name": ev_info["evidence_name"],
+                "source_evidence": ev_info["evidence_name"],
+                "actions": [
+                    {
+                        "action": "propose_payment_allocation",
+                        "label": "Allocate Payment",
+                        "allowed": can_act,
+                        "blocked_reason": reason,
+                    }
+                ],
+            })
+        counts["unallocated_collections"] = len(unalloc_items)
+        if unalloc_items:
+            sections.append({
+                "id": "unallocated_collections",
+                "section_id": "unallocated_collections",
+                "title": "Unallocated Collections",
+                "count": len(unalloc_items),
+                "items": unalloc_items,
+            })
+
+    # 13. Payment Allocation Reviews (REVIEW_PENDING and VERIFIED)
     if "Fresko Accounts" in user_roles or "Fresko Approver" in user_roles:
         review_allocs = frappe.get_list(
             "Fresko Payment Allocation",
@@ -918,7 +1217,7 @@ def get_operator_action_feed(
                 "status": "REVIEW_PENDING",
                 "company": active_company,
             },
-            fields=["name", "collection", "sale", "prepared_by", "version", "evidence", "modified"],
+            fields=["name", "company", "collection", "sale", "prepared_by", "prepared_at", "status", "version", "evidence", "modified"],
             order_by="modified desc",
             limit_page_length=limit,
         )
@@ -971,7 +1270,7 @@ def get_operator_action_feed(
                     "status": "VERIFIED",
                     "company": active_company,
                 },
-                fields=["name", "collection", "sale", "prepared_by", "verified_by", "version", "evidence", "modified"],
+                fields=["name", "company", "collection", "sale", "prepared_by", "prepared_at", "verified_by", "verified_at", "status", "version", "evidence", "modified"],
                 order_by="modified desc",
                 limit_page_length=limit,
             )
@@ -985,7 +1284,7 @@ def get_operator_action_feed(
                 pay_approvals.append({
                     "kind": "payment_allocation_approval",
                     "doc_ref": pa.name,
-                "document_name": pa.name,
+                    "document_name": pa.name,
                     "human_title": f"Allocation Approval: {pa.collection} ➔ {pa.sale}",
                     "subtitle": f"Prepared by {pa.prepared_by or 'UNKNOWN'} • Verified by {pa.verified_by or 'UNKNOWN'}",
                     "amount_string": "PENDING / UNKNOWN",
@@ -997,7 +1296,7 @@ def get_operator_action_feed(
                     "current_version": pa.version,
                     "evidence_state": ev_info["evidence_state"],
                     "evidence_name": ev_info["evidence_name"],
-                "source_evidence": ev_info["evidence_name"],
+                    "source_evidence": ev_info["evidence_name"],
                     "actions": [
                         {
                             "action": "approve_payment_allocation",
@@ -1011,21 +1310,20 @@ def get_operator_action_feed(
             if pay_approvals:
                 sections.append({
                     "id": "payment_allocation_approvals",
-                "section_id": "payment_allocation_approvals",
+                    "section_id": "payment_allocation_approvals",
                     "title": "Payment Allocation Approvals",
                     "count": len(pay_approvals),
                     "items": pay_approvals,
                 })
 
-    # 12. Active Exceptions (Scoped through money_company for financial exceptions)
+    # 14. Active Exceptions (Scoped through money_company for financial, or linked records for commercial/physical)
     if "Fresko Accounts" in user_roles or "Fresko Approver" in user_roles:
         open_exceptions = frappe.get_list(
             "Fresko Exception",
             filters={
                 "status": ["in", ["Open", "In Progress"]],
-                "money_company": active_company,
             },
-            fields=["name", "exception_type", "container", "status", "description", "modified"],
+            fields=["name", "exception_type", "severity", "status", "container", "outward", "sale", "money_company", "money_scope_key", "commercial_scope_key", "description", "modified"],
             order_by="modified desc",
             limit_page_length=limit,
         )
@@ -1034,6 +1332,21 @@ def get_operator_action_feed(
             ex = _row(ex)
             if not frappe.has_permission("Fresko Exception", doc=ex.name, ptype="read"):
                 continue
+
+            # Scope to active company
+            if ex.money_company:
+                if ex.money_company != active_company:
+                    continue
+            elif ex.sale:
+                if not frappe.has_permission("Fresko Commercial Sale", doc=ex.sale, ptype="read"):
+                    continue
+            elif ex.outward:
+                if not frappe.has_permission("Fresko Outward", doc=ex.outward, ptype="read"):
+                    continue
+            elif ex.container:
+                if not frappe.has_permission("Fresko Container", doc=ex.container, ptype="read"):
+                    continue
+
             exception_items.append({
                 "kind": "exception",
                 "doc_ref": ex.name,
@@ -1061,23 +1374,36 @@ def get_operator_action_feed(
                 "items": exception_items,
             })
 
+    # FR-QA-015: Separate loaded records, actionable records, blocked tasks, and informational records
+    # Unique records counting across all sections:
+    seen_records = {}
+    for sec in sections:
+        for item in sec.get("items", []):
+            d_ref = item.get("doc_ref") or item.get("document_name")
+            if not d_ref:
+                continue
+            acts = item.get("actions", [])
+            has_act = bool(acts)
+            has_allowed = any(bool(a.get("allowed")) for a in acts)
+            if d_ref in seen_records:
+                seen_records[d_ref]["has_allowed"] = seen_records[d_ref]["has_allowed"] or has_allowed
+                seen_records[d_ref]["has_act"] = seen_records[d_ref]["has_act"] or has_act
+            else:
+                seen_records[d_ref] = {"has_allowed": has_allowed, "has_act": has_act}
+
+    records_loaded = len(seen_records)
+    actionable_records = sum(1 for v in seen_records.values() if v["has_allowed"])
+    blocked_records = sum(1 for v in seen_records.values() if v["has_act"] and not v["has_allowed"])
+    informational_records = sum(1 for v in seen_records.values() if not v["has_act"])
     loaded_items_count = sum(len(sec.get("items", [])) for sec in sections)
-    counts["total_actionable"] = (
-        counts["unpriced_sales"]
-        + counts["draft_sales"]
-        + counts["commercial_verifications"]
-        + counts["commercial_approvals"]
-        + counts["commercial_allocation_reviews"]
-        + counts["unassigned_outwards"]
-        + counts["unresolved_aliases"]
-        + counts["verified_aliases"]
-        + counts["collection_verifications"]
-        + counts["collection_approvals"]
-        + counts["bank_pending"]
-        + counts["payment_allocation_verifications"]
-        + counts["payment_allocation_approvals"]
-        + counts["exceptions"]
-    )
+
+    counts["records_loaded"] = records_loaded
+    counts["actionable_records"] = actionable_records
+    counts["blocked_records"] = blocked_records
+    counts["informational_records"] = informational_records
+    counts["total_actionable"] = actionable_records
+
+    all_clear = (actionable_records == 0 and not truncated)
 
     return {
         "feed_type": "operator_action_feed",
@@ -1085,7 +1411,13 @@ def get_operator_action_feed(
         "company": active_company,
         "projection_mode": "LIVE",
         "counts": counts,
+        "records_loaded": records_loaded,
+        "actionable_records": actionable_records,
+        "blocked_records": blocked_records,
+        "informational_records": informational_records,
         "loaded_items_count": loaded_items_count,
         "truncated": truncated,
+        "completeness_state": "INCOMPLETE" if truncated else "COMPLETE",
+        "all_clear": all_clear,
         "sections": sections,
     }

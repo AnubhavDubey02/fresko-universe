@@ -41,8 +41,9 @@
         existing_nav = document.createElement('nav');
         existing_nav.className = 'fresko-bottom-nav';
 
+        var caps = fresko_data.capabilities || [];
         var allowed = fresko_data.allowed_routes || [];
-        var can_access_money = allowed.indexOf('fresko-money') !== -1;
+        var can_access_money = (caps.indexOf('view_money') !== -1) || (allowed.indexOf('fresko-money') !== -1);
 
         // Workspace nav item
         var ws_item = document.createElement('a');

@@ -80,3 +80,14 @@ Desk chrome is suppressed via `fresko_shell.css` scoped strictly to `body.fresko
 - Touch targets maintain a minimum computed height of 44px (48px for primary action buttons).
 - Soft-keyboard listener dynamically suppresses the fixed mobile navigation bar on input focus.
 - Tables collapse into structured touch cards with 0px horizontal root overflow.
+
+### 4.5 Keyboard Accessibility & Split Pane Navigation
+- All action feed cards (`.fresko-action-card`) provide semantic interactive roles (`role="button"`, `tabindex="0"`).
+- Keyboard activation supports both `Enter` and `Space` to inspect contextual details and linked evidence without triggering form submits.
+- Historical mode renders a dedicated "Needs My Action is Live-Only" notice with a "Return to Live" button to seamlessly clear historical cutoff filters.
+
+### 4.6 Navigation Dispatch and State Verification
+- Proposing outward allocations dispatches to the `outwards` tab and immediately inspects the targeted outward movement.
+- Reviewing allocations validates current record state on the server (`frappe.client.get`) prior to mutation, guarding against concurrent state transitions.
+- Collections and payment allocation reviews navigate directly to `fresko-money` with context stored in `sessionStorage`.
+- Network failures in the alias review queue render inline error alerts with an idempotent "Retry" trigger.

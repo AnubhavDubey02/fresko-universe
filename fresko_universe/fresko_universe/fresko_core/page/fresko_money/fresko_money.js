@@ -32,6 +32,20 @@ var fresko_money = {
 			return;
 		}
 
+		try {
+			var raw_target = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('fresko_money_target') : null;
+			if (raw_target) {
+				sessionStorage.removeItem('fresko_money_target');
+				var target = JSON.parse(raw_target);
+				if (target && target.doctype && typeof frappe.show_alert === 'function') {
+					frappe.show_alert({
+						message: __('Navigated to ') + target.doctype + ': ' + (target.document_name || ''),
+						indicator: 'blue'
+					});
+				}
+			}
+		} catch(e) {}
+
 		me.setup_filters();
 		me.setup_layout();
 		me.refresh_all();

@@ -1110,3 +1110,65 @@ PR #19 P0 Implementation scope and contract reconciliation:
    - 49/49 script tests pass under WSL Linux.
    - Node VM offline UI test suites pass (`test_workspace_ui.cjs`, `test_money_ui.cjs`).
    - Protected DocType write guard, schema migration proofs, and schema snapshot checks pass.
+
+
+## 2026-10-08 PR 19 QA remediation pass — Operator UX P0 defect closure
+
+Branch: `flash/operator-ux-p0`
+Draft PR: #19 (https://github.com/AnubhavDubey02/fresko-universe/pull/19)
+Base commit: `c01707708c69d880a829ebf670a2cfc8e76edb42` (PR #18 merged `main`)
+
+Addressed all defect findings from the independent QA audit without modifying database schema, financial calculation rules, or Supplier deny-first invariants:
+
+1. **FR-QA-008 (Native 403 Page Heading Preservation)**:
+   - Scoped `.page-card-head::after` ("Produce Trade OS") and `.page-card` styling in `fresko_universe/public/css/fresko_login.css` strictly to `body.login-page`, `body[data-route="login"]`, `.for-login`, and `.page-card.for-login`.
+   - Native Frappe error pages (such as 403 Not Permitted `<span class="page-card-title">Not Permitted</span>`) retain their original DOM title and accessible names without pseudo-element decoration.
+
+2. **FR-QA-009 (Outward Schema Alignment)**:
+   - Removed nonexistent `version` field from `Fresko Outward` query in `operator_service.py`. No synthetic version token is generated for physical movements.
+
+3. **FR-QA-010 (Real Workflow Status and Verification Tracking)**:
+   - Querying real persisted `status` and `state` columns, along with `prepared_by`, `proposed_by`, `verified_by`, and `verified_at` across Collections, Aliases, Allocations, and Payment Allocations.
+   - Removed synthetic `"PROPOSED"` fallback in `check_action_eligibility`; missing workflow state fails closed with `"Missing workflow status"`.
+
+4. **FR-QA-011 (Strict Segregation of Duties for Outward Allocations)**:
+   - In `check_action_eligibility("approve_sale_outward_allocation")`: enforced `state == "PROPOSED"`, prior recorded Accounts verification (`verified_by` nonempty), distinct maker/verifier (`maker != verifier`), and distinct approver (`actor not in (maker, verifier)`).
+
+5. **FR-QA-012 (Accurate Outward Capacity Computation)**:
+   - Implemented `compute_outward_capacity(outward_name, active_company)`: reads physical lines, verifies reversals, sums active approved allocations (`state == "APPROVED"` and not reversed).
+   - Handles restricted linked sales without exposing identity or inflating free capacity.
+   - Fully allocated outwards (`remaining <= 0`) are excluded from `unassigned_outwards`.
+
+6. **FR-QA-013 (Mobile Money Navigation Scope)**:
+   - Added `allowed_routes` (`fresko-workspace`, `fresko-money`) to `bootinfo["fresko"]` based on command capabilities (`view_operations`, `view_money`).
+   - Shell mobile navigation bar checks both `capabilities.includes('view_money')` and `allowed_routes.includes('fresko-money')`.
+
+7. **FR-QA-014 (Feed Live-Only State & Return to Live)**:
+   - In `fresko_workspace.js`: when `as_of_value` is active, `get_operator_action_feed` is suppressed. Displays read-only notice "Needs My Action is Live-Only" with a functional "Return to Live" button that clears the cutoff filter.
+
+8. **FR-QA-015 (Count and Completeness Contract)**:
+   - Feed metadata exposes `records_loaded`, `actionable_records`, `blocked_records`, `informational_records`, `truncated`, `completeness_state`, and `all_clear`.
+   - `all_clear` is strictly `True` only when `actionable_records == 0` and `truncated` is `False`. Counts deduplicate distinct records by `doc_ref`.
+
+9. **FR-QA-016 (Target Dispatch & State Re-Verification)**:
+   - For Outward allocation proposals (`propose_commercial_allocation`): switches directly to the `outwards` tab and inspects the specific outward.
+   - For allocation reviews (`verify_sale_outward_allocation`, `approve_sale_outward_allocation`): fetches fresh state via `frappe.client.get` before action execution, failing closed if status has transitioned.
+   - For money actions: writes target record to `sessionStorage` and routes to `fresko-money`.
+
+10. **FR-QA-019 (Confidential Sale Title Redaction)**:
+    - In `operator_service.py`: checks `frappe.has_permission("Fresko Commercial Sale", doc=al.sale, ptype="read")`. If unauthorized, redacts title to `[Restricted Sale]`.
+
+11. **FR-QA-020 (Action Card Keyboard Accessibility)**:
+    - In `fresko_workspace.js`: `.fresko-action-card` elements have `role="button"`, `tabindex="0"`, and Enter/Space `keydown` listeners.
+
+12. **UI Polish & Resilience (FR-QA-002, 003, 004, 005)**:
+    - Idempotent panel rendering across all tabs (`content_panel.innerHTML = ''`).
+    - Workflow actions strictly role-scoped (Salesperson for Prepare/Submit, Accounts for Verify, Approver for Approve).
+    - `+ Prepare Sale` disabled in historical cutoff mode.
+    - Alias queue network failures display error alert with a functional "Retry" button.
+
+Verification Evidence:
+- 275/275 offline Python unit tests pass (100% green, `test_operator_contract.py` extended with 47 tests).
+- 49/49 script tests pass under WSL Linux.
+- Node VM UI tests pass: `test_workspace_ui.cjs` (14 assertions) and `test_money_ui.cjs`.
+- Schema checks pass: `check_protected_doctype_writes.py`, `validate_real_data_shadow_fixture.py`, `check_schema_snapshot.py` (24 DocTypes, 6 proofs).

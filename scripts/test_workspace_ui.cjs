@@ -61,6 +61,12 @@ const sandbox = {
                 style: {},
                 children: [],
                 attrs: {},
+                _innerHTML: '',
+                get innerHTML() { return this._innerHTML; },
+                set innerHTML(val) {
+                    this._innerHTML = val;
+                    if (val === '') this.children = [];
+                },
                 appendChild: (child) => { el.children.push(child); return child; },
                 setAttribute: (k, v) => { el.attrs[k] = v; },
                 removeAttribute: (k) => { delete el.attrs[k]; },
@@ -74,11 +80,18 @@ const sandbox = {
         createTextNode: (t) => String(t)
     },
     Node: function() {},
+    sessionStorage: {
+        _store: {},
+        getItem(k) { return this._store[k] || null; },
+        setItem(k, v) { this._store[k] = String(v); },
+        removeItem(k) { delete this._store[k]; }
+    },
     window: {},
     console: console,
     Math: Math,
     crypto: typeof crypto !== 'undefined' ? crypto : undefined
 };
+sandbox.frappe.set_route = (route) => { sandbox.frappe._last_route = route; };
 
 vm.createContext(sandbox);
 vm.runInContext(srcCode, sandbox);
@@ -248,6 +261,12 @@ const FreskoWorkspace = vm.runInContext('FreskoWorkspace', sandbox);
 }
 
 async function runProjectionRegressionTests() {
+function allNodes(node, result = []) {
+    if (!node || typeof node !== 'object') return result;
+    result.push(node);
+    (node.children || []).forEach(child => allNodes(child, result));
+    return result;
+}
 // 8. Live/Historical mode: exact current tokens, no fallback, programmatic guards,
 //    and a dialog opened live cannot mutate after switching to a historical cutoff.
 {
@@ -452,7 +471,101 @@ async function runProjectionRegressionTests() {
         inboxWs.render_inbox_feed(feed, leftCol, rightCol);
         assert(leftCol.children.length > 0, 'Feed should render sections');
         assert(rightCol.children.length > 0, 'Detail pane should render selected item');
-        console.log('✓ Operator Action Inbox feed, split view, and detail pane verified');
+
+        // FR-QA-020: Verify card accessibility (role=button, tabindex=0, keydown handler)
+        const card = leftCol.children[0].children[1];
+        assert.strictEqual(card.attrs.role, 'button', 'Card must have role="button"');
+        assert.strictEqual(card.attrs.tabindex, '0', 'Card must have tabindex="0"');
+        assert.strictEqual(typeof card.listeners.keydown, 'function', 'Card must have keydown listener');
+        let cardKeydownHandled = false;
+        inboxWs.render_inbox_detail_pane = (item) => { cardKeydownHandled = true; };
+        card.listeners.keydown({ key: 'Enter', preventDefault: () => {} });
+        assert.strictEqual(cardKeydownHandled, true, 'Enter key must trigger detail pane selection');
+
+        console.log('✓ Operator Action Inbox feed, split view, keyboard navigation verified');
+
+        // FR-QA-014: Live-only notice when as_of_value is set
+        const liveOnlyWs = Object.create(FreskoWorkspace.prototype);
+        liveOnlyWs.as_of_value = '2026-10-01 12:00:00';
+        liveOnlyWs.content_panel = sandbox.document.createElement('div');
+        liveOnlyWs.as_of_field = { set_value: (v) => { liveOnlyWs.as_of_value = v; } };
+        let liveOnlyCallDispatched = false;
+        sandbox.frappe.call = (req) => {
+            if (req.method.includes('get_operator_action_feed')) liveOnlyCallDispatched = true;
+            return Promise.resolve({ message: {} });
+        };
+        liveOnlyWs.render_inbox_panel();
+        assert.strictEqual(liveOnlyCallDispatched, false, 'Historical view must not call get_operator_action_feed');
+        const nodes = allNodes(liveOnlyWs.content_panel);
+        const headingNode = nodes.find(n => (n.children || []).includes('Needs My Action is Live-Only'));
+        assert(headingNode, 'Notice heading must indicate live-only');
+
+        // Verify Return to Live button clears as_of
+        const returnBtn = nodes.find(n => (n.children || []).includes('Return to Live'));
+        assert(returnBtn && returnBtn.listeners && returnBtn.listeners.click, 'Return to Live button must exist');
+        returnBtn.listeners.click();
+        assert.ok(!liveOnlyWs.as_of_value, 'Return to Live must clear as_of_value');
+        console.log('✓ FR-QA-014: Needs My Action live-only notice & Return to Live verified');
+
+        // FR-QA-016: Target dispatch in execute_inbox_action
+        const dispatchWs = Object.create(FreskoWorkspace.prototype);
+        let switchedTab = null;
+        let inspectedOutward = null;
+        dispatchWs.switch_tab = (t) => { switchedTab = t; };
+        dispatchWs.inspect_outward = (o) => { inspectedOutward = o; };
+        dispatchWs.execute_inbox_action({ doc_ref: 'OUT-101', document_name: 'OUT-101' }, { action: 'propose_commercial_allocation' });
+        assert.strictEqual(switchedTab, 'outwards', 'Outward allocation proposal must switch to outwards tab');
+        assert.strictEqual(inspectedOutward, 'OUT-101', 'Outward allocation proposal must inspect outward');
+
+        // Money navigation with sessionStorage target
+        sandbox.sessionStorage.removeItem('fresko_money_target');
+        dispatchWs.execute_inbox_action({ doctype: 'Fresko Collection', document_name: 'COLL-01' }, { action: 'verify_collection' });
+        assert.strictEqual(sandbox.frappe._last_route, 'fresko-money', 'Money action must route to fresko-money');
+        const storedTarget = JSON.parse(sandbox.sessionStorage.getItem('fresko_money_target'));
+        assert.strictEqual(storedTarget.doctype, 'Fresko Collection');
+        assert.strictEqual(storedTarget.document_name, 'COLL-01');
+        console.log('✓ FR-QA-016: Target dispatch (outward tab & money routing) verified');
+
+        // FR-QA-002: Idempotent render_sales_panel
+        const salesWs = Object.create(FreskoWorkspace.prototype);
+        salesWs.user_context = { can_prepare: true, roles: ['Fresko Salesperson'] };
+        salesWs.container_data = { sales: [{ name: 'S-1', current_version: 1, projection_mode: 'LIVE' }] };
+        salesWs.content_panel = sandbox.document.createElement('div');
+        salesWs.is_live_view = () => true;
+        salesWs.render_sales_panel();
+        const childCount1 = salesWs.content_panel.children.length;
+        salesWs.render_sales_panel();
+        const childCount2 = salesWs.content_panel.children.length;
+        assert.strictEqual(childCount1, childCount2, 'Repeated render_sales_panel must be idempotent without node accumulation');
+        console.log('✓ FR-QA-002: Idempotent sales panel rendering verified');
+
+        // FR-QA-004: + Prepare Sale disabled in historical mode
+        salesWs.is_live_view = () => false;
+        salesWs.as_of_value = '2026-10-01 12:00:00';
+        salesWs.render_sales_panel();
+        const prepBtn = salesWs.content_panel.children[0].children[0].children[0].children[1];
+        assert.strictEqual(prepBtn.attrs.disabled, 'disabled', 'Prepare Sale button must be disabled in historical mode');
+        console.log('✓ FR-QA-004: Prepare Sale button disabled in historical mode verified');
+
+        // FR-QA-005: Alias queue error handling and Retry button
+        const aliasWs = Object.create(FreskoWorkspace.prototype);
+        aliasWs.content_panel = sandbox.document.createElement('div');
+        const aliasWrap = sandbox.document.createElement('div');
+        aliasWrap.setAttribute('id', 'fresko-alias-queue-wrap');
+        aliasWs.content_panel.children.push(aliasWrap);
+        aliasWs.content_panel.querySelector = (sel) => aliasWrap;
+        aliasWs.is_live_view = () => true;
+        aliasWs.current_load_seq = 1;
+        let aliasRetried = false;
+        sandbox.frappe.call = () => Promise.reject(new Error('Network failure'));
+        aliasWs.load_alias_mappings();
+        await new Promise(r => setImmediate(r));
+        const retryBtn = aliasWrap.children.find(c => c.children && c.children.includes('Retry'));
+        assert(retryBtn, 'Alias queue must render Retry button on error');
+        aliasWs.load_alias_mappings = () => { aliasRetried = true; };
+        retryBtn.listeners.click();
+        assert.strictEqual(aliasRetried, true, 'Retry button click must re-trigger load_alias_mappings');
+        console.log('✓ FR-QA-005: Alias queue error handling and Retry button verified');
     }
 }
 
