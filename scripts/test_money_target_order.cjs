@@ -10,15 +10,20 @@ const target = (name) => ({doctype:'Fresko Collection',document_name:name,action
 const reply = (name) => ({message:{doctype:'Fresko Collection',action:'verify_collection',allowed:false,blocked_reason:'Already approved',record:{name,company:'Company A',status:'APPROVED',version:2}}});
 function harness() {
   const map = new Map(), requests = [], snapshots = [], notices = [];
-  let currentCompany = 'Old Company', currentRoute = ['fresko-money'], routeChange;
+  let currentCompany = 'Old Company', currentRoute = ['fresko-money'], routeChange, pageChange;
+  const document = {};
   const sessionStorage = {getItem:k=>map.has(k)?map.get(k):null,setItem:(k,v)=>map.set(k,String(v)),removeItem:k=>map.delete(k)};
   const frappe = {
     pages:{'fresko-money':{}},user_roles:['Fresko Accounts'],get_route:()=>currentRoute,
+    container:{page:{id:'page-fresko-money'}},
     router:{on:(event,callback)=>{assert.equal(event,'change');routeChange=callback;}},
     msgprint:m=>notices.push(m),call:()=>new Promise((resolve,reject)=>requests.push({resolve,reject})),
   };
-  const $ = () => ({find:()=>({remove:()=>{}})});
-  const ctx=vm.createContext({frappe,$,sessionStorage,__:(v)=>v,Promise,Object,JSON,console});
+  const $ = (node) => ({
+    find:()=>({remove:()=>{}}),
+    on:(event,callback)=>{if(node===document&&event==='page-change')pageChange=callback;},
+  });
+  const ctx=vm.createContext({frappe,$,document,sessionStorage,__:(v)=>v,Promise,Object,JSON,console});
   vm.runInContext(src,ctx,{filename:'fresko_money.js'});
   const ui=vm.runInContext('fresko_money',ctx);
   ui.page={main:{}};
@@ -27,7 +32,7 @@ function harness() {
   ui.get_company=()=>currentCompany;
   ui.company_field={set_value(v){currentCompany=v;return Promise.resolve()}};
   ui.show_action_target=()=>snapshots.push(sessionStorage.getItem('fresko_money_target'));
-  return {ui,frappe,sessionStorage,requests,snapshots,notices,visit(route){currentRoute=[route];return routeChange();}};
+  return {ui,frappe,sessionStorage,requests,snapshots,notices,visit(route){currentRoute=[route];return routeChange();},pageChange:()=>pageChange()};
 }
 async function run() {
   const h=harness();
@@ -49,6 +54,13 @@ async function run() {
   routed.requests[0].resolve(reply('COL-ROUTE'));
   await routeTask;
   assert.deepEqual(routed.snapshots,[null]);
+  const pageChanged=harness();
+  pageChanged.sessionStorage.setItem('fresko_money_target',JSON.stringify(target('COL-PAGE')));
+  const pageTask=pageChanged.pageChange();
+  assert.equal(pageChanged.requests.length,1,'Desk page-change consumes a target on the restored Money Page');
+  pageChanged.requests[0].resolve(reply('COL-PAGE'));
+  await pageTask;
+  assert.deepEqual(pageChanged.snapshots,[null]);
   const denied=harness();denied.frappe.user_roles=['Fresko Accounts','Supplier Viewer'];
   denied.sessionStorage.setItem('fresko_money_target',JSON.stringify(target('DENY')));
   await denied.ui.consume_action_target();

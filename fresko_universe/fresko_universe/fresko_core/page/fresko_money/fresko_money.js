@@ -749,3 +749,14 @@ if (frappe.router && typeof frappe.router.on === 'function') {
 		}
 	});
 }
+
+// Also observe the actual Desk container switch. This is the authoritative
+// signal when a cached Page is restored without a new router change event.
+if (typeof document !== 'undefined') {
+	$(document).on('page-change', function() {
+		var active_page = frappe.container && frappe.container.page;
+		if (active_page && active_page.id === 'page-fresko-money') {
+			return fresko_money.consume_action_target();
+		}
+	});
+}
