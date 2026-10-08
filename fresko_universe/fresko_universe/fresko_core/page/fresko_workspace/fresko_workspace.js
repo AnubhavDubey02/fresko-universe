@@ -35,6 +35,16 @@ function create_dom_element(tag, attrs, children) {
                     Object.assign(el.style, val);
                 } else if (key.indexOf('on') === 0 && typeof val === 'function') {
                     el.addEventListener(key.slice(2).toLowerCase(), val);
+                } else if (key === 'disabled' || typeof val === 'boolean') {
+                    if (val) {
+                        el.setAttribute(key, key === 'disabled' ? 'disabled' : '');
+                        el[key] = true;
+                    } else {
+                        if (typeof el.removeAttribute === 'function') {
+                            el.removeAttribute(key);
+                        }
+                        el[key] = false;
+                    }
                 } else if (val !== null && val !== undefined) {
                     el.setAttribute(key, val);
                 }
@@ -48,7 +58,7 @@ function create_dom_element(tag, attrs, children) {
             if (child === null || child === undefined) continue;
             if (typeof child === 'string' || typeof child === 'number') {
                 el.appendChild(document.createTextNode(String(child)));
-            } else if (child instanceof Node) {
+            } else if ((typeof Node !== 'undefined' && child instanceof Node) || (child && child.tagName)) {
                 el.appendChild(child);
             }
         }
@@ -146,7 +156,7 @@ class FreskoWorkspace {
             roles: []
         };
         this.current_load_seq = 0;
-        this.active_tab = 'overview';
+        this.active_tab = 'inbox';
         this.container_data = null;
         this.selected_sale = null;
         this.selected_outward_name = null;
@@ -191,9 +201,14 @@ class FreskoWorkspace {
                 var val = self.container_field.get_value();
                 if (val !== self.container_name) {
                     self.container_name = val;
-                    self.selected_sale = null;
-                    self.selected_outward_name = null;
-                    self.selected_outward_data = null;
+                    if (!self._preserve_selection) {
+                        self.selected_sale = null;
+                        self.selected_outward_name = null;
+                        self.selected_outward_data = null;
+                    }
+                    if (val && self.active_tab === 'inbox') {
+                        self.active_tab = 'overview';
+                    }
                     self.load_container_data();
                 }
             }
@@ -211,14 +226,22 @@ class FreskoWorkspace {
                 self.selected_outward_name = null;
                 self.selected_outward_data = null;
                 self.update_view_actions();
-                self.load_container_data();
+                if (self.active_tab === 'inbox') {
+                    self.render_inbox_panel();
+                } else {
+                    self.load_container_data();
+                }
             }
         });
         this.as_of_value = this.as_of_field.get_value();
 
         // Primary & Action buttons
         this.page.set_primary_action(__('Refresh'), function() {
-            self.load_container_data();
+            if (self.active_tab === 'inbox') {
+                self.render_inbox_panel();
+            } else {
+                self.load_container_data();
+            }
         }, 'octicon octicon-sync');
 
         if (this.user_context.can_prepare) {
@@ -259,6 +282,7 @@ class FreskoWorkspace {
         // Tabs
         this.tabs_bar = create_dom_element('div', { class: 'fresko-nav-tabs' });
         var tabs = [
+            { id: 'inbox', label: __('Needs My Action') },
             { id: 'overview', label: __('Container Overview') },
             { id: 'sales', label: __('Sales') },
             { id: 'outwards', label: __('Outwards') },
@@ -282,7 +306,11 @@ class FreskoWorkspace {
         this.root_dom.appendChild(this.content_panel);
 
         this.update_header_banner();
-        this.render_empty_state(__('Select a Container to inspect reconciliation projections.'));
+        if (this.active_tab === 'inbox') {
+            this.render_inbox_panel();
+        } else {
+            this.render_empty_state(__('Select a Container to inspect reconciliation projections.'));
+        }
     }
 
     is_live_view() {
@@ -397,6 +425,11 @@ class FreskoWorkspace {
     }
 
     render_active_tab() {
+        if (this.active_tab === 'inbox') {
+            this.render_inbox_panel();
+            return;
+        }
+
         if (!this.container_data && this.active_tab !== 'alias') {
             this.render_empty_state(__('Select a Container to view data.'));
             return;
@@ -414,10 +447,289 @@ class FreskoWorkspace {
         }
     }
 
+    render_inbox_panel() {
+        var self = this;
+        this.content_panel.innerHTML = '';
+        var wrap = create_dom_element('div', { class: 'fresko-inbox-split-view' });
+        var left = create_dom_element('div', { class: 'fresko-inbox-feed-col' });
+        var right = create_dom_element('div', { class: 'fresko-inbox-detail-col' });
+        wrap.appendChild(left);
+        wrap.appendChild(right);
+        this.content_panel.appendChild(wrap);
+
+        if (!this.is_live_view() || this.as_of_value) {
+            left.appendChild(create_dom_element('div', { class: 'fresko-state-container' }, [
+                create_dom_element('div', { class: 'fresko-state-title' }, [__('Needs My Action is Live-Only')]),
+                create_dom_element('div', { class: 'text-muted', style: { marginBottom: '12px' } }, [
+                    __('Pending action items reflect the live operational queue and are not available in historical view.')
+                ]),
+                create_dom_element('button', {
+                    class: 'btn btn-sm btn-primary',
+                    onClick: function() {
+                        self.as_of_value = null;
+                        if (self.as_of_field && typeof self.as_of_field.set_value === 'function') {
+                            self.as_of_field.set_value('');
+                        }
+                        self.render_inbox_panel();
+                    }
+                }, [__('Return to Live')])
+            ]));
+            right.appendChild(create_dom_element('div', { class: 'fresko-detail-placeholder' }, [
+                __('Historical projection active. Switch to live view to inspect and execute pending actions.')
+            ]));
+            return;
+        }
+
+        left.appendChild(create_dom_element('div', { class: 'fresko-state-container' }, [
+            create_dom_element('div', { class: 'text-muted' }, [__('Loading action feed...')])
+        ]));
+        right.appendChild(create_dom_element('div', { class: 'fresko-detail-placeholder' }, [
+            __('Select an action item to review contextual details and evidence.')
+        ]));
+
+        frappe.call({
+            method: 'fresko_universe.fresko_core.services.operator_service.get_operator_action_feed',
+            args: {
+                as_of: null
+            }
+        }).then(function(r) {
+            if (!r || !r.message) {
+                left.innerHTML = '';
+                left.appendChild(create_dom_element('div', { class: 'fresko-state-container' }, [
+                    create_dom_element('div', { class: 'text-muted' }, [__('No actionable items.')])
+                ]));
+                return;
+            }
+            self.render_inbox_feed(r.message, left, right);
+        }).catch(function(err) {
+            left.innerHTML = '';
+            left.appendChild(create_dom_element('div', { class: 'fresko-state-container' }, [
+                create_dom_element('div', { class: 'text-danger' }, [__('Failed to load action feed: ') + (err.message || 'Error')])
+            ]));
+        });
+    }
+
+    render_inbox_feed(feed, leftCol, rightCol) {
+        var self = this;
+        leftCol.innerHTML = '';
+        var sections = feed.sections || [];
+        var total = feed.counts ? feed.counts.total_actionable : 0;
+        if (sections.length === 0 || total === 0) {
+            leftCol.appendChild(create_dom_element('div', { class: 'fresko-state-container' }, [
+                create_dom_element('div', { class: 'fresko-state-title' }, [__('All Clear')]),
+                create_dom_element('div', { class: 'text-muted' }, [__('No pending items require your action right now.')])
+            ]));
+            return;
+        }
+
+        var selected_card_el = null;
+        var first_card_el = null;
+        var first_item = null;
+
+        sections.forEach(function(section) {
+            var sec_dom = create_dom_element('div', { class: 'fresko-action-section' });
+            var heading = create_dom_element('div', { class: 'fresko-action-section-title' }, [
+                section.title,
+                create_dom_element('span', { class: 'badge badge-pill badge-secondary' }, [String(section.count)])
+            ]);
+            sec_dom.appendChild(heading);
+
+            (section.items || []).forEach(function(item) {
+                var card = create_dom_element('div', {
+                    class: 'fresko-action-card',
+                    role: 'button',
+                    tabindex: '0'
+                });
+                var header = create_dom_element('div', { class: 'fresko-action-card-header' }, [
+                    create_dom_element('span', { class: 'fresko-action-card-title' }, [item.human_title]),
+                    render_badge_node(item.state)
+                ]);
+                var sub = create_dom_element('div', { class: 'fresko-action-card-sub' }, [item.subtitle || '—']);
+                var footer = create_dom_element('div', { class: 'fresko-action-card-footer' }, [
+                    create_dom_element('span', { class: 'text-muted' }, [item.state_reason || '—']),
+                    create_dom_element('strong', {}, [item.amount_string || '—'])
+                ]);
+                card.appendChild(header);
+                card.appendChild(sub);
+                card.appendChild(footer);
+
+                var select_card = function() {
+                    if (selected_card_el) {
+                        if (selected_card_el.classList) selected_card_el.classList.remove('selected');
+                        else selected_card_el.className = (selected_card_el.className || '').replace(/\bselected\b/, '').trim();
+                    }
+                    if (card.classList) card.classList.add('selected');
+                    else card.className = ((card.className || '') + ' selected').trim();
+                    selected_card_el = card;
+                    self.render_inbox_detail_pane(item, rightCol);
+                };
+
+                card.addEventListener('click', select_card);
+                card.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter' || e.key === ' ' || e.keyCode === 13 || e.keyCode === 32) {
+                        e.preventDefault();
+                        select_card();
+                    }
+                });
+
+                if (!first_card_el) {
+                    first_card_el = card;
+                    first_item = item;
+                }
+
+                sec_dom.appendChild(card);
+            });
+
+            leftCol.appendChild(sec_dom);
+        });
+
+        // Select first item by default if present
+        if (first_card_el && first_item) {
+            if (first_card_el.classList) first_card_el.classList.add('selected');
+            else first_card_el.className = ((first_card_el.className || '') + ' selected').trim();
+            selected_card_el = first_card_el;
+            self.render_inbox_detail_pane(first_item, rightCol);
+        }
+    }
+
+    render_inbox_detail_pane(item, rightCol) {
+        var self = this;
+        rightCol.innerHTML = '';
+        var panel = create_dom_element('div', { class: 'fresko-detail-panel' });
+
+        var title = create_dom_element('h4', { class: 'fresko-card-title' }, [
+            item.human_title,
+            create_dom_element('code', { style: { fontSize: '12px' } }, [item.doc_ref])
+        ]);
+        panel.appendChild(title);
+
+        var table = create_dom_element('table', { class: 'fresko-table', style: { marginBottom: '16px' } });
+        var rows = [
+            [__('Document Ref'), item.doc_ref],
+            [__('Status'), item.state],
+            [__('Reason'), item.state_reason],
+            [__('Amount'), item.amount_string],
+            [__('Quantity'), item.qty_string],
+            [__('Projection'), item.projection_mode || 'LIVE']
+        ];
+        rows.forEach(function(r) {
+            var tr = create_dom_element('tr', {}, [
+                create_dom_element('td', { style: { fontWeight: '600', width: '35%' } }, [r[0]]),
+                create_dom_element('td', {}, [String(r[1] || '—')])
+            ]);
+            table.appendChild(tr);
+        });
+        panel.appendChild(table);
+
+        // Actions
+        var actions_wrap = create_dom_element('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' } });
+        if (item.actions && item.actions.length > 0) {
+            item.actions.forEach(function(act) {
+                var btn = create_dom_element('button', {
+                    class: 'btn btn-sm ' + (act.allowed ? 'btn-primary' : 'btn-secondary'),
+                    type: 'button',
+                    disabled: !act.allowed
+                }, [act.label]);
+
+                if (!act.allowed && act.blocked_reason) {
+                    btn.title = act.blocked_reason;
+                }
+
+                if (act.allowed) {
+                    btn.addEventListener('click', function() {
+                        self.execute_inbox_action(item, act);
+                    });
+                }
+                actions_wrap.appendChild(btn);
+            });
+        }
+        panel.appendChild(actions_wrap);
+
+        // Evidence Inspector Section
+        var ev_section = create_dom_element('div', { class: 'fresko-extension-box', style: { marginTop: '16px' } });
+        ev_section.appendChild(create_dom_element('strong', {}, [__('Contextual Evidence')]));
+        if (item.evidence_name) {
+            ev_section.appendChild(create_dom_element('div', { style: { marginTop: '8px' } }, [
+                create_dom_element('span', { class: 'text-muted' }, [__('Linked Evidence: ')]),
+                render_evidence_link_node(item.evidence_name)
+            ]));
+        } else {
+            ev_section.appendChild(create_dom_element('div', { class: 'text-muted', style: { marginTop: '8px' } }, [
+                item.evidence_state === 'RESTRICTED' ? __('Evidence Restricted by Access Policy') : __('No Evidence Attached')
+            ]));
+        }
+        panel.appendChild(ev_section);
+
+        rightCol.appendChild(panel);
+    }
+
+    execute_inbox_action(item, action) {
+        var self = this;
+        if (action.action === 'propose_rate' || action.action === 'verify_sale' || action.action === 'approve_sale') {
+            if (item.container) {
+                this.selected_sale = { name: item.document_name, container: item.container };
+                this._preserve_selection = true;
+                if (this.container_field && typeof this.container_field.set_value === 'function') {
+                    this.container_field.set_value(item.container);
+                }
+                this._preserve_selection = false;
+                this.selected_sale = { name: item.document_name, container: item.container };
+                this.switch_tab('sales');
+            }
+        } else if (action.action === 'propose_commercial_allocation') {
+            if (item.container && this.container_field && typeof this.container_field.set_value === 'function') {
+                this.container_field.set_value(item.container);
+            }
+            this.selected_outward_name = item.document_name || item.doc_ref;
+            this.switch_tab('outwards');
+            if (this.selected_outward_name) {
+                this.inspect_outward(this.selected_outward_name);
+            }
+        } else if (action.action === 'verify_sale_outward_allocation' || action.action === 'approve_sale_outward_allocation') {
+            frappe.call({
+                method: 'frappe.client.get',
+                args: {
+                    doctype: 'Fresko Sale Outward Allocation',
+                    name: item.document_name || item.doc_ref
+                }
+            }).then(function(r) {
+                var alloc = r.message;
+                if (!alloc) {
+                    frappe.msgprint(__('Allocation record not found.'));
+                    return;
+                }
+                if (action.action === 'approve_sale_outward_allocation') {
+                    if (alloc.status !== 'PROPOSED') {
+                        frappe.msgprint(__('Allocation status has changed to ') + alloc.status);
+                        self.render_inbox_panel();
+                        return;
+                    }
+                    self.approve_allocation(alloc);
+                } else if (action.action === 'verify_sale_outward_allocation') {
+                    self.verify_allocation(alloc);
+                }
+            }).catch(function(err) {
+                frappe.msgprint(__('Error fetching allocation: ') + (err.message || 'Error'));
+            });
+        } else if (action.action === 'verify_collection' || action.action === 'approve_collection' || action.action === 'verify_payment_allocation' || action.action === 'approve_payment_allocation') {
+            try {
+                sessionStorage.setItem('fresko_money_target', JSON.stringify({
+                    doctype: item.doctype,
+                    document_name: item.document_name,
+                    action: action.action
+                }));
+            } catch(e) {}
+            frappe.set_route('fresko-money');
+        } else if (action.action === 'verify_alias' || action.action === 'approve_alias' || action.action === 'propose_alias') {
+            this.switch_tab('alias');
+        }
+    }
+
     // -----------------------------------------------------
     // Panel 1: Overview
     // -----------------------------------------------------
     render_overview_panel() {
+        this.content_panel.innerHTML = '';
         var data = this.container_data;
         var self = this;
         var container_dom = create_dom_element('div', {});
@@ -528,6 +840,7 @@ class FreskoWorkspace {
     // Panel 2: Sales
     // -----------------------------------------------------
     render_sales_panel() {
+        this.content_panel.innerHTML = '';
         var self = this;
         var sales = (this.container_data && this.container_data.sales) ? this.container_data.sales : [];
         var layout = create_dom_element('div', {});
@@ -535,10 +848,16 @@ class FreskoWorkspace {
         var card = create_dom_element('div', { class: 'fresko-section-card' });
         var head_children = [create_dom_element('span', {}, [__('Commercial Sales (As-Of Reconciled)')])];
         if (this.user_context.can_prepare) {
-            head_children.push(create_dom_element('button', {
-                class: 'fresko-btn-sm fresko-btn-primary',
-                onClick: function() { self.open_sale_preparation_dialog(); }
-            }, [__('+ Prepare Sale')]));
+            var prep_attrs = {
+                class: 'fresko-btn-sm fresko-btn-primary'
+            };
+            if (!this.is_live_view() || this.as_of_value) {
+                prep_attrs.disabled = 'disabled';
+                prep_attrs.title = __('Preparing sales is only permitted in live view');
+            } else {
+                prep_attrs.onClick = function() { self.open_sale_preparation_dialog(); };
+            }
+            head_children.push(create_dom_element('button', prep_attrs, [__('+ Prepare Sale')]));
         }
         var head_row = create_dom_element('div', { class: 'fresko-card-title' }, head_children);
         card.appendChild(head_row);
@@ -655,32 +974,34 @@ class FreskoWorkspace {
         // Workflow Action Buttons (Role-aware client controls; server authorizes strictly)
         var act_bar = create_dom_element('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' } });
         if (this.is_live_view() && sale.projection_mode === 'LIVE' && sale.status === 'DRAFT') {
-            act_bar.appendChild(create_dom_element('button', {
-                class: 'fresko-btn-sm fresko-btn-primary',
-                onClick: function() { self.submit_sale(sale); }
-            }, [__('Submit Sale')]));
+            if (this.user_context.can_prepare) {
+                act_bar.appendChild(create_dom_element('button', {
+                    class: 'fresko-btn-sm fresko-btn-primary',
+                    onClick: function() { self.submit_sale(sale); }
+                }, [__('Submit Sale')]));
+            }
         } else if (this.is_live_view() && sale.projection_mode === 'LIVE' && sale.status === 'REVIEW_PENDING') {
             if (self.user_context.can_verify) {
                 act_bar.appendChild(create_dom_element('button', {
                     class: 'fresko-btn-sm fresko-btn-primary',
                     onClick: function() { self.verify_sale(sale); }
                 }, [__('Verify Sale')]));
+                act_bar.appendChild(create_dom_element('button', {
+                    class: 'fresko-btn-sm fresko-btn-danger',
+                    onClick: function() { self.reject_sale_dialog(sale); }
+                }, [__('Reject Sale')]));
             }
-            act_bar.appendChild(create_dom_element('button', {
-                class: 'fresko-btn-sm fresko-btn-danger',
-                onClick: function() { self.reject_sale_dialog(sale); }
-            }, [__('Reject Sale')]));
         } else if (this.is_live_view() && sale.projection_mode === 'LIVE' && sale.status === 'VERIFIED') {
             if (self.user_context.can_approve) {
                 act_bar.appendChild(create_dom_element('button', {
                     class: 'fresko-btn-sm fresko-btn-primary',
                     onClick: function() { self.approve_sale(sale); }
                 }, [__('Approve Sale')]));
+                act_bar.appendChild(create_dom_element('button', {
+                    class: 'fresko-btn-sm fresko-btn-danger',
+                    onClick: function() { self.reject_sale_dialog(sale); }
+                }, [__('Reject Sale')]));
             }
-            act_bar.appendChild(create_dom_element('button', {
-                class: 'fresko-btn-sm fresko-btn-danger',
-                onClick: function() { self.reject_sale_dialog(sale); }
-            }, [__('Reject Sale')]));
         }
 
         act_bar.appendChild(create_dom_element('button', {
@@ -800,6 +1121,7 @@ class FreskoWorkspace {
     // Panel 3: Outwards
     // -----------------------------------------------------
     render_outwards_panel() {
+        this.content_panel.innerHTML = '';
         var self = this;
         var container_dom = create_dom_element('div', {});
 
@@ -960,6 +1282,7 @@ class FreskoWorkspace {
     // Panel 4: Alias Review Queue
     // -----------------------------------------------------
     render_alias_panel() {
+        this.content_panel.innerHTML = '';
         var self = this;
         var card = create_dom_element('div', { class: 'fresko-section-card' });
         card.appendChild(create_dom_element('div', { class: 'fresko-card-title' }, [
@@ -1035,22 +1358,22 @@ class FreskoWorkspace {
                             class: 'fresko-btn-sm fresko-btn-primary',
                             onClick: function() { self.verify_alias(m); }
                         }, [__('Verify')]));
+                        act_group.appendChild(create_dom_element('button', {
+                            class: 'fresko-btn-sm fresko-btn-danger',
+                            onClick: function() { self.reject_alias_dialog(m); }
+                        }, [__('Reject')]));
                     }
-                    act_group.appendChild(create_dom_element('button', {
-                        class: 'fresko-btn-sm fresko-btn-danger',
-                        onClick: function() { self.reject_alias_dialog(m); }
-                    }, [__('Reject')]));
                 } else if (m.status === 'VERIFIED') {
                     if (self.user_context.can_approve) {
                         act_group.appendChild(create_dom_element('button', {
                             class: 'fresko-btn-sm fresko-btn-primary',
                             onClick: function() { self.approve_alias(m); }
                         }, [__('Approve')]));
+                        act_group.appendChild(create_dom_element('button', {
+                            class: 'fresko-btn-sm fresko-btn-danger',
+                            onClick: function() { self.reject_alias_dialog(m); }
+                        }, [__('Reject')]));
                     }
-                    act_group.appendChild(create_dom_element('button', {
-                        class: 'fresko-btn-sm fresko-btn-danger',
-                        onClick: function() { self.reject_alias_dialog(m); }
-                    }, [__('Reject')]));
                 }
                 act_td.appendChild(act_group);
                 tr.appendChild(act_td);
@@ -1059,6 +1382,18 @@ class FreskoWorkspace {
             table.appendChild(tbody);
             table_wrap.appendChild(table);
             wrap.appendChild(table_wrap);
+        }).catch(function(err) {
+            if (generation !== self.current_load_seq || !self.is_live_view()) return;
+            wrap.innerHTML = '';
+            var err_box = create_dom_element('div', { class: 'text-danger', style: { marginBottom: '8px' } }, [
+                __('Failed to load alias queue: ') + (err.message || 'Error')
+            ]);
+            var retry_btn = create_dom_element('button', {
+                class: 'btn btn-sm btn-secondary',
+                onClick: function() { self.load_alias_mappings(); }
+            }, [__('Retry')]);
+            wrap.appendChild(err_box);
+            wrap.appendChild(retry_btn);
         });
     }
 

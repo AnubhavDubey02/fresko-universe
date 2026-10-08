@@ -333,3 +333,114 @@
         grid-template-columns: 1fr;
     }
 }
+
+/* Linear-style Action Inbox & Split View */
+.fresko-inbox-split-view {
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+    margin-top: 12px;
+}
+
+.fresko-inbox-feed-col {
+    flex: 3;
+    min-width: 0;
+}
+
+.fresko-inbox-detail-col {
+    flex: 2;
+    min-width: 0;
+    position: sticky;
+    top: 20px;
+}
+
+.fresko-action-section {
+    margin-bottom: 24px;
+}
+
+.fresko-action-section-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-color, #1f272e);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.fresko-action-card {
+    background: #ffffff;
+    border: 1px solid var(--border-color, #d1d8dd);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.fresko-action-card:hover {
+    border-color: #16a34a;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.fresko-action-card.selected {
+    border-color: #16a34a;
+    background: #f0fdf4;
+}
+
+.fresko-action-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 4px;
+}
+
+.fresko-action-card-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-color, #1f272e);
+}
+
+.fresko-action-card-sub {
+    font-size: 12px;
+    color: var(--text-muted, #6c7680);
+    margin-bottom: 8px;
+}
+
+.fresko-action-card-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+}
+
+.fresko-detail-panel {
+    background: #ffffff;
+    border: 1px solid var(--border-color, #d1d8dd);
+    border-radius: 8px;
+    padding: 20px;
+}
+
+.fresko-detail-placeholder {
+    background: #f8fafc;
+    border: 1px dashed var(--border-color, #d1d8dd);
+    border-radius: 8px;
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--text-muted, #6c7680);
+    font-size: 14px;
+}
+
+@media (max-width: 768px) {
+    .fresko-inbox-split-view {
+        flex-direction: column;
+    }
+    .fresko-inbox-feed-col,
+    .fresko-inbox-detail-col {
+        width: 100%;
+        position: static;
+    }
+}
+

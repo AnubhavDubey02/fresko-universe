@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 60" width="240" height="60" fill="none">
+  <!-- Fresko Produce Leaf Icon -->
+  <g transform="translate(10, 10)">
+    <rect width="40" height="40" rx="10" fill="#16a34a"/>
+    <path d="M20 10C20 10 13 18 13 24C13 28 16 31 20 31C24 31 27 28 27 24C27 18 20 10 20 10Z" fill="#ffffff"/>
+    <path d="M20 15V29" stroke="#16a34a" stroke-width="2" stroke-linecap="round"/>
+  </g>
+  <!-- Fresko Brand Typography -->
+  <text x="62" y="36" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="24" font-weight="700" fill="#0f172a" letter-spacing="-0.5">FRESKO</text>
+  <text x="63" y="48" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="9" font-weight="600" fill="#16a34a" letter-spacing="1.5">PRODUCE OS</text>
+</svg>
