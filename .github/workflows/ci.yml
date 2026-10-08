@@ -51,6 +51,7 @@ jobs:
         run: |
           node scripts/test_workspace_ui.cjs
           node scripts/test_money_ui.cjs
+          node scripts/test_money_target_order.cjs
       - name: Validate Phase 2 readiness fixtures
         run: |
           python3 scripts/validate_phase2_readiness_fixtures.py

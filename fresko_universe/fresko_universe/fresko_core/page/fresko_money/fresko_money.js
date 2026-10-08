@@ -84,6 +84,8 @@ var fresko_money = {
 				if (sequence !== me.target_sequence || me.get_company() !== record.company ||
 					sessionStorage.getItem('fresko_money_target') !== raw || me.is_supplier() ||
 					(typeof frappe.get_route === 'function' && frappe.get_route()[0] !== 'fresko-money')) return;
+				// Clear before exposing the focused target (browser acceptance gate).
+				clear_handled();
 				me.show_action_target(result);
 			});
 		}).catch(function() {
