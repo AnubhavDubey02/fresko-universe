@@ -544,6 +544,7 @@ class BrowserAcceptance(unittest.TestCase):
                                  "Denied Money page must expose no finance rows")
                 for method, args in [
                     ("fresko_universe.money.get_unallocated_collections", {"company": self.fixture["company"]}),
+                    ("fresko_universe.fresko_core.services.operator_service.get_money_action_target", {"doctype": "Fresko Collection", "document_name": "SYNTHETIC-DENIED-TARGET", "action": "verify_collection"}),
                     ("fresko_universe.commercial.get_container_reconciliation", {"container": self.fixture["scenarios"][0]["container"]})]:
                     response = session.context.request.get(self.base + "/api/method/" + method, params=args)
                     self.assertEqual(response.status, 403)
@@ -569,6 +570,45 @@ class BrowserAcceptance(unittest.TestCase):
                     self.assertEqual(self.sale_truth(sales, known_sale), before,
                                      "Unauthorized verifier attempt must leave Sale truth unchanged")
                     sales.close()
+
+    def test_saved_state_exact_money_targets(self):
+        """FR-QA-016: cached native Page focuses the exact authorized record.
+
+        Saved records are already approved: changed actions must be blocked and
+        navigation must not add a decision or perform a financial mutation.
+        """
+        progress = json.loads(self.progress_path.read_text()) if self.progress_path.exists() else {}
+        saved = progress.get("1280", {})
+        self.assertTrue(saved.get("collection") and saved.get("payment"), "Required desktop truth must exist")
+        money = self.session("verifier")
+        try:
+            self.money_page(money)
+            for doctype, name, action in (
+                ("Fresko Collection", saved["collection"], "verify_collection"),
+                ("Fresko Payment Allocation", saved["payment"], "approve_payment_allocation"),
+            ):
+                before = money.rpc("frappe.client.get", {"doctype": doctype, "name": name})
+                self.assertTrue(before.get("ok"))
+                money.page.evaluate("() => frappe.set_route('fresko-workspace')")
+                expect(money.page.locator(".fresko-workspace-container")).to_be_visible(timeout=30000)
+                target = {"doctype": doctype, "document_name": name, "action": action}
+                money.page.evaluate("target => sessionStorage.setItem('fresko_money_target', JSON.stringify(target))", target)
+                result = self.response_action(money, "operator_service.get_money_action_target",
+                    lambda: money.page.evaluate("() => frappe.set_route('fresko-money')"))
+                self.assertEqual(result["record"]["name"], name)
+                self.assertFalse(result["allowed"], "Approved record cannot be reverified/reapproved")
+                panel = money.page.locator("#fm-target-record")
+                expect(panel).to_be_visible(timeout=30000)
+                expect(panel).to_have_attribute("data-document-name", name)
+                expect(panel).to_have_attribute("data-doctype", doctype)
+                expect(panel).to_be_focused()
+                self.assertEqual(panel.locator("button").count(), 0)
+                self.assertIsNone(money.page.evaluate("() => sessionStorage.getItem('fresko_money_target')"))
+                after = money.rpc("frappe.client.get", {"doctype": doctype, "name": name})
+                for field in ("version", "status", "decision_history", "source_payload"):
+                    self.assertEqual(after["message"].get(field), before["message"].get(field), field)
+        finally:
+            money.close()
 
     def test_saved_state_historical_receivables_and_exceptions(self):
         """Read existing approved synthetic truth without creating financial rows."""

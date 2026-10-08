@@ -291,143 +291,60 @@ def scope_evidence(evidence_name: str | None) -> dict:
 
 
 def compute_outward_capacity(outward_name: str, active_company: str) -> dict:
-    """Compute canonical remaining allocatable quantity for a posted Outward.
+    """Adapt authorized canonical physical totals; never count viewer-filtered rows."""
+    from fresko_universe.fresko_core.services import commercial_service
 
-    Governed by PR #19 / FR-QA-012 capacity invariants:
-    1. Only unreversed 'Posted' physical OUTWARD movements have capacity.
-    2. Physical quantity is derived from Outward Line items.
-    3. Allocations with state='APPROVED' (and not reversed) consume physical capacity.
-    4. Reversed allocations (state='REVERSED' or reversed_by set) do NOT consume capacity.
-    5. Inaccessible linked Sales consume capacity without leaking their identity.
-    6. If physical quantity is missing or unparseable, returns capacity_state='UNKNOWN'.
-    7. Fully allocated outwards (remaining <= 0) have capacity_state='EXHAUSTED'.
-    8. Unallocated or partially allocated outwards have capacity_state='AVAILABLE'.
+    view = commercial_service.get_outward_capacity(outward_name, active_company)
+    unknown = {"capacity_state": "UNKNOWN", "remaining_qty": None,
+               "total_qty": None, "allocated_qty": None, "uom": None,
+               "is_allocatable": False, "reason": "Authoritative physical capacity is UNKNOWN"}
+    if view["capacity_state"] == "UNKNOWN":
+        return unknown
+    if not view["physical_active"]:
+        return {**unknown, "capacity_state": "REVERSED", "reason": "Outward is not an active physical movement"}
+    if view["capacity_state"] == "CONFLICT":
+        return {**unknown, "capacity_state": "CONFLICT", "reason": "Physical allocation exceeds a line quantity"}
+    groups = view["totals_by_uom"]
+    if len(groups) != 1:
+        return unknown  # Never add incompatible units to one card quantity.
+    uom, values = next(iter(groups.items()))
+    total = Decimal(values["physical_qty"])
+    allocated = Decimal(values["commercially_allocated_qty"])
+    remaining = Decimal(values["remaining_qty"])
+    state = "EXHAUSTED" if remaining <= 0 else "PARTIAL" if allocated > 0 else "UNALLOCATED"
+    return {"capacity_state": state, "remaining_qty": remaining,
+            "total_qty": total, "allocated_qty": allocated, "uom": uom,
+            "is_allocatable": remaining > 0,
+            "reason": "Outward fully allocated" if remaining <= 0 else f"{remaining} {uom} remaining of {total}"}
+
+
+@frappe.whitelist()
+def get_money_action_target(doctype: str, document_name: str, action: str) -> dict:
+    """Minimal current target projection; read authorization precedes all output.
+
+    Navigation never executes a mutation. Existing Money access checks retain
+    company/evidence/link boundaries; eligibility is guidance, not authorization.
     """
-    reversals = frappe.get_list(
-        "Fresko Outward",
-        filters={
-            "reverses_outward": outward_name,
-            "status": "Posted",
-            "movement_type": "REVERSAL",
-        },
-        fields=["name"],
-    )
-    if reversals:
-        return {
-            "capacity_state": "REVERSED",
-            "remaining_qty": Decimal("0"),
-            "total_qty": Decimal("0"),
-            "allocated_qty": Decimal("0"),
-            "uom": None,
-            "is_allocatable": False,
-            "reason": "Outward physical movement was reversed",
-        }
-
-    lines = frappe.get_list(
-        "Fresko Outward Line",
-        filters={"parent": outward_name},
-        fields=["line_key", "qty", "uom"],
-    )
-    if not lines and hasattr(frappe, "get_doc"):
-        try:
-            odoc = frappe.get_doc("Fresko Outward", outward_name)
-            lines = [
-                {"line_key": l.line_key, "qty": l.qty, "uom": l.uom}
-                for l in getattr(odoc, "lines", [])
-            ]
-        except Exception:
-            lines = []
-
-    if not lines:
-        return {
-            "capacity_state": "UNKNOWN",
-            "remaining_qty": None,
-            "total_qty": None,
-            "allocated_qty": None,
-            "uom": None,
-            "is_allocatable": False,
-            "reason": "No physical lines recorded on Outward",
-        }
-
-    total_qty = Decimal("0")
-    primary_uom = None
-
-    for line in lines:
-        l_qty = line.get("qty")
-        if l_qty is None:
-            return {
-                "capacity_state": "UNKNOWN",
-                "remaining_qty": None,
-                "total_qty": None,
-                "allocated_qty": None,
-                "uom": line.get("uom"),
-                "is_allocatable": False,
-                "reason": "Physical line quantity is UNKNOWN",
-            }
-        try:
-            val = Decimal(str(l_qty))
-        except Exception:
-            return {
-                "capacity_state": "UNKNOWN",
-                "remaining_qty": None,
-                "total_qty": None,
-                "allocated_qty": None,
-                "uom": line.get("uom"),
-                "is_allocatable": False,
-                "reason": "Invalid physical line quantity",
-            }
-        total_qty += val
-        if not primary_uom:
-            primary_uom = line.get("uom")
-
-    allocs = frappe.get_list(
-        "Fresko Sale Outward Allocation",
-        filters={"outward": outward_name, "company": active_company},
-        fields=["name", "sale", "outward_line_key", "qty", "uom", "state", "reversed_by"],
-    )
-
-    total_allocated = Decimal("0")
-    for al in allocs:
-        state = al.get("state")
-        reversed_by = al.get("reversed_by")
-        if state == "APPROVED" and not reversed_by:
-            try:
-                al_qty = Decimal(str(al.get("qty") or "0"))
-                total_allocated += al_qty
-            except Exception:
-                pass
-
-    remaining_qty = total_qty - total_allocated
-    if remaining_qty <= Decimal("0"):
-        return {
-            "capacity_state": "EXHAUSTED",
-            "remaining_qty": Decimal("0"),
-            "total_qty": total_qty,
-            "allocated_qty": total_allocated,
-            "uom": primary_uom,
-            "is_allocatable": False,
-            "reason": "Outward fully allocated",
-        }
-    elif total_allocated > Decimal("0"):
-        return {
-            "capacity_state": "PARTIAL",
-            "remaining_qty": remaining_qty,
-            "total_qty": total_qty,
-            "allocated_qty": total_allocated,
-            "uom": primary_uom,
-            "is_allocatable": True,
-            "reason": f"Partially allocated ({total_allocated} {primary_uom or ''} allocated of {total_qty} {primary_uom or ''})".strip(),
-        }
-    else:
-        return {
-            "capacity_state": "UNALLOCATED",
-            "remaining_qty": remaining_qty,
-            "total_qty": total_qty,
-            "allocated_qty": Decimal("0"),
-            "uom": primary_uom,
-            "is_allocatable": True,
-            "reason": f"Unallocated physical movement ({remaining_qty} {primary_uom or ''} available)".strip(),
-        }
+    actor, roles = _deny_supplier_and_unauthorized()
+    targets = {
+        "verify_collection": "Fresko Collection",
+        "approve_collection": "Fresko Collection",
+        "verify_payment_allocation": "Fresko Payment Allocation",
+        "approve_payment_allocation": "Fresko Payment Allocation",
+    }
+    if not isinstance(action, str) or not isinstance(doctype, str) or targets.get(action) != doctype or not isinstance(document_name, str) or not document_name.strip() or len(document_name) > 140:
+        frappe.throw(_("Invalid Money navigation target"), frappe.ValidationError)
+    if not roles & {"Fresko Accounts", "Fresko Approver"} or not frappe.has_permission(doctype, doc=document_name, ptype="read"):
+        frappe.throw(_("Money target is unavailable"), frappe.PermissionError)
+    from fresko_universe.fresko_core.services import money_service
+    doc = money_service._load(doctype, document_name)
+    _validate_company(doc.company)
+    allowed, reason = check_action_eligibility(action, doc, actor, roles)
+    if not isinstance(doc.version, int) or isinstance(doc.version, bool) or doc.version < 1:
+        allowed, reason = False, "Current version is unavailable"
+    fields = ("name", "company", "status", "version", "prepared_by", "verified_by", "amount", "amount_state", "currency")
+    return {"doctype": doctype, "action": action, "allowed": allowed,
+            "blocked_reason": reason, "record": {key: doc.get(key) for key in fields}}
 
 
 @frappe.whitelist()
@@ -762,6 +679,11 @@ def get_operator_action_feed(
             # FR-QA-019: Suppress confidential linked Sale identifier if unauthorized
             can_read_sale = frappe.has_permission("Fresko Commercial Sale", doc=al.sale, ptype="read")
             sale_label = al.sale if can_read_sale else "[Restricted Sale]"
+            can_read_outward = bool(al.outward) and frappe.has_permission("Fresko Outward", doc=al.outward, ptype="read")
+            outward_label = al.outward if can_read_outward else "[Restricted Outward]"
+            if not can_read_sale or not can_read_outward:
+                can_v = can_a = False
+                v_reason = a_reason = "Required linked record is restricted"
 
             actions = []
             if "Fresko Accounts" in user_roles:
@@ -773,7 +695,7 @@ def get_operator_action_feed(
                 "kind": "commercial_allocation_review",
                 "doc_ref": al.name,
                 "document_name": al.name,
-                "human_title": f"Allocation: {sale_label} ➔ {al.outward}",
+                "human_title": f"Allocation: {sale_label} ➔ {outward_label}",
                 "subtitle": f"Prepared by {al.prepared_by or 'UNKNOWN'}" + (f" • Verified by {al.verified_by}" if al.verified_by else " • Awaiting verification"),
                 "amount_string": "—",
                 "qty_string": f"{al.qty or '—'} {al.uom or ''}".strip(),
@@ -781,7 +703,7 @@ def get_operator_action_feed(
                 "state_reason": "Proposed commercial allocation awaiting verification/approval",
                 "container": None,
                 "sale": sale_label,
-                "outward": al.outward,
+                "outward": al.outward if can_read_outward else None,
                 "version": al.version,
                 "current_version": al.version,
                 "evidence_state": ev_info["evidence_state"],
@@ -825,6 +747,8 @@ def get_operator_action_feed(
 
             cap = compute_outward_capacity(o.name, active_company)
             if not cap["is_allocatable"]:
+                if cap["capacity_state"] in {"UNKNOWN", "CONFLICT"}:
+                    truncated = True  # Cannot claim All Clear with unprovable capacity.
                 continue
 
             ev_info = scope_evidence(o.get("source_evidence"))

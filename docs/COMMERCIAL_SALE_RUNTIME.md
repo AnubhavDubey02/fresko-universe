@@ -4,6 +4,29 @@
 **Effective:** 2026-10-03
 **Scope:** Server-side commercial event ledger, reusable alias mapping, and physical Outward allocation.
 
+## 2026-10-09 physical-capacity read correction (FR-QA-001/012)
+
+Physical capacity is independent of commercial-detail visibility. After positive
+Company, Container and Outward authorization and the existing parent locks,
+`commercial_service._physical_capacity` reads every allocation in that exact
+scope. Effective approved, non-reversed allocations consume their physical
+line/UOM quantity even when the reader cannot see the Sale or Allocation.
+Historical reads use decision snapshots and physical reversal cutoffs; missing
+history for an already existing allocation is UNKNOWN, not zero consumption.
+
+Container physical allocated/unallocated totals and direct Outward remaining
+quantities use that shared authority. Commercial Sale totals remain scoped to
+readable Sales. Allocation/Sale identities remain permission-filtered in detail
+lists; physical exhaustion alone cannot confirm unreadable buyer/rate details.
+Invalid quantities, line/UOM mismatches and missing totals fail closed. A corrupt
+overdraw is a conflict, never positive availability. These reads do not edit
+posted movements, financial records or decision history.
+
+`get_outward_capacity` is an internal, non-whitelisted authorized adapter for the
+live operator feed. SQL is confined to the commercial domain service; operator
+list queries retain their existing permission guards. No schema change occurs.
+Real cross-user permissions and concurrent writers require pinned Bench proof.
+
 ## 1. DocTypes, Numerical Integrity, and Immutability
 
 Four DocTypes represent the commercial boundary:

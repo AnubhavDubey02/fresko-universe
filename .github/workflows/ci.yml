@@ -38,6 +38,7 @@ jobs:
           python3 -m unittest tests.test_smoke_unit -v
           python3 -m unittest tests.test_commercial_contract -v
           python3 -m unittest tests.test_commercial_version_contract -v
+          python3 -m unittest tests.test_physical_capacity_contract -v
           python3 -m unittest tests.test_money_contract -v
           python3 -m unittest tests.test_pilot_safety_contract -v
           python3 -m unittest tests.test_quantity_assertion_static tests.test_integrity_static -v

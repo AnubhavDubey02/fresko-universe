@@ -1175,3 +1175,50 @@ Verification Evidence:
 - Exact-Head CI Run 37794614508 (commit 2325f1f):
   - Smoke unit (Gate 1 / D4 / constants): PASS in 12s
   - Bench install + migrate + run-tests (pinned v15): PASS in 25m23s (275/275 pinned bench tests, migrations, desktop/mobile 390px/360px browser acceptance, Supplier/Mixed denial tests, and synthetic recovery proofs 100% green).
+
+## 2026-10-09 isolated PR 19 QA stock, Money target and privacy correction
+
+Branch: `codex/pr19-qa-stock-money-privacy`.
+Base: `e0a918f7271a508c4a104835f986655ce6528180` from Draft PR #19,
+`flash/operator-ux-p0`. No changes were pushed to Flash's branch, merged or deployed.
+
+Read the connected Drive Independent QA Report, Complete QA Evidence Pack and
+Master QA Ledger (Issue Register, Release Gates and Agent Handoffs), in order.
+FR-QA-001/012 now share an authorized Company/Container/Outward capacity projection
+in the commercial domain service. All effective approved allocations consume their
+physical line/UOM quantity, irrespective of Sale or Allocation detail permissions.
+Container physical totals and direct Outward remaining quantities use that
+projection; the operator adapter cannot turn permission-filtered absence into free
+stock. Historical snapshots/reversals are preserved. Missing historical decisions
+for an existing allocation, invalid consumption and mixed-unit cards fail closed.
+UNKNOWN capacity prevents an All Clear claim. No persisted schema or posted truth
+is edited.
+
+FR-QA-016 now has a typed, authorized receiving-side Money target read. Initial
+and cached Page visits focus the exact current record, preserve current versions
+and maker/verifier/approver rules, and never execute a mutation on navigation.
+Changed, denied and stale targets fail safely; newer handoffs survive older
+responses. The panel offers existing workflow controls and a record/evidence link.
+
+FR-QA-019 allocation cards omit unreadable linked Outward identifiers and block
+link-dependent actions. Reconciliation detail lists also apply Frappe record read
+permissions. Canonical Allocation access already checks its linked Sale and
+Outward; the synthetic split is not claimed reachable in native Frappe.
+
+Executed locally: 299 offline application/contract tests PASS; 49 Linux script
+tests PASS; Workspace/Money Node suites PASS, including receiving-side focus,
+cached Page, typed input, current token, changed state, denied targets, Supplier
+precedence, stale context and superseding handoffs. Protected-write guard,
+shadow fixture, schema snapshot against the exact base (24 DocTypes) and six-proof
+migration registry validation PASS. Python compilation and git diff whitespace
+checks PASS. New stock/privacy assertions reproduce failures against original
+base source executed only in memory and pass against the correction.
+
+Added, NOT EXECUTED HERE: two pinned Bench commercial permission/capacity tests,
+one native Money target permission/SOD test, one cached native Desk target browser
+test, and the new endpoint in Supplier/mixed HTTP negatives. The existing actual
+concurrent-writer tests remain in place. No local running Bench site was found;
+no new Bench, native browser, concurrency, hosted staging, device or exact-head CI
+pass is claimed. RG-02/RG-06 and the relevant security gates require corrected-head
+Bench/browser evidence and independent review before closure. Prior reports are
+retained unchanged. No new milestone was started.
