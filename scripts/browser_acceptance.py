@@ -591,6 +591,9 @@ class BrowserAcceptance(unittest.TestCase):
                 self.assertTrue(before.get("ok"))
                 money.page.evaluate("() => frappe.set_route('fresko-workspace')")
                 expect(money.page.locator(".fresko-workspace-container")).to_be_visible(timeout=30000)
+                money.page.wait_for_function(
+                    "() => frappe.get_route()[0] === 'fresko-workspace'", timeout=30000
+                )
                 target = {"doctype": doctype, "document_name": name, "action": action}
                 money.page.evaluate("target => sessionStorage.setItem('fresko_money_target', JSON.stringify(target))", target)
                 result = self.response_action(money, "operator_service.get_money_action_target",
