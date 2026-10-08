@@ -1172,3 +1172,6 @@ Verification Evidence:
 - 49/49 script tests pass under WSL Linux.
 - Node VM UI tests pass: `test_workspace_ui.cjs` (14 assertions) and `test_money_ui.cjs`.
 - Schema checks pass: `check_protected_doctype_writes.py`, `validate_real_data_shadow_fixture.py`, `check_schema_snapshot.py` (24 DocTypes, 6 proofs).
+- Exact-Head CI Run 37794614508 (commit 2325f1f):
+  - Smoke unit (Gate 1 / D4 / constants): PASS in 12s
+  - Bench install + migrate + run-tests (pinned v15): PASS in 25m23s (275/275 pinned bench tests, migrations, desktop/mobile 390px/360px browser acceptance, Supplier/Mixed denial tests, and synthetic recovery proofs 100% green).
