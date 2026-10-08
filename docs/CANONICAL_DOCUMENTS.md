@@ -18,6 +18,7 @@ conflicting proposal without rewriting the historical record.
 | Subject | Canonical document | Rule |
 |---|---|---|
 | Real-data shadow-replay gate | `docs/REAL_DATA_SHADOW_REPLAY_CONTRACT.md` plus `fresko_universe/fresko_universe/fixtures/real_data_shadow/manifest.json` | Sanitized source-hash/range-bound acceptance truth for the reviewed Plum/Grapes/CA cut-offs. It is a deterministic fixture gate, not runtime, bank, accounting, or CA proof. |
+| Operator UX and Fresko Clear shell | `docs/OPERATOR_UX_GUIDE.md` | Authoritative architecture for Fresko Clear shell, extend_bootinfo capabilities, Supplier-first denial, Needs My Action feeds, and segregation of duties. |
 | Money runtime, receipt review and noncash receivables | `docs/MONEY_RECONCILIATION_RUNTIME.md` | Collections preserve received assertions separately from bank clearance; approved cash declarations need no bank deposit. Explicit reviewed applications alone discharge Sale debt. |
 | Native operations workspace and read tools | `docs/OPERATIONS_WORKSPACE.md` and `fresko_universe/fresko_universe/ask_fresko.py` | Native Frappe Pages; deterministic allowlisted read tools preserve service permissions. Live LLM/OCR/WhatsApp remain deferred. |
 | Commercial Sale runtime and alias architecture | `docs/COMMERCIAL_SALE_RUNTIME.md` | Authoritative documentation for the implemented Commercial Sale ledger, multi-lot lines, approved party aliases, many-to-many physical Outward allocations, and segregation-of-duties role controls. |

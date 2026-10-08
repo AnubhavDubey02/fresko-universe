@@ -1077,3 +1077,36 @@ Root cause:
   via `expect_response`, and poll `context.request.get` for `frappe.auth.get_logged_user`
   with bounded retries until the session identity matches the expected user.
 - Offline unit tests (228/228) and script suites (49/49) remain fully green.
+
+## 2026-10-08 PR 19 Fresko Clear Operator UX P0 implementation checkpoint
+
+Branch `flash/operator-ux-p0` created from merged `main` at `c01707708c69d880a829ebf670a2cfc8e76edb42`.
+PR #18 is confirmed merged; post-merge CI run 37420490326 passed 100% green.
+
+PR #19 P0 Implementation scope and contract reconciliation:
+1. Architecture & Capabilities:
+   - Implemented single deliberate `extend_bootinfo` hook in `fresko_universe/boot.py` exporting `bootinfo.fresko = {persona, capabilities, default_route, is_operator}`.
+   - Enforced Supplier-first denial precedence: any role containing "supplier" immediately returns `persona: "supplier_denied"`, empty capabilities, and `is_operator: False`.
+   - Preserved System Manager standard technical Frappe desk (`is_operator: False`, `default_route: "Workspaces"`).
+   - Applied command-specific operational capabilities across Salesperson, Accounts, and Approver roles, with Approver > Accounts > Salesperson landing precedence and a safe non-operator fallback.
+   - Guaranteed zero financial balances or counts in boot data.
+2. Shell Branding & Desk Chrome Suppression:
+   - Added SVG brand assets (`fresko-logo.svg`, `fresko-favicon.svg`).
+   - Implemented scoped `fresko_shell.css` suppressing technical Desk chrome (`.search-bar`, `.dropdown-help`, `.dropdown-notifications`, `.layout-side-section`, `.page-breadcrumbs`) strictly when `body.fresko-operator-shell` is present. System Manager retains standard Frappe chrome.
+   - Implemented `fresko_login.css` with clean produce-trade styling.
+   - Implemented `fresko_shell.js` with reversible user-scoped router guard (`fresko_initial_routed_<user>`), dynamic soft-keyboard collision avoidance, and body class tagging.
+3. Needs My Action Feed Service (`operator_service.py`):
+   - Created `fresko_universe.fresko_core.services.operator_service` strictly using `frappe.get_list` and authorized read getters.
+   - Enforced AST-guarded prohibition on `frappe.db.sql`, `frappe.get_all`, and `ignore_permissions=True`.
+   - Enforced Supplier-first denial, permitted company validation, and individual record read permission checks.
+   - Scoped linked Evidence authorization: restricted evidence references are omitted (`evidence_state: "RESTRICTED"`).
+   - Rebuilt action feed lifecycle states (`REVIEW_PENDING` collections, derived `eligible_available_amount`, non-cash bank clearance, actual `Open`/`In Progress` exceptions, superseding sale revision rate proposals, approved-but-unpriced sales).
+   - Pure segregation-of-duties `check_action_eligibility` enforcing maker-verifier-approver isolation and read-only historical projections.
+4. UI & Workspace Integration:
+   - Integrated "Needs My Action" tab and Linear-style split pane (60% action feed left, 40% details & evidence inspector right) into `fresko_workspace.js` and `fresko_workspace.css`.
+   - Mobile touch targets meet the >= 44px (>= 48px primary) floor, with full horizontal overflow containment.
+5. Verification Evidence:
+   - 260/260 offline smoke and contract unit tests pass (including 32/32 tests in `tests.test_operator_contract` covering boot capabilities, AST bans, segregation of duties, positive company scoping, strictly live-only enforcement, and schema field mapping).
+   - 49/49 script tests pass under WSL Linux.
+   - Node VM offline UI test suites pass (`test_workspace_ui.cjs`, `test_money_ui.cjs`).
+   - Protected DocType write guard, schema migration proofs, and schema snapshot checks pass.

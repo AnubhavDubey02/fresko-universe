@@ -63,6 +63,7 @@ const sandbox = {
                 attrs: {},
                 appendChild: (child) => { el.children.push(child); return child; },
                 setAttribute: (k, v) => { el.attrs[k] = v; },
+                removeAttribute: (k) => { delete el.attrs[k]; },
                 getAttribute: (k) => el.attrs[k],
                 listeners: {},
                 addEventListener: (name, callback) => { el.listeners[name] = callback; }
@@ -412,6 +413,47 @@ async function runProjectionRegressionTests() {
     await new Promise(resolve => setImmediate(resolve));
     assert.strictEqual(ws.container_data, null, 'A late response must not repopulate a container after its filter is cleared');
     console.log('✓ Historical queue suppression and stale selection/token rebinding verified');
+
+    // 9. Test Operator Action Inbox Feed & Detail Pane
+    {
+        const inboxWs = Object.create(FreskoWorkspace.prototype);
+        assert.strictEqual(typeof inboxWs.render_inbox_panel, 'function');
+        assert.strictEqual(typeof inboxWs.render_inbox_feed, 'function');
+        assert.strictEqual(typeof inboxWs.render_inbox_detail_pane, 'function');
+
+        const leftCol = sandbox.document.createElement('div');
+        const rightCol = sandbox.document.createElement('div');
+
+        // Test empty feed
+        inboxWs.render_inbox_feed({ sections: [], counts: { total_actionable: 0 } }, leftCol, rightCol);
+        assert(leftCol.children.length > 0, 'Empty feed should render All Clear message');
+
+        // Test populated feed with action item and blocked chips
+        const sampleItem = {
+            kind: 'unpriced_sale',
+            doc_ref: 'FSALE-001',
+            human_title: 'Unpriced Sale: Om Trading',
+            subtitle: 'Container FCON-001',
+            state: 'DRAFT',
+            state_reason: 'Awaiting rate proposal',
+            amount_string: 'PENDING / UNKNOWN',
+            qty_string: '100 boxes',
+            actions: [
+                { action: 'propose_rate', label: 'Propose Rate', allowed: false, blocked_reason: 'Awaiting preparing salesperson' }
+            ],
+            evidence_state: 'RESTRICTED'
+        };
+        const feed = {
+            counts: { total_actionable: 1 },
+            sections: [
+                { title: 'Unpriced Sales', count: 1, items: [sampleItem] }
+            ]
+        };
+        inboxWs.render_inbox_feed(feed, leftCol, rightCol);
+        assert(leftCol.children.length > 0, 'Feed should render sections');
+        assert(rightCol.children.length > 0, 'Detail pane should render selected item');
+        console.log('✓ Operator Action Inbox feed, split view, and detail pane verified');
+    }
 }
 
 console.log('All offline VM UI logic tests passed. Full browser verification pending root bench execution.');

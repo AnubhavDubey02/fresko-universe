@@ -6,9 +6,16 @@ app_email = "dev@fresko.local"
 app_license = "mit"
 app_version = "0.0.1"
 
+app_logo_url = "/assets/fresko_universe/images/fresko-logo.svg"
+
 required_apps = ["frappe", "erpnext"]
 
 auth_hooks = ["fresko_universe.permissions.deny_supplier_http_access"]
+extend_bootinfo = "fresko_universe.boot.extend_bootinfo"
+
+app_include_js = "/assets/fresko_universe/js/fresko_shell.js"
+app_include_css = "/assets/fresko_universe/css/fresko_shell.css"
+web_include_css = "/assets/fresko_universe/css/fresko_login.css"
 
 after_install = "fresko_universe.install.after_install"
 after_migrate = "fresko_universe.install.after_migrate"
