@@ -583,6 +583,27 @@ class BrowserAcceptance(unittest.TestCase):
         money = self.session("verifier")
         try:
             self.money_page(money)
+            money.page.evaluate("""() => {
+                const diagnostic = window.__freskoMoneyTargetDiagnostic = {
+                    consume_calls: 0, page_show_calls: 0, router_change_calls: 0
+                };
+                const consume = fresko_money.consume_action_target;
+                fresko_money.consume_action_target = function() {
+                    diagnostic.consume_calls += 1;
+                    return consume.apply(this, arguments);
+                };
+                const page = frappe.pages['fresko-money'];
+                const page_show = page && page.on_page_show;
+                if (page_show) page.on_page_show = function() {
+                    diagnostic.page_show_calls += 1;
+                    return page_show.apply(this, arguments);
+                };
+                const trigger = frappe.router.trigger;
+                if (trigger) frappe.router.trigger = function(name) {
+                    if (name === 'change') diagnostic.router_change_calls += 1;
+                    return trigger.apply(this, arguments);
+                };
+            }""")
             for doctype, name, action in (
                 ("Fresko Collection", saved["collection"], "verify_collection"),
                 ("Fresko Payment Allocation", saved["payment"], "approve_payment_allocation"),
@@ -596,8 +617,19 @@ class BrowserAcceptance(unittest.TestCase):
                 )
                 target = {"doctype": doctype, "document_name": name, "action": action}
                 money.page.evaluate("target => sessionStorage.setItem('fresko_money_target', JSON.stringify(target))", target)
-                result = self.response_action(money, "operator_service.get_money_action_target",
-                    lambda: money.page.evaluate("() => frappe.set_route('fresko-money')"))
+                try:
+                    result = self.response_action(money, "operator_service.get_money_action_target",
+                        lambda: money.page.evaluate("() => frappe.set_route('fresko-money')"))
+                except Exception:
+                    diagnostic = money.page.evaluate("""() => ({
+                        ...window.__freskoMoneyTargetDiagnostic,
+                        route: frappe.get_route(),
+                        page_id: frappe.container && frappe.container.page && frappe.container.page.id,
+                        target_present: Boolean(sessionStorage.getItem('fresko_money_target')),
+                        target_pending: Boolean(fresko_money.target_pending)
+                    })""")
+                    print("[MONEY_TARGET_DIAGNOSTIC] " + json.dumps(diagnostic, sort_keys=True))
+                    raise
                 self.assertEqual(result["record"]["name"], name)
                 self.assertFalse(result["allowed"], "Approved record cannot be reverified/reapproved")
                 panel = money.page.locator("#fm-target-record")
