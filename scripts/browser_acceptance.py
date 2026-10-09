@@ -10,6 +10,7 @@ from pathlib import Path
 from decimal import Decimal
 from urllib.parse import parse_qs
 import traceback
+import time
 import unittest
 
 from playwright.sync_api import sync_playwright, expect
@@ -77,9 +78,9 @@ class BrowserAcceptance(unittest.TestCase):
         with os.fdopen(fd, "w") as stream:
             json.dump(progress, stream, sort_keys=True)
 
-    def response_action(self, session, method, action, success=True):
+    def response_action(self, session, method, action, success=True, timeout=30000):
         self.current_stage = method
-        with session.page.expect_response(lambda r: method in r.url and r.request.method == "POST") as wait:
+        with session.page.expect_response(lambda r: method in r.url and r.request.method == "POST", timeout=timeout) as wait:
             action()
         response = wait.value
         payload = response.json()
@@ -584,23 +585,41 @@ class BrowserAcceptance(unittest.TestCase):
         try:
             self.money_page(money)
             target_network = []
+            target_started = [None]
             def record_target_request(request):
                 body = request.post_data or ""
                 command = parse_qs(body).get("cmd", [""])[0]
                 if "operator_service.get_money_action_target" in request.url or command.endswith("operator_service.get_money_action_target"):
-                    target_network.append({"event": "request", "method": request.method, "url": request.url, "cmd": command})
+                    target_network.append({"event": "request", "elapsed": time.monotonic() - target_started[0] if target_started[0] else None, "method": request.method, "url": request.url, "cmd": command})
             def record_target_response(response):
                 request = response.request
                 body = request.post_data or ""
                 command = parse_qs(body).get("cmd", [""])[0]
                 if "operator_service.get_money_action_target" in request.url or command.endswith("operator_service.get_money_action_target"):
-                    target_network.append({"event": "response", "status": response.status, "url": response.url, "cmd": command})
+                    target_network.append({"event": "response", "elapsed": time.monotonic() - target_started[0] if target_started[0] else None, "status": response.status, "url": response.url, "cmd": command})
             money.page.on("request", record_target_request)
             money.page.on("response", record_target_response)
             money.page.evaluate("""() => {
                 const diagnostic = window.__freskoMoneyTargetDiagnostic = {
                     consume_calls: 0, page_show_calls: 0, router_change_calls: 0,
-                    rpc_calls: []
+                    rpc_calls: [], company_updates: []
+                };
+                const companyField = fresko_money.company_field;
+                const setCompany = companyField.set_value;
+                companyField.set_value = function(value) {
+                    const update = { before: this.get_value(), requested: value, state: 'started' };
+                    diagnostic.company_updates.push(update);
+                    const promise = setCompany.apply(this, arguments);
+                    update.after = this.get_value();
+                    return Promise.resolve(promise).then(function(result) {
+                        update.state = 'resolved';
+                        update.final = companyField.get_value();
+                        return result;
+                    }, function(error) {
+                        update.state = 'rejected';
+                        update.error = String(error && error.message || error).slice(0, 120);
+                        throw error;
+                    });
                 };
                 const frappeCall = frappe.call;
                 frappe.call = function(options) {
@@ -649,9 +668,10 @@ class BrowserAcceptance(unittest.TestCase):
                 )
                 target = {"doctype": doctype, "document_name": name, "action": action}
                 money.page.evaluate("target => sessionStorage.setItem('fresko_money_target', JSON.stringify(target))", target)
+                target_started[0] = time.monotonic()
                 try:
                     result = self.response_action(money, "operator_service.get_money_action_target",
-                        lambda: money.page.evaluate("() => frappe.set_route('fresko-money')"))
+                        lambda: money.page.evaluate("() => frappe.set_route('fresko-money')"), timeout=60000)
                 except Exception:
                     diagnostic = money.page.evaluate("""() => ({
                         ...window.__freskoMoneyTargetDiagnostic,
@@ -659,7 +679,9 @@ class BrowserAcceptance(unittest.TestCase):
                         page_id: frappe.container && frappe.container.page && frappe.container.page.id,
                         target_present: Boolean(sessionStorage.getItem('fresko_money_target')),
                         target_pending: Boolean(fresko_money.target_pending),
-                        rpc_calls: window.__freskoMoneyTargetDiagnostic.rpc_calls
+                        rpc_calls: window.__freskoMoneyTargetDiagnostic.rpc_calls,
+                        company: fresko_money.get_company(),
+                        company_updates: window.__freskoMoneyTargetDiagnostic.company_updates
                     })""")
                     print("[MONEY_TARGET_DIAGNOSTIC] " + json.dumps({**diagnostic, "network": target_network}, sort_keys=True))
                     raise
