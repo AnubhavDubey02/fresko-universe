@@ -396,84 +396,76 @@ class TestOperatorSegregationOfDuties(OperatorContractOfflineBase):
 
 
 class TestOperatorOutwardCapacity(OperatorContractOfflineBase):
-    """Test FR-QA-012 canonical Outward capacity calculations."""
+    """Exercise the adapter with actual canonical service and hidden detail lists."""
+
+    def setUp(self):
+        super().setUp()
+        from tests.test_physical_capacity_contract import TestPhysicalCapacityContract
+        self.fixture = TestPhysicalCapacityContract()
+        self.fixture.setUp()
+        self.addCleanup(self.fixture.doCleanups)
+
+    def capacity(self):
+        return self.op_mod.compute_outward_capacity("OUT-1", "ACME")
 
     def test_posted_outward_zero_allocations_eligible(self):
-        self.frappe.get_list = lambda doctype, **kwargs: (
-            [{"line_key": "L1", "qty": "100", "uom": "BOX"}] if doctype == "Fresko Outward Line" else []
-        )
-        cap = self.op_mod.compute_outward_capacity("OUT-001", "ACME")
+        cap = self.capacity()
         self.assertTrue(cap["is_allocatable"])
         self.assertEqual(cap["capacity_state"], "UNALLOCATED")
         self.assertEqual(cap["remaining_qty"], Decimal("100"))
         self.assertEqual(cap["total_qty"], Decimal("100"))
 
     def test_partially_allocated_outward_reflects_remaining(self):
-        def mock_get_list(doctype, **kwargs):
-            if doctype == "Fresko Outward Line":
-                return [{"line_key": "L1", "qty": "100", "uom": "BOX"}]
-            elif doctype == "Fresko Sale Outward Allocation":
-                return [{"outward_line_key": "L1", "qty": "40", "state": "APPROVED", "reversed_by": None}]
-            return []
-        self.frappe.get_list = mock_get_list
-        cap = self.op_mod.compute_outward_capacity("OUT-001", "ACME")
+        self.fixture.allocation("40")
+        cap = self.capacity()
         self.assertTrue(cap["is_allocatable"])
         self.assertEqual(cap["capacity_state"], "PARTIAL")
         self.assertEqual(cap["remaining_qty"], Decimal("60"))
         self.assertEqual(cap["allocated_qty"], Decimal("40"))
 
     def test_fully_allocated_outward_excluded(self):
-        def mock_get_list(doctype, **kwargs):
-            if doctype == "Fresko Outward Line":
-                return [{"line_key": "L1", "qty": "100", "uom": "BOX"}]
-            elif doctype == "Fresko Sale Outward Allocation":
-                return [{"outward_line_key": "L1", "qty": "100", "state": "APPROVED", "reversed_by": None}]
-            return []
-        self.frappe.get_list = mock_get_list
-        cap = self.op_mod.compute_outward_capacity("OUT-001", "ACME")
+        self.fixture.allocation("100")
+        cap = self.capacity()
         self.assertFalse(cap["is_allocatable"])
         self.assertEqual(cap["capacity_state"], "EXHAUSTED")
         self.assertEqual(cap["remaining_qty"], Decimal("0"))
 
     def test_reversed_allocation_frees_capacity(self):
-        def mock_get_list(doctype, **kwargs):
-            if doctype == "Fresko Outward Line":
-                return [{"line_key": "L1", "qty": "100", "uom": "BOX"}]
-            elif doctype == "Fresko Sale Outward Allocation":
-                return [
-                    {"outward_line_key": "L1", "qty": "40", "state": "REVERSED", "reversed_by": "user1"},
-                    {"outward_line_key": "L1", "qty": "30", "state": "APPROVED", "reversed_by": None},
-                ]
-            return []
-        self.frappe.get_list = mock_get_list
-        cap = self.op_mod.compute_outward_capacity("OUT-001", "ACME")
+        self.fixture.allocation("40", "REVERSED", reversed_by="user1")
+        self.fixture.allocation("30")
+        cap = self.capacity()
         self.assertTrue(cap["is_allocatable"])
-        self.assertEqual(cap["capacity_state"], "PARTIAL")
         self.assertEqual(cap["remaining_qty"], Decimal("70"))
         self.assertEqual(cap["allocated_qty"], Decimal("30"))
 
     def test_inaccessible_sale_allocation_consumes_capacity(self):
-        # Even if linked Sale cannot be read by operator, the allocation still reduces remaining stock!
-        def mock_get_list(doctype, **kwargs):
-            if doctype == "Fresko Outward Line":
-                return [{"line_key": "L1", "qty": "100", "uom": "BOX"}]
-            elif doctype == "Fresko Sale Outward Allocation":
-                return [{"sale": "CONFIDENTIAL-SALE", "outward_line_key": "L1", "qty": "50", "state": "APPROVED", "reversed_by": None}]
-            return []
-        self.frappe.get_list = mock_get_list
-        cap = self.op_mod.compute_outward_capacity("OUT-001", "ACME")
+        self.fixture.allocation("50")
+        self.assertFalse(self.fixture.sale_visible)
+        self.assertEqual(self.fixture.frappe.get_list("Fresko Sale Outward Allocation"), [])
+        cap = self.capacity()
         self.assertTrue(cap["is_allocatable"])
         self.assertEqual(cap["remaining_qty"], Decimal("50"))
 
     def test_reversed_outward_movement_excluded(self):
-        def mock_get_list(doctype, filters=None, **kwargs):
-            if doctype == "Fresko Outward" and filters and filters.get("movement_type") == "REVERSAL":
-                return [{"name": "OUT-REV-001"}]
-            return []
-        self.frappe.get_list = mock_get_list
-        cap = self.op_mod.compute_outward_capacity("OUT-001", "ACME")
+        from tests.test_physical_capacity_contract import Doc
+        self.fixture.reversals = [Doc(name="HIDDEN-REV", posted_at="2026-10-02 10:00:00", movement_at="2026-10-02 10:00:00")]
+        cap = self.capacity()
         self.assertFalse(cap["is_allocatable"])
         self.assertEqual(cap["capacity_state"], "REVERSED")
+
+    def test_mixed_units_fail_closed_in_single_quantity_card(self):
+        from tests.test_physical_capacity_contract import Doc
+        self.fixture.physical.lines.append(Doc(line_key="L2", qty="200", uom="KG"))
+        cap = self.capacity()
+        self.assertFalse(cap["is_allocatable"])
+        self.assertIsNone(cap["remaining_qty"])
+
+    def test_invalid_allocation_quantity_is_unknown_not_free(self):
+        self.fixture.allocation(qty=None)
+        cap = self.capacity()
+        self.assertEqual(cap["capacity_state"], "UNKNOWN")
+        self.assertFalse(cap["is_allocatable"])
+        self.assertIsNone(cap["remaining_qty"])
 
 
 class TestOperatorEvidenceScoping(OperatorContractOfflineBase):
@@ -495,6 +487,79 @@ class TestOperatorEvidenceScoping(OperatorContractOfflineBase):
         res = self.op_mod.scope_evidence("FEVID-PUBLIC-001")
         self.assertEqual(res["evidence_state"], "AVAILABLE")
         self.assertEqual(res["evidence_name"], "FEVID-PUBLIC-001")
+
+
+class TestMoneyActionTarget(OperatorContractOfflineBase):
+    """Current authorized projection only; navigation never mutates money."""
+
+    def setUp(self):
+        super().setUp()
+        self.frappe.get_roles = lambda user: ["Fresko Accounts", "Fresko Approver"]
+        self.doc = self.op_mod._row({"name": "COLL-1", "company": "ACME", "status": "REVIEW_PENDING",
+                                     "version": 7, "prepared_by": "other-maker", "verified_by": None,
+                                     "source_evidence": "SECRET-EVIDENCE", "sale": "SECRET-SALE"})
+        self.loader = MagicMock(return_value=self.doc)
+        from fresko_universe.fresko_core import services
+        stub = types.SimpleNamespace(_load=self.loader)
+        self.stub_patch = patch.object(services, "money_service", stub, create=True)
+        self.stub_patch.start()
+        self.addCleanup(self.stub_patch.stop)
+
+    def target(self, **changes):
+        args = {"doctype": "Fresko Collection", "document_name": "COLL-1", "action": "verify_collection"}
+        args.update(changes)
+        return self.op_mod.get_money_action_target(**args)
+
+    def test_exact_current_record_and_token_without_link_identifiers(self):
+        result = self.target()
+        self.assertTrue(result["allowed"])
+        self.assertEqual(result["record"]["name"], "COLL-1")
+        self.assertEqual(result["record"]["version"], 7)
+        self.assertNotIn("SECRET", str(result))
+        self.loader.assert_called_once_with("Fresko Collection", "COLL-1")
+
+    def test_missing_or_cross_type_target_never_loads_record(self):
+        for changes in ({"doctype": "User"}, {"action": "approve_payment_allocation"}, {"document_name": ""}):
+            with self.subTest(changes=changes), self.assertRaises(self.frappe.ValidationError):
+                self.target(**changes)
+        self.loader.assert_not_called()
+
+    def test_supplier_and_salesperson_fail_before_load(self):
+        for roles in (["Fresko Accounts", "Fresko Supplier Viewer"], ["Fresko Salesperson"]):
+            self.frappe.get_roles = lambda user: roles
+            with self.assertRaises(self.frappe.PermissionError):
+                self.target()
+        self.loader.assert_not_called()
+
+    def test_denied_record_is_unavailable_before_load(self):
+        self.frappe.has_permission = lambda *args, **kwargs: False
+        with self.assertRaises(self.frappe.PermissionError):
+            self.target()
+        self.loader.assert_not_called()
+
+    def test_denied_company_returns_no_record(self):
+        self.frappe.has_permission = lambda doctype, **kwargs: doctype != "Company"
+        with self.assertRaises(self.frappe.PermissionError):
+            self.target()
+
+    def test_maker_and_verifier_actions_remain_blocked(self):
+        self.doc["prepared_by"] = self.frappe.session.user
+        self.assertFalse(self.target()["allowed"])
+        self.doc.update(status="VERIFIED", prepared_by="other-maker", verified_by=self.frappe.session.user)
+        self.assertFalse(self.target(action="approve_collection")["allowed"])
+
+    def test_payment_allocation_destination_is_typed(self):
+        self.doc.update(name="PAL-1", status="VERIFIED", verified_by="different-verifier")
+        result = self.target(doctype="Fresko Payment Allocation", document_name="PAL-1", action="approve_payment_allocation")
+        self.assertTrue(result["allowed"])
+        self.assertEqual(result["doctype"], "Fresko Payment Allocation")
+
+    def test_missing_current_version_cannot_offer_a_mutation(self):
+        self.doc["version"] = None
+        result = self.target()
+        self.assertFalse(result["allowed"])
+        self.assertEqual(result["blocked_reason"], "Current version is unavailable")
+
 
 
 class TestOperatorFeedValidationAndScoping(OperatorContractOfflineBase):
@@ -641,6 +706,21 @@ class TestOperatorFeedValidationAndScoping(OperatorContractOfflineBase):
         item = alloc_sec["items"][0]
         self.assertNotIn("SECRET-SALE-99", item["human_title"])
         self.assertIn("[Restricted Sale]", item["human_title"])
+
+    def test_unreadable_outward_identifier_omitted_and_action_blocked(self):
+        self.frappe.has_permission = lambda doctype, **kwargs: doctype != "Fresko Outward"
+        self.frappe.get_list = lambda doctype, **kwargs: [{
+            "name": "VISIBLE-ALLOCATION", "company": "ACME", "sale": "VISIBLE-SALE",
+            "outward": "SECRET-OUTWARD", "state": "PROPOSED", "prepared_by": "other-maker",
+            "verified_by": None, "qty": "50", "uom": "BOX", "version": 1,
+        }] if doctype == "Fresko Sale Outward Allocation" else []
+        result = self.op_mod.get_operator_action_feed(company="ACME")
+        item = next(section for section in result["sections"] if section["id"] == "commercial_allocation_reviews")["items"][0]
+        self.assertEqual(item["document_name"], "VISIBLE-ALLOCATION")
+        self.assertIsNone(item["outward"])
+        self.assertNotIn("SECRET-OUTWARD", str(result))
+        self.assertIn("[Restricted Outward]", item["human_title"])
+        self.assertFalse(any(action["allowed"] for action in item["actions"]))
 
     def test_fresko_login_css_does_not_decorate_403(self):
         # FR-QA-008: Verify .page-card-head::after is strictly scoped to login page

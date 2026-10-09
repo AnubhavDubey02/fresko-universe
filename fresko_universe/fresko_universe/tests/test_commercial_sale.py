@@ -258,6 +258,65 @@ class TestCommercialSale(FrappeTestCase):
         self.assertIn("RATE_UNKNOWN", outward_view["unresolved_flags"])
         self.assertTrue(outward_view["linked_sales"][0]["rate_unresolved"])
 
+    def test_hidden_approved_allocation_consumes_makers_physical_capacity(self):
+        """FR-QA-001/012: real maker A Outward, maker B hidden Sale/Allocation.
+
+        Maker B also has Accounts to read A's Outward legitimately. Distinct
+        Accounts/Approver identities check B's proposal; A cannot read B's ledger.
+        """
+        from fresko_universe.fresko_core.services import commercial_service, operator_service
+
+        physical = self._outward(100)
+        sale = self._approve_sale(self._create(user=self.all_roles))
+        frappe.set_user(self.all_roles)
+        result = commercial.propose_sale_outward_allocation(
+            sale_name=sale.name, sale_line_key=sale.lines[0].line_key,
+            outward=physical.name, outward_line_key=physical.lines[0].line_key,
+            qty="100", uom=self.masters["uom"], evidence=self.evidence.name,
+            source_event_id=f"{self.token}:hidden-full")
+        allocation = self._approve_allocation(frappe.get_doc(ALLOCATION, result["name"]))
+        before = physical_snapshot(self.container.name)
+        frappe.set_user(self.maker)
+        self.assertTrue(frappe.has_permission("Fresko Outward", "read", doc=physical.name))
+        self.assertFalse(frappe.has_permission(SALE, "read", doc=sale.name))
+        self.assertFalse(frappe.has_permission(ALLOCATION, "read", doc=allocation.name))
+        self.assertEqual(frappe.get_list(ALLOCATION, filters={"outward": physical.name}), [])
+        direct = commercial.get_outward_reconciliation(physical.name)
+        container = commercial.get_container_reconciliation(self.container.name)
+        capacity = operator_service.compute_outward_capacity(physical.name, self.container.company)
+        self.assertEqual(Decimal(direct["lines"][0]["remaining_qty"]), 0)
+        self.assertEqual(Decimal(container["totals_by_uom"][self.masters["uom"]]["physically_unallocated_qty"]), 0)
+        self.assertFalse(capacity["is_allocatable"])
+        self.assertEqual(capacity["remaining_qty"], 0)
+        self.assertEqual(direct["allocations"], [])
+        for response in (direct, container, capacity):
+            self.assertNotIn(sale.name, str(response))
+            self.assertNotIn(allocation.name, str(response))
+        feed = operator_service.get_operator_action_feed(company=self.container.company)
+        self.assertFalse(any(item["document_name"] == physical.name for section in feed["sections"]
+                             if section["id"] == "unassigned_outwards" for item in section["items"]))
+        with self.assertRaises(frappe.PermissionError):
+            client.get(SALE, sale.name)
+        with self.assertRaises(frappe.PermissionError):
+            client.get(ALLOCATION, allocation.name)
+        self.assertEqual(before, physical_snapshot(self.container.name))
+        frappe.set_user(self.approver)
+        commercial.reverse_sale_outward_allocation(allocation.name, reason="Test source correction", evidence=self.evidence.name)
+        frappe.set_user(self.maker)
+        restored = commercial_service.get_outward_capacity(physical.name, self.container.company)
+        self.assertEqual(Decimal(restored["lines"][0]["remaining_qty"]), 100)
+        self.assertTrue(operator_service.compute_outward_capacity(physical.name, self.container.company)["is_allocatable"])
+
+    def test_capacity_internal_reader_preserves_supplier_and_company_boundaries(self):
+        from fresko_universe.fresko_core.services import commercial_service
+        physical = self._outward(100)
+        frappe.set_user(self.supplier)
+        with self.assertRaises(frappe.PermissionError):
+            commercial_service.get_outward_capacity(physical.name, self.container.company)
+        frappe.set_user(self.maker)
+        with self.assertRaises(frappe.PermissionError):
+            commercial_service.get_outward_capacity(physical.name, "NOT-THIS-COMPANY")
+
     def test_corrected_sale_compensation_has_one_atomic_recording_time(self):
         sale = self._approve_sale(self._create())
         allocation = self._approve_allocation(self._allocation(sale, self._outward(), 100))

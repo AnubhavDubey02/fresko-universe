@@ -714,7 +714,7 @@ class FreskoWorkspace {
         } else if (action.action === 'verify_collection' || action.action === 'approve_collection' || action.action === 'verify_payment_allocation' || action.action === 'approve_payment_allocation') {
             try {
                 sessionStorage.setItem('fresko_money_target', JSON.stringify({
-                    doctype: item.doctype,
+                    doctype: action.action.endsWith('payment_allocation') ? 'Fresko Payment Allocation' : 'Fresko Collection',
                     document_name: item.document_name,
                     action: action.action
                 }));

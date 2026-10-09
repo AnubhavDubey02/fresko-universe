@@ -7,6 +7,10 @@ frappe.pages['fresko-money'].on_page_load = function(wrapper) {
 	fresko_money.init(page);
 };
 
+frappe.pages['fresko-money'].on_page_show = function() {
+	fresko_money.consume_action_target(); // Desk caches pages between visits.
+};
+
 var fresko_money = {
 	in_flight: false,
 	read_generation: 0,
@@ -16,6 +20,8 @@ var fresko_money = {
 	container_field: null,
 	cutoff_field: null,
 	active_tab: 'collections',
+	target_pending: false,
+	target_sequence: 0,
 
 	has_role: function(role) {
 		return frappe.user_roles && frappe.user_roles.includes(role);
@@ -32,23 +38,97 @@ var fresko_money = {
 			return;
 		}
 
-		try {
-			var raw_target = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('fresko_money_target') : null;
-			if (raw_target) {
-				sessionStorage.removeItem('fresko_money_target');
-				var target = JSON.parse(raw_target);
-				if (target && target.doctype && typeof frappe.show_alert === 'function') {
-					frappe.show_alert({
-						message: __('Navigated to ') + target.doctype + ': ' + (target.document_name || ''),
-						indicator: 'blue'
-					});
-				}
-			}
-		} catch(e) {}
-
 		me.setup_filters();
 		me.setup_layout();
 		me.refresh_all();
+		me.consume_action_target();
+	},
+
+	consume_action_target: function() {
+		var me = this, raw;
+		if (!me.page || me.target_pending) return Promise.resolve();
+		try { raw = sessionStorage.getItem('fresko_money_target'); } catch(e) { return Promise.resolve(); }
+		if (!raw) return Promise.resolve();
+		var targets = {
+			verify_collection: 'Fresko Collection', approve_collection: 'Fresko Collection',
+			verify_payment_allocation: 'Fresko Payment Allocation', approve_payment_allocation: 'Fresko Payment Allocation'
+		};
+		function clear_handled() {
+			// A later Workspace click must not be erased by an older request.
+			if (sessionStorage.getItem('fresko_money_target') === raw) sessionStorage.removeItem('fresko_money_target');
+		}
+		function unavailable() { frappe.msgprint(__('Money target is unavailable or its action has changed.')); }
+		var target;
+		try {
+			target = JSON.parse(raw);
+			if (!target || targets[target.action] !== target.doctype || typeof target.document_name !== 'string' || !target.document_name.trim() || target.document_name.length > 140 ||
+				Object.keys(target).some(function(key) { return !['doctype', 'document_name', 'action'].includes(key); })) throw new Error('Invalid target');
+		} catch(e) { clear_handled(); unavailable(); return Promise.resolve(); }
+		if (me.is_supplier() || (!me.has_role('Fresko Accounts') && !me.has_role('Fresko Approver'))) {
+			clear_handled(); unavailable(); return Promise.resolve();
+		}
+		var sequence = ++me.target_sequence, context = me.read_context();
+		me.target_pending = true;
+		$(me.page.main).find('#fm-target-record').remove();
+		// Frappe v15 returns a jQuery Deferred without native catch/finally.
+		return Promise.resolve(frappe.call({
+			method: 'fresko_universe.fresko_core.services.operator_service.get_money_action_target',
+			args: target
+		})).then(function(r) {
+			if (sequence !== me.target_sequence || !me.context_is_current(context) ||
+				sessionStorage.getItem('fresko_money_target') !== raw || me.is_supplier() ||
+				(typeof frappe.get_route === 'function' && frappe.get_route()[0] !== 'fresko-money')) return;
+			var result = r.message, record = result && result.record;
+			if (r.exc || !record || record.name !== target.document_name || result.doctype !== target.doctype || result.action !== target.action || !record.company) throw new Error('Unavailable');
+			function show_if_current() {
+				if (sequence !== me.target_sequence || me.get_company() !== record.company ||
+					sessionStorage.getItem('fresko_money_target') !== raw || me.is_supplier() ||
+					(typeof frappe.get_route === 'function' && frappe.get_route()[0] !== 'fresko-money')) return;
+				// Clear before exposing the focused target (browser acceptance gate).
+				clear_handled();
+				me.show_action_target(result);
+			}
+			// Company comes only from the authorized server projection, never storage.
+			// Avoid revalidating an unchanged Link value; Frappe can leave its
+			// validation promise pending even though the selected company is current.
+			if (me.get_company() === record.company) return show_if_current();
+			var company_update = me.company_field.set_value(record.company);
+			// Link validation may remain pending after the control has already
+			// accepted the authorized value. Wait only while selection is stale.
+			if (me.get_company() === record.company) return show_if_current();
+			return Promise.resolve(company_update).then(show_if_current);
+		}).catch(function() {
+			if (sequence === me.target_sequence && me.context_is_current(context)) unavailable();
+		}).finally(function() {
+			clear_handled();
+			me.target_pending = false;
+			var next = sessionStorage.getItem('fresko_money_target');
+			if (next && next !== raw && (typeof frappe.get_route !== 'function' || frappe.get_route()[0] === 'fresko-money')) return me.consume_action_target();
+		});
+	},
+
+	show_action_target: function(result) {
+		var me = this, record = result.record;
+		$(me.page.main).find('.fm-tab-btn[data-tab="collections"]').trigger('click');
+		me.active_tab = 'collections';
+		var panel = $('<section id="fm-target-record" class="fm-section" tabindex="-1"></section>');
+		panel.attr('data-doctype', result.doctype).attr('data-document-name', record.name);
+		panel.append($('<h5></h5>').text(result.doctype + ': ' + record.name));
+		panel.append($('<p></p>').text(__('Live record — current state: ') + (record.status || 'UNKNOWN')));
+		panel.append($('<p></p>').text(record.amount_state === 'UNKNOWN' || record.amount == null ? __('PENDING / UNKNOWN') : (record.currency || '') + ' ' + record.amount));
+		panel.append($('<a href="#"></a>').text(__('View record and evidence')).on('click', function(e) {
+			e.preventDefault();
+			frappe.set_route('Form', result.doctype, record.name);
+		}));
+		var actions = $('<div></div>');
+		if (result.allowed) {
+			me.render_workflow_buttons(actions, result.doctype === 'Fresko Collection' ? 'collection' : 'allocation', record);
+		} else {
+			actions.append($('<p class="text-muted"></p>').text(result.blocked_reason || __('Action is no longer available.')));
+		}
+		panel.append(actions);
+		$(me.page.main).find('#fm-tab-collections').prepend(panel);
+		if (panel[0]) { panel[0].scrollIntoView({ block: 'nearest' }); panel[0].focus(); }
 	},
 
 	setup_filters: function() {
@@ -194,6 +274,7 @@ var fresko_money = {
 	refresh_all: function() {
 		var me = this;
 		me.read_generation += 1;
+		$(me.page.main).find('#fm-target-record').remove();
 		$(me.page.main).find('#fm-receivable-result, #fm-projections, #fm-money-exceptions, #tbl-collections, #tbl-allocations, #tbl-adjustments, #tbl-applications').empty();
 		var company = me.get_company();
 		if (!company) return;
@@ -667,3 +748,24 @@ var fresko_money = {
 		$target.html(card);
 	}
 };
+
+// Desk may keep a Page mounted while routing away and back to it. Consume a
+// pending handoff after route rendering as well as the Page show callback.
+if (frappe.router && typeof frappe.router.on === 'function') {
+	frappe.router.on('change', function() {
+		if (frappe.get_route && frappe.get_route()[0] === 'fresko-money') {
+			return fresko_money.consume_action_target();
+		}
+	});
+}
+
+// Also observe the actual Desk container switch. This is the authoritative
+// signal when a cached Page is restored without a new router change event.
+if (typeof document !== 'undefined') {
+	$(document).on('page-change', function() {
+		var active_page = frappe.container && frappe.container.page;
+		if (active_page && active_page.id === 'page-fresko-money') {
+			return fresko_money.consume_action_target();
+		}
+	});
+}

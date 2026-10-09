@@ -89,5 +89,18 @@ Desk chrome is suppressed via `fresko_shell.css` scoped strictly to `body.fresko
 ### 4.6 Navigation Dispatch and State Verification
 - Proposing outward allocations dispatches to the `outwards` tab and immediately inspects the targeted outward movement.
 - Reviewing allocations validates current record state on the server (`frappe.client.get`) prior to mutation, guarding against concurrent state transitions.
-- Collections and payment allocation reviews navigate directly to `fresko-money` with context stored in `sessionStorage`.
+- Collections and payment allocation reviews carry only a typed DocType/name/action handoff to `fresko-money`. Both initial and cached Page visits fetch `operator_service.get_money_action_target`, which applies current Money read/Company/link authorization and action eligibility. The page focuses an exact live-record panel with a current version, workflow controls and a record/evidence link; navigation never executes a mutation. Missing, restricted or changed targets fail safely, and stale responses cannot replace newer context or handoffs.
 - Network failures in the alias review queue render inline error alerts with an idempotent "Retry" trigger.
+
+### 4.7 Authoritative capacity and linked-record privacy (2026-10-09)
+
+Outward availability uses the shared authorized commercial-domain capacity read,
+including approved allocations and physical reversals hidden from detail lists.
+Different UOMs are never added into a single card quantity. UNKNOWN/CONFLICT
+capacity supplies no allocation action and prevents an All Clear claim.
+
+Allocation-review cards independently scope both linked Sale and Outward names.
+Unreadable Outward IDs are omitted, titles use a restricted placeholder, and
+actions requiring an unreadable link are blocked. Canonical mutation permissions
+and maker/verifier/approver separation remain authoritative. A mocked permission
+split does not prove that split is reachable on a native Frappe site.

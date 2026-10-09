@@ -1022,11 +1022,89 @@ def _add_qty(groups, uom, key, quantity):
 
 
 def _string_groups(groups):
-    return {unit: {key: format(value, "f") for key, value in values.items()} for unit, values in groups.items()}
+    return {unit: {key: format(value, "f") if value is not None else None for key, value in values.items()} for unit, values in groups.items()}
 
 
 def _physical_as_of(physical, cutoff):
     return physical.status == "Posted" and physical.posted_at and get_datetime(physical.posted_at) <= cutoff and get_datetime(physical.movement_at) <= cutoff and _outward_active(physical, cutoff)
+
+
+def _physical_capacity(physical, cutoff, *, live):
+    """Authoritative consumption within an already authorized, locked Outward.
+
+    Deliberately not a permission-filtered allocation list. Callers must establish
+    Company, Container and Outward access before entering this private helper.
+    Only quantities keyed by the readable physical lines leave this function;
+    hidden Sale/Allocation identities never do. Historical decisions use snapshots.
+    """
+    unknown = {"capacity_state": "UNKNOWN", "physical_active": False,
+               "lines": [], "totals_by_uom": {}}
+    active = _physical_as_of(physical, cutoff)
+    quantities, totals = {}, {}
+    try:
+        for line in physical.lines:
+            qty = Decimal(str(line.qty))
+            if not line.line_key or line.line_key in quantities or not line.uom or not qty.is_finite() or qty < 0:
+                return unknown
+            quantities[line.line_key] = (qty, line.uom)
+        if not quantities:
+            return unknown
+        rows = frappe.db.sql(
+            "SELECT name FROM `tabFresko Sale Outward Allocation` "
+            "WHERE company=%s AND container=%s AND outward=%s ORDER BY name FOR UPDATE",
+            (physical.company, physical.container, physical.name), as_dict=True)
+        for row in rows:
+            allocation = frappe.get_doc(ALLOCATION, row.name, for_update=True)
+            if (allocation.company, allocation.container, allocation.outward) != (physical.company, physical.container, physical.name):
+                return unknown
+            decision = _snapshot(allocation) if live else _state_at(allocation, cutoff)
+            if decision is None and not live:
+                if allocation.get("creation") and get_datetime(allocation.creation) > cutoff:
+                    continue  # Positively known not to exist at this cutoff.
+                return unknown  # Missing history is not evidence of zero consumption.
+            if not decision or not decision.get("state"):
+                return unknown
+            if decision["state"] not in {"PROPOSED", "APPROVED", "REJECTED", "REVERSED", "SUPERSEDED"}:
+                return unknown
+            if decision["state"] != "APPROVED" or decision.get("reversed_by"):
+                continue
+            key = allocation.outward_line_key
+            qty = Decimal(str(allocation.qty))
+            if key not in quantities or allocation.uom != quantities[key][1] or not qty.is_finite() or qty <= 0:
+                return unknown
+            totals[key] = totals.get(key, Decimal(0)) + qty
+    except (InvalidOperation, ValueError, TypeError):
+        return unknown
+    groups, lines = {}, []
+    for key, (qty, uom) in quantities.items():
+        allocated = totals.get(key, Decimal(0)) if active else Decimal(0)
+        remaining = qty - allocated if active else None
+        lines.append({"line_key": key, "uom": uom, "qty": format(qty, "f"),
+                      "commercially_allocated_qty": format(allocated, "f"),
+                      "remaining_qty": format(remaining, "f") if remaining is not None else None})
+        if active:
+            _add_qty(groups, uom, "physical_qty", qty)
+            _add_qty(groups, uom, "commercially_allocated_qty", allocated)
+            _add_qty(groups, uom, "remaining_qty", remaining)
+    state = "INACTIVE" if not active else "CONFLICT" if any(Decimal(line["remaining_qty"]) < 0 for line in lines) else "KNOWN"
+    return {"capacity_state": state, "physical_active": active, "lines": lines,
+            "totals_by_uom": _string_groups(groups)}
+
+
+def get_outward_capacity(outward_name, company):
+    """Internal authorized read service; no public allocation-list bypass."""
+    _reader()
+    physical = _linked("Fresko Outward", outward_name)
+    if physical.company != company:
+        _fail("Outward does not belong to Company", True)
+    container = physical.container
+    _locks(company, [container])
+    physical = frappe.get_doc("Fresko Outward", outward_name, for_update=True)
+    if physical.container != container:
+        _fail("CONCURRENT_STATE_CONFLICT")
+    if physical.company != company or not frappe.has_permission("Fresko Outward", "read", doc=physical) or not permissions.outward_has_permission(physical, "read"):
+        _fail("Access denied to Outward", True)
+    return _physical_capacity(physical, get_datetime(str(_now())), live=True)
 
 
 def get_container_reconciliation(container, as_of=None):
@@ -1040,7 +1118,7 @@ def get_container_reconciliation(container, as_of=None):
     sales = []
     for row in rows:
         doc = frappe.get_doc(SALE, row.name, for_update=True)
-        if not commercial_has_permission(doc):
+        if not commercial_has_permission(doc) or not frappe.has_permission(SALE, "read", doc=doc):
             continue
         view = _sale_projection(row.name, cutoff_text, live=live)
         if view["exists"] and get_datetime(view["sale_at"]) <= cutoff:
@@ -1049,14 +1127,15 @@ def get_container_reconciliation(container, as_of=None):
     outwards = []
     for row in physical_rows:
         doc = frappe.get_doc("Fresko Outward", row.name, for_update=True)
-        if permissions.outward_has_permission(doc, "read") and _physical_as_of(doc, cutoff):
+        if doc.company != parent.company or doc.container != container:
+            _fail("Physical Company/Container scope mismatch", True)
+        if frappe.has_permission("Fresko Outward", "read", doc=doc) and permissions.outward_has_permission(doc, "read") and _physical_as_of(doc, cutoff):
             outwards.append(doc)
     groups, values = {}, {}
     unknown_qty_count, unresolved_buyer_count = 0, 0
     pending_sales = [sale for sale in sales if sale["status"] not in {"APPROVED", "SUPERSEDED", "REJECTED", "CANCELLED"}]
     accepted = [sale for sale in sales if sale["status"] == "APPROVED"]
     exception_kinds = set()
-    allocation_qty = {}
     for sale in accepted:
         if not sale["customer"]:
             unresolved_buyer_count += 1
@@ -1068,7 +1147,6 @@ def get_container_reconciliation(container, as_of=None):
             qty = Decimal(line["qty"])
             allocated = Decimal(line["allocated_qty"])
             _add_qty(groups, line["uom"], "commercially_sold_qty", qty)
-            _add_qty(groups, line["uom"], "physically_allocated_qty", allocated)
             _add_qty(groups, line["uom"], "sold_not_physically_allocated_qty", qty - allocated)
             priced = line["price_state"] == "FINAL" and line["rate"] is not None
             _add_qty(groups, line["uom"], "priced_qty" if priced else "unpriced_qty", qty)
@@ -1080,16 +1158,22 @@ def get_container_reconciliation(container, as_of=None):
                 exception_kinds.add("PRICE_BUCKET_UNALLOCATED")
             if line["lot_state"] != "KNOWN":
                 exception_kinds.add("LOT_UNKNOWN")
-        for allocation in sale["allocations"]:
-            key = (allocation["outward"], allocation["outward_line_key"])
-            allocation_qty[key] = allocation_qty.get(key, Decimal(0)) + Decimal(allocation["qty"])
+    capacity_unknown = False
     for physical in outwards:
+        capacity = _physical_capacity(physical, cutoff, live=live)
+        if capacity["capacity_state"] == "UNKNOWN":
+            capacity_unknown = True
+            exception_kinds.add("DATA_INTEGRITY")
+            continue
+        if capacity["capacity_state"] == "CONFLICT":
+            exception_kinds.add("ALLOCATION_OVERDRAW")
         missing = False
-        for line in physical.lines:
-            qty = Decimal(str(line.qty))
-            allocated = allocation_qty.get((physical.name, line.line_key), Decimal(0))
-            _add_qty(groups, line.uom, "physical_qty", qty)
-            _add_qty(groups, line.uom, "physically_unallocated_qty", qty - allocated)
+        for line in capacity["lines"]:
+            qty = Decimal(line["qty"])
+            allocated = Decimal(line["commercially_allocated_qty"])
+            _add_qty(groups, line["uom"], "physical_qty", qty)
+            _add_qty(groups, line["uom"], "physically_allocated_qty", allocated)
+            _add_qty(groups, line["uom"], "physically_unallocated_qty", qty - allocated)
             missing = missing or allocated != qty
         if missing:
             exception_kinds.add("OUTWARD_WITHOUT_SALE")
@@ -1098,6 +1182,15 @@ def get_container_reconciliation(container, as_of=None):
     for unit in groups:
         for key in keys:
             groups[unit].setdefault(key, Decimal(0))
+    if capacity_unknown:
+        for physical in outwards:
+            for line in physical.lines:
+                groups.setdefault(line.uom, {})
+        # An unprovable contribution invalidates the physical aggregate, not zero.
+        for unit in groups:
+            groups[unit]["physical_qty"] = None
+            groups[unit]["physically_allocated_qty"] = None
+            groups[unit]["physically_unallocated_qty"] = None
     confirmed = bool(accepted) and not pending_sales and not exception_kinds and all(sale["reconciliation_state"] == "CONFIRMED" for sale in accepted)
     return {"projection_mode": "LIVE" if live else "HISTORICAL", "container": container, "as_of": cutoff_text, "sales": sales, "totals_by_uom": _string_groups(groups), "confirmed_value_by_currency": {currency: format(value, "f") for currency, value in values.items()}, "unknown_quantity_count": unknown_qty_count, "unresolved_buyer_count": unresolved_buyer_count, "pending_sale_count": len(pending_sales), "exceptions": sorted(exception_kinds), "view_scope": "ASSIGNED" if not _roles() & {"Fresko Accounts", "Fresko Approver", "System Manager"} else "INTERNAL", "reconciliation_state": "CONFIRMED" if confirmed else "PENDING"}
 
@@ -1105,9 +1198,12 @@ def get_container_reconciliation(container, as_of=None):
 def get_outward_reconciliation(outward_name, as_of=None):
     _reader()
     physical = _linked("Fresko Outward", outward_name)
-    _locks(physical.company, [physical.container])
+    company, container = physical.company, physical.container
+    _locks(company, [container])
     physical = frappe.get_doc("Fresko Outward", outward_name, for_update=True)
-    if not permissions.outward_has_permission(physical, "read"):
+    if physical.company != company or physical.container != container:
+        _fail("CONCURRENT_STATE_CONFLICT")
+    if not frappe.has_permission("Fresko Outward", "read", doc=physical) or not permissions.outward_has_permission(physical, "read"):
         _fail("Access denied to Outward", True)
     cutoff_text = _time(as_of or str(_now()), "as_of")
     cutoff = get_datetime(cutoff_text)
@@ -1115,7 +1211,7 @@ def get_outward_reconciliation(outward_name, as_of=None):
     linked_sales, allocations = [], []
     for row in rows:
         sale = frappe.get_doc(SALE, row.sale, for_update=True)
-        if not commercial_has_permission(sale):
+        if not commercial_has_permission(sale) or not frappe.has_permission(SALE, "read", doc=sale):
             continue
         view = get_sale_as_of(row.sale, cutoff_text)
         linked = [allocation for allocation in view["allocations"] if allocation["outward"] == outward_name]
@@ -1124,20 +1220,20 @@ def get_outward_reconciliation(outward_name, as_of=None):
             rate_unresolved = any(line["price_state"] != "FINAL" or line["rate"] is None for line in view["lines"] if line["line_key"] in line_keys)
             linked_sales.append({"name": view["name"], "sale_at": view["sale_at"], "status": view["status"], "customer": view["customer"], "rate_unresolved": rate_unresolved, "reconciliation_state": view["reconciliation_state"]})
             allocations.extend(linked)
-    groups, lines = {}, []
-    active = _physical_as_of(physical, cutoff)
-    for line in physical.lines:
-        qty = Decimal(str(line.qty))
-        allocated = sum((Decimal(row["qty"]) for row in allocations if row["outward_line_key"] == line.line_key), Decimal(0))
-        if active:
-            _add_qty(groups, line.uom, "physical_qty", qty)
-            _add_qty(groups, line.uom, "commercially_allocated_qty", allocated)
-            _add_qty(groups, line.uom, "remaining_qty", qty - allocated)
-        lines.append({"line_key": line.line_key, "uom": line.uom, "qty": format(qty, "f"), "commercially_allocated_qty": format(allocated, "f"), "remaining_qty": format(qty - allocated, "f") if active else None})
-    complete = active and bool(lines) and all(Decimal(row["remaining_qty"]) == 0 for row in lines)
+    capacity = _physical_capacity(physical, cutoff, live=as_of is None or as_of == "")
+    lines, active = capacity["lines"], capacity["physical_active"]
+    complete = capacity["capacity_state"] == "KNOWN" and active and bool(lines) and all(Decimal(row["remaining_qty"]) == 0 for row in lines)
     unresolved = sorted({"ALIAS_UNRESOLVED" for sale in linked_sales if not sale["customer"]} | {"RATE_UNKNOWN" for sale in linked_sales if sale["rate_unresolved"]} | ({"OUTWARD_WITHOUT_SALE"} if active and not complete else set()))
-    confirmed = complete and all(sale["reconciliation_state"] == "CONFIRMED" for sale in linked_sales)
-    return {"outward": outward_name, "movement_at": str(physical.movement_at), "as_of": cutoff_text, "physical_active": active, "allocations": allocations, "lines": lines, "totals_by_uom": _string_groups(groups), "linked_sales": linked_sales, "unresolved_flags": unresolved, "reconciliation_state": "CONFIRMED" if confirmed else "PARTIAL" if allocations else "PENDING"}
+    if capacity["capacity_state"] in {"UNKNOWN", "CONFLICT"}:
+        unresolved.append("DATA_INTEGRITY" if capacity["capacity_state"] == "UNKNOWN" else "ALLOCATION_OVERDRAW")
+    # Restricted details cannot establish commercial buyer/rate reconciliation.
+    visible_totals = {}
+    for allocation in allocations:
+        key = (allocation["outward_line_key"], allocation["uom"])
+        visible_totals[key] = visible_totals.get(key, Decimal(0)) + Decimal(allocation["qty"])
+    details_complete = all(visible_totals.get((line["line_key"], line["uom"]), Decimal(0)) == Decimal(line["commercially_allocated_qty"]) for line in lines)
+    confirmed = complete and bool(linked_sales) and details_complete and all(sale["reconciliation_state"] == "CONFIRMED" for sale in linked_sales)
+    return {"outward": outward_name, "movement_at": str(physical.movement_at), "as_of": cutoff_text, "physical_active": active, "capacity_state": capacity["capacity_state"], "allocations": allocations, "lines": lines, "totals_by_uom": capacity["totals_by_uom"], "linked_sales": linked_sales, "unresolved_flags": sorted(set(unresolved)), "reconciliation_state": "CONFIRMED" if confirmed else "PARTIAL" if allocations else "PENDING"}
 
 
 def validate_commercial_document(doc):
