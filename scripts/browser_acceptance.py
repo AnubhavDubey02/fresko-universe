@@ -583,9 +583,41 @@ class BrowserAcceptance(unittest.TestCase):
         money = self.session("verifier")
         try:
             self.money_page(money)
+            target_network = []
+            def record_target_request(request):
+                body = request.post_data or ""
+                command = parse_qs(body).get("cmd", [""])[0]
+                if "operator_service.get_money_action_target" in request.url or command.endswith("operator_service.get_money_action_target"):
+                    target_network.append({"event": "request", "method": request.method, "url": request.url, "cmd": command})
+            def record_target_response(response):
+                request = response.request
+                body = request.post_data or ""
+                command = parse_qs(body).get("cmd", [""])[0]
+                if "operator_service.get_money_action_target" in request.url or command.endswith("operator_service.get_money_action_target"):
+                    target_network.append({"event": "response", "status": response.status, "url": response.url, "cmd": command})
+            money.page.on("request", record_target_request)
+            money.page.on("response", record_target_response)
             money.page.evaluate("""() => {
                 const diagnostic = window.__freskoMoneyTargetDiagnostic = {
-                    consume_calls: 0, page_show_calls: 0, router_change_calls: 0
+                    consume_calls: 0, page_show_calls: 0, router_change_calls: 0,
+                    rpc_calls: []
+                };
+                const frappeCall = frappe.call;
+                frappe.call = function(options) {
+                    if (options && options.method === 'fresko_universe.fresko_core.services.operator_service.get_money_action_target') {
+                        const call = { state: 'started', method: options.method };
+                        diagnostic.rpc_calls.push(call);
+                        return frappeCall.apply(this, arguments).then(function(result) {
+                            call.state = 'resolved';
+                            call.exc = Boolean(result && result.exc);
+                            return result;
+                        }, function(error) {
+                            call.state = 'rejected';
+                            call.error = String(error && error.message || error).slice(0, 120);
+                            throw error;
+                        });
+                    }
+                    return frappeCall.apply(this, arguments);
                 };
                 const consume = fresko_money.consume_action_target;
                 fresko_money.consume_action_target = function() {
@@ -626,9 +658,10 @@ class BrowserAcceptance(unittest.TestCase):
                         route: frappe.get_route(),
                         page_id: frappe.container && frappe.container.page && frappe.container.page.id,
                         target_present: Boolean(sessionStorage.getItem('fresko_money_target')),
-                        target_pending: Boolean(fresko_money.target_pending)
+                        target_pending: Boolean(fresko_money.target_pending),
+                        rpc_calls: window.__freskoMoneyTargetDiagnostic.rpc_calls
                     })""")
-                    print("[MONEY_TARGET_DIAGNOSTIC] " + json.dumps(diagnostic, sort_keys=True))
+                    print("[MONEY_TARGET_DIAGNOSTIC] " + json.dumps({**diagnostic, "network": target_network}, sort_keys=True))
                     raise
                 self.assertEqual(result["record"]["name"], name)
                 self.assertFalse(result["allowed"], "Approved record cannot be reverified/reapproved")
