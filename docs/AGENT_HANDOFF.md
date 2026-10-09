@@ -1267,3 +1267,41 @@ Native new-module and complete pinned Bench/browser results are PENDING CI at
 this checkpoint. Direct Python actor checks are not claimed as signed-in HTTP
 proof. Broader cross-company HTTP, physical Android/iOS, staging/shadow business
 cycles and independent release review remain separate gates. No merge/deploy.
+
+## 2026-10-09 Group 1A: pure unified intake contract
+
+Branch `codex/group-1a-unified-intake` starts from PR #21 exact head
+`b259561ed2782c20a5ff386ee2c627420302de06`; nested Draft PR targets
+`codex/pr20-native-allocation-auth`. Prior branches, untracked work and records
+are preserved. No merge, deployment, GCP or native business-data mutation.
+
+Read the authoritative Group 1A design and candidate code in connected Drive,
+and HND-019 / FR-IMP-001 / QA-T072 / RG-15 in the Engineering QA & Release Ledger.
+Candidate's original 14 tests passed, but independently reproduced mutable input
+fields changing a frozen Proposal and preview locator dictionaries mutating the
+frozen Envelope. Corrected these with copied read-only mappings, slotted frozen
+nested values and detached snapshots. Added bounded strings/collections, strict
+ASCII numeric grammar preserving exact scale without floating-point conversion
+or arithmetic, parser/uncertainty provenance, scoped identities, content/revision
+fingerprints and pure replay classification. Default representations, errors and
+safe summaries omit source values. Full previews require future native read ACLs.
+
+Four channels share this contract. No Frappe import, I/O, HTTP endpoint, whitelist,
+posting or approval path exists. Company/evidence/source strings are data, NOT
+verified authority; no `company_verified` flag is accepted. The authenticated
+Group 1B adapter must resolve tenants, validate provider identities and qualified
+worksheet/attachment locators, authorize Evidence and verify actual capture bytes.
+It must enforce persistent uniqueness, replay conflicts, append-only revisions
+and concurrent transactions. Hashing alone claims none of those guarantees.
+
+Executed in isolated WSL worktree: 37 focused tests PASS on Python 3.14.4 and
+3.13.12; 336 full offline app tests PASS (includes the 37); 49 script tests PASS;
+three Node suites PASS; protected-write guard, 19 readiness fixtures, shadow
+fixture, 24-DocType snapshot versus exact base and six-proof registry validation
+PASS. Compilation and diff whitespace checks PASS. No persisted schema change;
+no new migration proof needed. CI explicitly runs the new contract suite.
+Existing Physical, Commercial, Money, Evidence services and UI are unchanged.
+No local Bench CLI/site was available; new native tenant, Supplier, authenticated
+HTTP and concurrency proof remains NOT RUN. RG-15 remains BLOCKED for native
+import/report delivery. Pure contract is ready for independent review only;
+no staging or production readiness is claimed.
