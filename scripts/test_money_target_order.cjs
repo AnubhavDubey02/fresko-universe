@@ -70,6 +70,17 @@ async function run() {
   await unchangedTask;
   assert.deepEqual(unchanged.snapshots,[null],'same-company target is rendered after cleanup without Link revalidation');
   assert.equal(unchanged.sessionStorage.getItem('fresko_money_target'),null);
+  const selected=harness();
+  selected.ui.company_field={set_value(value){
+    selected.ui.get_company=()=>value;
+    return new Promise(()=>{}); // Link validation is pending after selection changed.
+  }};
+  selected.sessionStorage.setItem('fresko_money_target',JSON.stringify(target('COL-SELECTED-COMPANY')));
+  const selectedTask=selected.ui.consume_action_target();
+  selected.requests[0].resolve(reply('COL-SELECTED-COMPANY'));
+  await selectedTask;
+  assert.deepEqual(selected.snapshots,[null],'target renders once selected company matches despite pending Link validation');
+  assert.equal(selected.sessionStorage.getItem('fresko_money_target'),null);
   const denied=harness();denied.frappe.user_roles=['Fresko Accounts','Supplier Viewer'];
   denied.sessionStorage.setItem('fresko_money_target',JSON.stringify(target('DENY')));
   await denied.ui.consume_action_target();

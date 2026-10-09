@@ -91,7 +91,11 @@ var fresko_money = {
 			// Avoid revalidating an unchanged Link value; Frappe can leave its
 			// validation promise pending even though the selected company is current.
 			if (me.get_company() === record.company) return show_if_current();
-			return Promise.resolve(me.company_field.set_value(record.company)).then(show_if_current);
+			var company_update = me.company_field.set_value(record.company);
+			// Link validation may remain pending after the control has already
+			// accepted the authorized value. Wait only while selection is stale.
+			if (me.get_company() === record.company) return show_if_current();
+			return Promise.resolve(company_update).then(show_if_current);
 		}).catch(function() {
 			if (sequence === me.target_sequence && me.context_is_current(context)) unavailable();
 		}).finally(function() {
