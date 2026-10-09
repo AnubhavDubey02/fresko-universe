@@ -673,12 +673,12 @@ class BrowserAcceptance(unittest.TestCase):
                 try:
                     money.page.evaluate("() => { frappe.set_route('fresko-money'); }")
                     money.page.wait_for_function(
-                        "target => window.__freskoMoneyTargetDiagnostic.rpc_calls.some(call => call.state === 'resolved' && JSON.stringify(call.target) === JSON.stringify(target))",
+                        "target => window.__freskoMoneyTargetDiagnostic.rpc_calls.some(call => call.state === 'resolved' && call.target && call.target.doctype === target.doctype && call.target.document_name === target.document_name && call.target.action === target.action)",
                         arg=target,
                         timeout=60000,
                     )
                     result = money.page.evaluate(
-                        "target => window.__freskoMoneyTargetDiagnostic.rpc_calls.find(call => call.state === 'resolved' && JSON.stringify(call.target) === JSON.stringify(target)).result",
+                        "target => window.__freskoMoneyTargetDiagnostic.rpc_calls.find(call => call.state === 'resolved' && call.target && call.target.doctype === target.doctype && call.target.document_name === target.document_name && call.target.action === target.action).result",
                         target,
                     )
                     self.assertTrue(any(item.get("event") == "response" and item.get("status") == 200 for item in target_network),
