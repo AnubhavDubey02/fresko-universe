@@ -584,26 +584,6 @@ class BrowserAcceptance(unittest.TestCase):
         money = self.session("verifier")
         try:
             self.money_page(money)
-            target_network = []
-            target_responses = []
-            target_started = [None]
-            def record_target_request(request):
-                body = request.post_data or ""
-                fields = parse_qs(body)
-                command = fields.get("cmd", [""])[0]
-                if "operator_service.get_money_action_target" in request.url or command.endswith("operator_service.get_money_action_target"):
-                    target_network.append({"event": "request", "elapsed": time.monotonic() - target_started[0] if target_started[0] else None, "method": request.method, "url": request.url, "cmd": command, "target": {key: fields.get(key, [None])[0] for key in ("doctype", "document_name", "action")}})
-            def record_target_response(response):
-                request = response.request
-                body = request.post_data or ""
-                fields = parse_qs(body)
-                command = fields.get("cmd", [""])[0]
-                if "operator_service.get_money_action_target" in request.url or command.endswith("operator_service.get_money_action_target"):
-                    response_target = {key: fields.get(key, [None])[0] for key in ("doctype", "document_name", "action")}
-                    target_responses.append({"response": response, "target": response_target})
-                    target_network.append({"event": "response", "elapsed": time.monotonic() - target_started[0] if target_started[0] else None, "status": response.status, "url": response.url, "cmd": command, "target": response_target})
-            money.page.on("request", record_target_request)
-            money.page.on("response", record_target_response)
             for doctype, name, action in (
                 ("Fresko Collection", saved["collection"], "verify_collection"),
                 ("Fresko Payment Allocation", saved["payment"], "approve_payment_allocation"),
@@ -617,25 +597,19 @@ class BrowserAcceptance(unittest.TestCase):
                 )
                 target = {"doctype": doctype, "document_name": name, "action": action}
                 money.page.evaluate("target => sessionStorage.setItem('fresko_money_target', JSON.stringify(target))", target)
-                target_started[0] = time.monotonic()
+                def is_exact_target_response(response):
+                    request = response.request
+                    fields = parse_qs(request.post_data or "")
+                    command = fields.get("cmd", [""])[0]
+                    if ("operator_service.get_money_action_target" not in request.url
+                            and not command.endswith("operator_service.get_money_action_target")):
+                        return False
+                    return all(fields.get(key, [None])[0] == value for key, value in target.items())
                 try:
-                    money.page.evaluate("() => { frappe.set_route('fresko-money'); }")
-                    deadline = time.monotonic() + 60
-                    matching_response = None
-                    while time.monotonic() < deadline:
-                        matching_response = next((
-                            item for item in target_network
-                            if item.get("event") == "response"
-                            and item.get("status") == 200
-                            and item.get("target") == target
-                        ), None)
-                        if matching_response:
-                            break
-                        time.sleep(0.1)
-                    if not matching_response:
-                        raise AssertionError("Exact authorized Money target RPC did not return HTTP 200")
-                    response = next(item["response"] for item in target_responses
-                                    if item["target"] == target)
+                    with money.page.expect_response(is_exact_target_response, timeout=60000) as response_info:
+                        money.page.evaluate("() => { frappe.set_route('fresko-money'); }")
+                    response = response_info.value
+                    self.assertEqual(response.status, 200, "Exact authorized Money target RPC must return HTTP 200")
                     payload = response.json()
                     result = payload.get("message") if isinstance(payload, dict) else None
                 except Exception:
@@ -646,7 +620,7 @@ class BrowserAcceptance(unittest.TestCase):
                         target_pending: Boolean(fresko_money.target_pending),
                         company: fresko_money.get_company()
                     })""")
-                    print("[MONEY_TARGET_DIAGNOSTIC] " + json.dumps({**diagnostic, "network": target_network}, sort_keys=True))
+                    print("[MONEY_TARGET_DIAGNOSTIC] " + json.dumps(diagnostic, sort_keys=True))
                     raise
                 self.assertEqual(result["record"]["name"], name)
                 self.assertFalse(result["allowed"], "Approved record cannot be reverified/reapproved")
