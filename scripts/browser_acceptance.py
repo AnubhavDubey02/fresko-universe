@@ -585,6 +585,7 @@ class BrowserAcceptance(unittest.TestCase):
         try:
             self.money_page(money)
             target_network = []
+            target_responses = []
             target_started = [None]
             def record_target_request(request):
                 body = request.post_data or ""
@@ -598,11 +599,9 @@ class BrowserAcceptance(unittest.TestCase):
                 fields = parse_qs(body)
                 command = fields.get("cmd", [""])[0]
                 if "operator_service.get_money_action_target" in request.url or command.endswith("operator_service.get_money_action_target"):
-                    try:
-                        payload = response.json()
-                    except Exception:
-                        payload = None
-                    target_network.append({"event": "response", "elapsed": time.monotonic() - target_started[0] if target_started[0] else None, "status": response.status, "url": response.url, "cmd": command, "target": {key: fields.get(key, [None])[0] for key in ("doctype", "document_name", "action")}, "message": payload.get("message") if isinstance(payload, dict) else None})
+                    response_target = {key: fields.get(key, [None])[0] for key in ("doctype", "document_name", "action")}
+                    target_responses.append({"response": response, "target": response_target})
+                    target_network.append({"event": "response", "elapsed": time.monotonic() - target_started[0] if target_started[0] else None, "status": response.status, "url": response.url, "cmd": command, "target": response_target})
             money.page.on("request", record_target_request)
             money.page.on("response", record_target_response)
             for doctype, name, action in (
@@ -635,7 +634,10 @@ class BrowserAcceptance(unittest.TestCase):
                         time.sleep(0.1)
                     if not matching_response:
                         raise AssertionError("Exact authorized Money target RPC did not return HTTP 200")
-                    result = matching_response["message"]
+                    response = next(item["response"] for item in target_responses
+                                    if item["target"] == target)
+                    payload = response.json()
+                    result = payload.get("message") if isinstance(payload, dict) else None
                 except Exception:
                     diagnostic = money.page.evaluate("""() => ({
                         route: frappe.get_route(),
