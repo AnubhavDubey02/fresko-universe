@@ -624,7 +624,7 @@ class BrowserAcceptance(unittest.TestCase):
                 const frappeCall = frappe.call;
                 frappe.call = function(options) {
                     if (options && options.method === 'fresko_universe.fresko_core.services.operator_service.get_money_action_target') {
-                        const call = { state: 'started', method: options.method };
+                        const call = { state: 'started', method: options.method, target: options.args };
                         diagnostic.rpc_calls.push(call);
                         return frappeCall.apply(this, arguments).then(function(result) {
                             call.state = 'resolved';
@@ -673,11 +673,13 @@ class BrowserAcceptance(unittest.TestCase):
                 try:
                     money.page.evaluate("() => { frappe.set_route('fresko-money'); }")
                     money.page.wait_for_function(
-                        "() => window.__freskoMoneyTargetDiagnostic.rpc_calls.some(call => call.state === 'resolved')",
+                        "target => window.__freskoMoneyTargetDiagnostic.rpc_calls.some(call => call.state === 'resolved' && JSON.stringify(call.target) === JSON.stringify(target))",
+                        target,
                         timeout=60000,
                     )
                     result = money.page.evaluate(
-                        "() => window.__freskoMoneyTargetDiagnostic.rpc_calls.at(-1).result"
+                        "target => window.__freskoMoneyTargetDiagnostic.rpc_calls.find(call => call.state === 'resolved' && JSON.stringify(call.target) === JSON.stringify(target)).result",
+                        target,
                     )
                     self.assertTrue(any(item.get("event") == "response" and item.get("status") == 200 for item in target_network),
                                     "Target RPC must complete successfully over HTTP")
