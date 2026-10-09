@@ -70,10 +70,11 @@ var fresko_money = {
 		var sequence = ++me.target_sequence, context = me.read_context();
 		me.target_pending = true;
 		$(me.page.main).find('#fm-target-record').remove();
-		return frappe.call({
+		// Frappe v15 returns a jQuery Deferred without native catch/finally.
+		return Promise.resolve(frappe.call({
 			method: 'fresko_universe.fresko_core.services.operator_service.get_money_action_target',
 			args: target
-		}).then(function(r) {
+		})).then(function(r) {
 			if (sequence !== me.target_sequence || !me.context_is_current(context) ||
 				sessionStorage.getItem('fresko_money_target') !== raw || me.is_supplier() ||
 				(typeof frappe.get_route === 'function' && frappe.get_route()[0] !== 'fresko-money')) return;

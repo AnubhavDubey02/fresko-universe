@@ -8,7 +8,11 @@ const vm = require('node:vm');
 const src = fs.readFileSync(path.join(__dirname,'../fresko_universe/fresko_universe/fresko_core/page/fresko_money/fresko_money.js'),'utf8');
 const target = (name) => ({doctype:'Fresko Collection',document_name:name,action:'verify_collection'});
 const reply = (name) => ({message:{doctype:'Fresko Collection',action:'verify_collection',allowed:false,blocked_reason:'Already approved',record:{name,company:'Company A',status:'APPROVED',version:2}}});
-function harness() {
+// Pinned Frappe returns a jQuery 2.2.4 Deferred: then(), no catch()/finally().
+function deferredShape(promise) {
+  return {then(resolve, reject) { return deferredShape(promise.then(resolve, reject)); }};
+}
+function harness(useDeferred = false) {
   const map = new Map(), requests = [], snapshots = [], notices = [];
   let currentCompany = 'Old Company', currentRoute = ['fresko-money'], routeChange, pageChange;
   const document = {};
@@ -17,7 +21,10 @@ function harness() {
     pages:{'fresko-money':{}},user_roles:['Fresko Accounts'],get_route:()=>currentRoute,
     container:{page:{id:'page-fresko-money'}},
     router:{on:(event,callback)=>{assert.equal(event,'change');routeChange=callback;}},
-    msgprint:m=>notices.push(m),call:()=>new Promise((resolve,reject)=>requests.push({resolve,reject})),
+    msgprint:m=>notices.push(m),call:()=>{
+      const pending = new Promise((resolve,reject)=>requests.push({resolve,reject}));
+      return useDeferred ? deferredShape(pending) : pending;
+    },
   };
   const $ = (node) => ({
     find:()=>({remove:()=>{}}),
@@ -81,6 +88,25 @@ async function run() {
   await selectedTask;
   assert.deepEqual(selected.snapshots,[null],'target renders once selected company matches despite pending Link validation');
   assert.equal(selected.sessionStorage.getItem('fresko_money_target'),null);
+  const nativeDeferred=harness(true);
+  for (const name of ['COL-DEFERRED-1', 'COL-DEFERRED-2']) {
+    nativeDeferred.sessionStorage.setItem('fresko_money_target',JSON.stringify(target(name)));
+    const task=nativeDeferred.ui.consume_action_target();
+    assert.equal(nativeDeferred.ui.target_pending,true);
+    nativeDeferred.requests.at(-1).resolve(reply(name));
+    await task;
+    assert.equal(nativeDeferred.ui.target_pending,false,'Deferred success must release the target gate');
+    assert.equal(nativeDeferred.sessionStorage.getItem('fresko_money_target'),null);
+  }
+  assert.deepEqual(nativeDeferred.snapshots,[null,null],'Deferred results must render both exact handoffs');
+  nativeDeferred.sessionStorage.setItem('fresko_money_target',JSON.stringify(target('COL-DEFERRED-DENIED')));
+  const rejectedTask=nativeDeferred.ui.consume_action_target();
+  nativeDeferred.requests.at(-1).reject(new Error('Permission denied'));
+  await rejectedTask;
+  assert.equal(nativeDeferred.ui.target_pending,false,'Deferred failure must release the target gate');
+  assert.equal(nativeDeferred.sessionStorage.getItem('fresko_money_target'),null);
+  assert.equal(nativeDeferred.notices.length,1);
+  assert.deepEqual(nativeDeferred.snapshots,[null,null],'Denied Deferred response must not render a target');
   const denied=harness();denied.frappe.user_roles=['Fresko Accounts','Supplier Viewer'];
   denied.sessionStorage.setItem('fresko_money_target',JSON.stringify(target('DENY')));
   await denied.ui.consume_action_target();
