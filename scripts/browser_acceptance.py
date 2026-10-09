@@ -672,15 +672,24 @@ class BrowserAcceptance(unittest.TestCase):
                 target_started[0] = time.monotonic()
                 try:
                     money.page.evaluate("() => { frappe.set_route('fresko-money'); }")
-                    money.page.wait_for_function(
-                        "target => window.__freskoMoneyTargetDiagnostic.rpc_calls.some(call => call.state === 'resolved' && call.target && call.target.doctype === target.doctype && call.target.document_name === target.document_name && call.target.action === target.action)",
-                        arg=target,
-                        timeout=60000,
-                    )
-                    result = money.page.evaluate(
-                        "target => window.__freskoMoneyTargetDiagnostic.rpc_calls.find(call => call.state === 'resolved' && call.target && call.target.doctype === target.doctype && call.target.document_name === target.document_name && call.target.action === target.action).result",
-                        target,
-                    )
+                    deadline = time.monotonic() + 60
+                    matching_call = None
+                    while time.monotonic() < deadline:
+                        calls = money.page.evaluate(
+                            "() => window.__freskoMoneyTargetDiagnostic.rpc_calls"
+                        )
+                        matching_call = next((
+                            call for call in calls
+                            if call.get("state") == "resolved"
+                            and isinstance(call.get("target"), dict)
+                            and all(call["target"].get(key) == value for key, value in target.items())
+                        ), None)
+                        if matching_call:
+                            break
+                        time.sleep(0.1)
+                    if not matching_call:
+                        raise AssertionError("Exact authorized Money target RPC did not resolve")
+                    result = matching_call["result"]
                     self.assertTrue(any(item.get("event") == "response" and item.get("status") == 200 for item in target_network),
                                     "Target RPC must complete successfully over HTTP")
                 except Exception:
