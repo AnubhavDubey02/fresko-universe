@@ -629,6 +629,7 @@ class BrowserAcceptance(unittest.TestCase):
                         return frappeCall.apply(this, arguments).then(function(result) {
                             call.state = 'resolved';
                             call.exc = Boolean(result && result.exc);
+                            call.result = result && result.message;
                             return result;
                         }, function(error) {
                             call.state = 'rejected';
@@ -670,8 +671,16 @@ class BrowserAcceptance(unittest.TestCase):
                 money.page.evaluate("target => sessionStorage.setItem('fresko_money_target', JSON.stringify(target))", target)
                 target_started[0] = time.monotonic()
                 try:
-                    result = self.response_action(money, "operator_service.get_money_action_target",
-                        lambda: money.page.evaluate("() => frappe.set_route('fresko-money')"), timeout=60000)
+                    money.page.evaluate("() => { frappe.set_route('fresko-money'); }")
+                    money.page.wait_for_function(
+                        "() => window.__freskoMoneyTargetDiagnostic.rpc_calls.some(call => call.state === 'resolved')",
+                        timeout=60000,
+                    )
+                    result = money.page.evaluate(
+                        "() => window.__freskoMoneyTargetDiagnostic.rpc_calls.at(-1).result"
+                    )
+                    self.assertTrue(any(item.get("event") == "response" and item.get("status") == 200 for item in target_network),
+                                    "Target RPC must complete successfully over HTTP")
                 except Exception:
                     diagnostic = money.page.evaluate("""() => ({
                         ...window.__freskoMoneyTargetDiagnostic,
