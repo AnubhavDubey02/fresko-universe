@@ -79,15 +79,19 @@ var fresko_money = {
 				(typeof frappe.get_route === 'function' && frappe.get_route()[0] !== 'fresko-money')) return;
 			var result = r.message, record = result && result.record;
 			if (r.exc || !record || record.name !== target.document_name || result.doctype !== target.doctype || result.action !== target.action || !record.company) throw new Error('Unavailable');
-			// Company comes only from the authorized server projection, never storage.
-			return Promise.resolve(me.company_field.set_value(record.company)).then(function() {
+			function show_if_current() {
 				if (sequence !== me.target_sequence || me.get_company() !== record.company ||
 					sessionStorage.getItem('fresko_money_target') !== raw || me.is_supplier() ||
 					(typeof frappe.get_route === 'function' && frappe.get_route()[0] !== 'fresko-money')) return;
 				// Clear before exposing the focused target (browser acceptance gate).
 				clear_handled();
 				me.show_action_target(result);
-			});
+			}
+			// Company comes only from the authorized server projection, never storage.
+			// Avoid revalidating an unchanged Link value; Frappe can leave its
+			// validation promise pending even though the selected company is current.
+			if (me.get_company() === record.company) return show_if_current();
+			return Promise.resolve(me.company_field.set_value(record.company)).then(show_if_current);
 		}).catch(function() {
 			if (sequence === me.target_sequence && me.context_is_current(context)) unavailable();
 		}).finally(function() {

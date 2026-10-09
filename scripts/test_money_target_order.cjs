@@ -61,6 +61,15 @@ async function run() {
   pageChanged.requests[0].resolve(reply('COL-PAGE'));
   await pageTask;
   assert.deepEqual(pageChanged.snapshots,[null]);
+  const unchanged=harness();
+  unchanged.ui.company_field={set_value(){throw new Error('unchanged company must not be revalidated')}};
+  unchanged.ui.get_company=()=> 'Company A';
+  unchanged.sessionStorage.setItem('fresko_money_target',JSON.stringify(target('COL-SAME-COMPANY')));
+  const unchangedTask=unchanged.ui.consume_action_target();
+  unchanged.requests[0].resolve(reply('COL-SAME-COMPANY'));
+  await unchangedTask;
+  assert.deepEqual(unchanged.snapshots,[null],'same-company target is rendered after cleanup without Link revalidation');
+  assert.equal(unchanged.sessionStorage.getItem('fresko_money_target'),null);
   const denied=harness();denied.frappe.user_roles=['Fresko Accounts','Supplier Viewer'];
   denied.sessionStorage.setItem('fresko_money_target',JSON.stringify(target('DENY')));
   await denied.ui.consume_action_target();
