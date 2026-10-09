@@ -1222,3 +1222,48 @@ no new Bench, native browser, concurrency, hosted staging, device or exact-head 
 pass is claimed. RG-02/RG-06 and the relevant security gates require corrected-head
 Bench/browser evidence and independent review before closure. Prior reports are
 retained unchanged. No new milestone was started.
+
+
+## 2026-10-09 PR20 native allocation authorization coverage
+
+Child branch: `codex/pr20-native-allocation-auth`, based on exact Draft PR20
+head `d5e9d42daa5d3f2115704802e09a20339c63d061`. PR20 remains Draft; no
+runtime, schema, permission or production-data change.
+
+Read the Drive handoff `1-zwvDld4JN4nKe43Dd7h_UZsgmD1xOQX` start document
+first, then reconciled the 55-scenario matrix
+`14VC93Fp9NN0Kx1CND0uV4CnlAHk9N08Q`, current-head stress report
+`1C0Y7fMmYFiV1O-RbcMaKzUexWkJCL9LE`, historical red-team report
+`19Z6I-6jYNjJowyU_9BincyRCt03SHNuB` and historical Apply/Verify
+`10dhESSshogFg0LBV592ORkiEzhwpYDKF`. The historical Money patch is already
+superseded by current source; no old patch was reapplied.
+
+Existing native `test_allocation_needs_approved_sale_and_three_actor_review`
+already rejects approval before verification and provides a positive control.
+`test_allocation_replay_and_digest_conflict_do_not_duplicate_quantity` and the
+two-connection overdraw tests retain their existing assertions. The new
+`test_p0_authorization` module adds four targeted tests covering the gap:
+
+- Missing verifier: assert exact ValidationError and unchanged full persistence.
+- Unauthorized approval: wrong role, System Manager, Supplier/mixed Supplier,
+  maker-with-Approver and verifier-with-Approver; assert PermissionError and no
+  related changes. The canonical three-actor policy justifies self-approval denial.
+- Explicit stale allocation token: unchanged persistence.
+- Authorized approval and current-token replay: one APPROVE event/version
+  increment, exactly 30 allocated units, distinct actors, unchanged physical
+  Container/Outward/Evidence and no duplicate persisted effect.
+
+Reuse existing commercial factories via a shared mixin (no inherited test
+duplication). Snapshots freshly reload Sale, physical/source truth, every
+Container Allocation/Exception, linked Version and Comment rows, before any
+rollback. No `frappe.db.flush`, mocked permission, forged verifier or invented
+state is used. Administrator only provisions/inspects synthetic fixtures; all
+mutation attempts run as real role-bearing users.
+
+Local evidence: 299 offline application tests and 49 script tests PASS;
+Workspace/Money/target-order Node checks PASS; Python compile and diff checks
+PASS; unchanged schema snapshot (24 DocTypes, 6 proofs) PASS against exact base.
+Native new-module and complete pinned Bench/browser results are PENDING CI at
+this checkpoint. Direct Python actor checks are not claimed as signed-in HTTP
+proof. Broader cross-company HTTP, physical Android/iOS, staging/shadow business
+cycles and independent release review remain separate gates. No merge/deploy.

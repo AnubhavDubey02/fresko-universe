@@ -50,7 +50,7 @@ def _ensure_user(email, roles):
     return email
 
 
-class TestCommercialSale(FrappeTestCase):
+class CommercialSaleFixtures:
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
@@ -232,6 +232,7 @@ class TestCommercialSale(FrappeTestCase):
             "sale": sale.name, "exception_type": kind, "status": ("in", ["Open", "In Progress"]),
         }, pluck="name")
 
+class TestCommercialSale(CommercialSaleFixtures, FrappeTestCase):
     def test_reconciliation_totals_keep_unknown_money_and_partial_physical_allocation(self):
         physical = self._outward(100)
         sale = self._approve_sale(self._create(lines=[self._line("80", None)]))
