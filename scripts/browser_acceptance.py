@@ -588,74 +588,23 @@ class BrowserAcceptance(unittest.TestCase):
             target_started = [None]
             def record_target_request(request):
                 body = request.post_data or ""
-                command = parse_qs(body).get("cmd", [""])[0]
+                fields = parse_qs(body)
+                command = fields.get("cmd", [""])[0]
                 if "operator_service.get_money_action_target" in request.url or command.endswith("operator_service.get_money_action_target"):
-                    target_network.append({"event": "request", "elapsed": time.monotonic() - target_started[0] if target_started[0] else None, "method": request.method, "url": request.url, "cmd": command})
+                    target_network.append({"event": "request", "elapsed": time.monotonic() - target_started[0] if target_started[0] else None, "method": request.method, "url": request.url, "cmd": command, "target": {key: fields.get(key, [None])[0] for key in ("doctype", "document_name", "action")}})
             def record_target_response(response):
                 request = response.request
                 body = request.post_data or ""
-                command = parse_qs(body).get("cmd", [""])[0]
+                fields = parse_qs(body)
+                command = fields.get("cmd", [""])[0]
                 if "operator_service.get_money_action_target" in request.url or command.endswith("operator_service.get_money_action_target"):
-                    target_network.append({"event": "response", "elapsed": time.monotonic() - target_started[0] if target_started[0] else None, "status": response.status, "url": response.url, "cmd": command})
+                    try:
+                        payload = response.json()
+                    except Exception:
+                        payload = None
+                    target_network.append({"event": "response", "elapsed": time.monotonic() - target_started[0] if target_started[0] else None, "status": response.status, "url": response.url, "cmd": command, "target": {key: fields.get(key, [None])[0] for key in ("doctype", "document_name", "action")}, "message": payload.get("message") if isinstance(payload, dict) else None})
             money.page.on("request", record_target_request)
             money.page.on("response", record_target_response)
-            money.page.evaluate("""() => {
-                const diagnostic = window.__freskoMoneyTargetDiagnostic = {
-                    consume_calls: 0, page_show_calls: 0, router_change_calls: 0,
-                    rpc_calls: [], company_updates: []
-                };
-                const companyField = fresko_money.company_field;
-                const setCompany = companyField.set_value;
-                companyField.set_value = function(value) {
-                    const update = { before: this.get_value(), requested: value, state: 'started' };
-                    diagnostic.company_updates.push(update);
-                    const promise = setCompany.apply(this, arguments);
-                    update.after = this.get_value();
-                    return Promise.resolve(promise).then(function(result) {
-                        update.state = 'resolved';
-                        update.final = companyField.get_value();
-                        return result;
-                    }, function(error) {
-                        update.state = 'rejected';
-                        update.error = String(error && error.message || error).slice(0, 120);
-                        throw error;
-                    });
-                };
-                const frappeCall = frappe.call;
-                frappe.call = function(options) {
-                    if (options && options.method === 'fresko_universe.fresko_core.services.operator_service.get_money_action_target') {
-                        const call = { state: 'started', method: options.method, target: options.args };
-                        diagnostic.rpc_calls.push(call);
-                        return frappeCall.apply(this, arguments).then(function(result) {
-                            call.state = 'resolved';
-                            call.exc = Boolean(result && result.exc);
-                            call.result = result && result.message;
-                            return result;
-                        }, function(error) {
-                            call.state = 'rejected';
-                            call.error = String(error && error.message || error).slice(0, 120);
-                            throw error;
-                        });
-                    }
-                    return frappeCall.apply(this, arguments);
-                };
-                const consume = fresko_money.consume_action_target;
-                fresko_money.consume_action_target = function() {
-                    diagnostic.consume_calls += 1;
-                    return consume.apply(this, arguments);
-                };
-                const page = frappe.pages['fresko-money'];
-                const page_show = page && page.on_page_show;
-                if (page_show) page.on_page_show = function() {
-                    diagnostic.page_show_calls += 1;
-                    return page_show.apply(this, arguments);
-                };
-                const trigger = frappe.router.trigger;
-                if (trigger) frappe.router.trigger = function(name) {
-                    if (name === 'change') diagnostic.router_change_calls += 1;
-                    return trigger.apply(this, arguments);
-                };
-            }""")
             for doctype, name, action in (
                 ("Fresko Collection", saved["collection"], "verify_collection"),
                 ("Fresko Payment Allocation", saved["payment"], "approve_payment_allocation"),
@@ -673,35 +622,27 @@ class BrowserAcceptance(unittest.TestCase):
                 try:
                     money.page.evaluate("() => { frappe.set_route('fresko-money'); }")
                     deadline = time.monotonic() + 60
-                    matching_call = None
+                    matching_response = None
                     while time.monotonic() < deadline:
-                        calls = money.page.evaluate(
-                            "() => window.__freskoMoneyTargetDiagnostic.rpc_calls"
-                        )
-                        matching_call = next((
-                            call for call in calls
-                            if call.get("state") == "resolved"
-                            and isinstance(call.get("target"), dict)
-                            and all(call["target"].get(key) == value for key, value in target.items())
+                        matching_response = next((
+                            item for item in target_network
+                            if item.get("event") == "response"
+                            and item.get("status") == 200
+                            and item.get("target") == target
                         ), None)
-                        if matching_call:
+                        if matching_response:
                             break
                         time.sleep(0.1)
-                    if not matching_call:
-                        raise AssertionError("Exact authorized Money target RPC did not resolve")
-                    result = matching_call["result"]
-                    self.assertTrue(any(item.get("event") == "response" and item.get("status") == 200 for item in target_network),
-                                    "Target RPC must complete successfully over HTTP")
+                    if not matching_response:
+                        raise AssertionError("Exact authorized Money target RPC did not return HTTP 200")
+                    result = matching_response["message"]
                 except Exception:
                     diagnostic = money.page.evaluate("""() => ({
-                        ...window.__freskoMoneyTargetDiagnostic,
                         route: frappe.get_route(),
                         page_id: frappe.container && frappe.container.page && frappe.container.page.id,
                         target_present: Boolean(sessionStorage.getItem('fresko_money_target')),
                         target_pending: Boolean(fresko_money.target_pending),
-                        rpc_calls: window.__freskoMoneyTargetDiagnostic.rpc_calls,
-                        company: fresko_money.get_company(),
-                        company_updates: window.__freskoMoneyTargetDiagnostic.company_updates
+                        company: fresko_money.get_company()
                     })""")
                     print("[MONEY_TARGET_DIAGNOSTIC] " + json.dumps({**diagnostic, "network": target_network}, sort_keys=True))
                     raise
