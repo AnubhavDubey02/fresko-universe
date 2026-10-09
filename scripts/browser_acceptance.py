@@ -674,7 +674,7 @@ class BrowserAcceptance(unittest.TestCase):
                     money.page.evaluate("() => { frappe.set_route('fresko-money'); }")
                     money.page.wait_for_function(
                         "target => window.__freskoMoneyTargetDiagnostic.rpc_calls.some(call => call.state === 'resolved' && JSON.stringify(call.target) === JSON.stringify(target))",
-                        target,
+                        arg=target,
                         timeout=60000,
                     )
                     result = money.page.evaluate(
