@@ -79,13 +79,20 @@ class TestGroup1BAuthenticatedHTTP(FrappeTestCase):
                 headers['Content-Type'] = 'application/json'
             if token:
                 headers['X-Frappe-CSRF-Token'] = token
-            response = client.open(path, base_url=self.base, method=method,
-                query_string=data if method == 'GET' and isinstance(data, dict) else None,
-                data=None if method == 'GET' and isinstance(data, dict) else data, headers=headers)
-            body = response.get_data()
-            status = response.status_code
-            response.close()
-            return status, body
+            response = None
+            try:
+                response = client.open(path, base_url=self.base, method=method,
+                    query_string=data if method == 'GET' and isinstance(data, dict) else None,
+                    data=None if method == 'GET' and isinstance(data, dict) else data, headers=headers)
+                return response.status_code, response.get_data()
+            finally:
+                try:
+                    if response is not None:
+                        response.close()
+                finally:
+                    # Rendering can raise before Frappe's ClosingIterator exists.
+                    # Always close this worker's actual connection and its locks.
+                    frappe.destroy()
         with ThreadPoolExecutor(max_workers=1) as pool:
             return pool.submit(request).result(timeout=90)
 

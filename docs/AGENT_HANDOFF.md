@@ -1342,3 +1342,18 @@ Supplier/Guest/mixed/ambiguous/company/revocation, four-channel UNKNOWN and
 conflict-source privacy checks. Native full305 PASS was run before this final
 closure supplement; fresh exact-head CI must certify all306 tests and browser.
 Final independent closure review and physical devices remain pending.
+
+CI closure supplement: run38041148735 at47e07863 failed306 tests with20 errors.
+The first private-file denial reached the correct PermissionError but Frappe's
+HTML error renderer crashed because assets were not built before native tests.
+Its failed WSGI worker retained a connection, cascading into Container fixture
+lock waits. CI now builds real assets before native HTTP tests, and the test
+worker closes its connection even if rendering raises. Runtime permission and
+business logic and all denial assertions are unchanged. Fresh exact-head CI
+is required; this failed run remains historical evidence.
+
+Local unchanged browser8 PASS (944.631s), synthetic four-component recovery PASS;
+independent complete intake-row restore comparison PASS (98 Draft/128 Revision).
+Initial local recovery lacked a dump client; a runtime-only container shim fixed
+it. Restored disposable-site DB port was explicitly retained after temporary
+common configuration was restored. No hosted staging/GCP changes occurred.
