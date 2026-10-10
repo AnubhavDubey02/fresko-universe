@@ -67,3 +67,10 @@ Two important resolved conflicts are:
 - Cite an immutable commit SHA for CI evidence and verify that exact SHA.
 - Never turn missing evidence into zero, success, matched, received, or verified.
 - Do not merge, retarget, or close predecessor PRs without explicit repository-owner authorization. Keep Phase 2A work on its focused branch/PR.
+
+## 2026-10-10 additive Group 1B runtime reference
+
+`docs/GROUP1B_NATIVE_INTAKE_RUNTIME.md` defines the implemented authenticated
+proposal persistence and review boundary. It supplements the pure Group1A
+contract; it does not supersede Physical, Commercial, Money or live-provider
+Evidence authority. Exact test/CI evidence belongs to the current Draft PR head.

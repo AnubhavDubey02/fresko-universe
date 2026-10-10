@@ -46,6 +46,7 @@ jobs:
           python3 -m unittest tests.test_workspace_contract -v
           python3 -m unittest tests.test_operator_contract -v
           python3 -m unittest tests.test_intake_contract -v
+          python3 -m unittest tests.test_intake_native_contract -v
       - name: Test immutable deployment export
         run: python3 -m unittest discover -s scripts -p 'test_deployment_package.py' -v
       - name: Run workspace UI offline checks

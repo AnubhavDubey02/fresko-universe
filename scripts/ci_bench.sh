@@ -191,6 +191,12 @@ bench --site "${SITE}" set-config allow_tests true
 bench --site "${SITE}" execute erpnext.setup.utils.before_tests
 echo "==> ERPNext before_tests finished"
 
+# Native HTTP tests exercise real HTML private-file denial pages as well as JSON.
+# Build their real assets before tests; a missing manifest breaks error rendering.
+echo "==> build assets for native HTTP response rendering"
+bench setup requirements --node
+bench build --apps frappe,erpnext,fresko_universe
+
 echo "==> run-tests --app fresko_universe"
 # Pinned Frappe only propagates unittest failures to exit status when CI is set.
 CI=1 bench --site "${SITE}" run-tests --app fresko_universe

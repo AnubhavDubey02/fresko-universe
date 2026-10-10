@@ -1305,3 +1305,83 @@ No local Bench CLI/site was available; new native tenant, Supplier, authenticate
 HTTP and concurrency proof remains NOT RUN. RG-15 remains BLOCKED for native
 import/report delivery. Pure contract is ready for independent review only;
 no staging or production readiness is claimed.
+
+## 2026-10-10 Group 1B native intake integration checkpoint
+
+Isolated branch `codex/group-1b-native-auth-integration` is based on PR22 exact
+`cf05fb145c8135fb3cfa40a01c79f4bb75566a29`. Original worktrees/untracked files
+are preserved. The Batch4 ZIP and all 63 manifest entries were hash verified.
+The additive patch applied; its reconstructed hooks patch failed actual hooks
+and was reconciled additively, preserving every existing authorization hook.
+
+Native testing reproduced and repaired missing-row concurrent replay deadlocks,
+consistent-read predecessor visibility after waiting for another commit, strict
+RPC kwargs rejecting Frappe's cmd marker, and legitimate multiple File rows for
+one attachment. Independent review identified native DocShare/File-controller
+bypasses; direct/list/count/v2/RPC/download/ZIP/alias fences and early source
+privacy protection were added with role-separated regression assertions.
+See `GROUP1B_NATIVE_INTAKE_RUNTIME.md` for authority, lifecycle and limits.
+
+A disposable WSL Bench uses pinned upstream versions, separate MariaDB/Redis
+containers on loopback and synthetic records only. Fresh/repeated migrations and
+exact PR22 upgrade proof passed without fabricating intake or business rows.
+Earlier focused native11 and authenticated8 tests passed; a full native305-test
+run passed before final File closure changes. Final closure tests/CI must be read
+from the exact Draft PR head; these earlier passes are not substituted for them.
+Offline app348 and scripts49 tests, Node/guards/schema checks are re-executed for
+final publication. Snapshot now26DocTypes/sevenmigrationproofs. No GCP, deployment,
+merge, real business migration or automatic posting occurred. RG-16 stays BLOCKED
+for live provider verification and remaining pilot/independent-review gates.
+
+Final local closure supplement: 12 native MariaDB/service tests PASS (5.701s),
+9 genuine authenticated WSGI/security tests PASS (44.122s), offline app348 PASS
+(0.481s), scripts49 PASS (0.973s), three Node suites and guards/fixtures/snapshot
+PASS. The nine-request-test module includes positive ZIP readback and negative
+File aliases, v1/v2 controller/download/count, generic source privacy changes,
+Supplier/Guest/mixed/ambiguous/company/revocation, four-channel UNKNOWN and
+conflict-source privacy checks. Native full305 PASS was run before this final
+closure supplement; fresh exact-head CI must certify all306 tests and browser.
+Final independent closure review and physical devices remain pending.
+
+CI closure supplement: run38041148735 at47e07863 failed306 tests with20 errors.
+The first private-file denial reached the correct PermissionError but Frappe's
+HTML error renderer crashed because assets were not built before native tests.
+Its failed WSGI worker retained a connection, cascading into Container fixture
+lock waits. CI now builds real assets before native HTTP tests, and the test
+worker closes its connection even if rendering raises. Runtime permission and
+business logic and all denial assertions are unchanged. Fresh exact-head CI
+is required; this failed run remains historical evidence.
+
+Local unchanged browser8 PASS (944.631s), synthetic four-component recovery PASS;
+independent complete intake-row restore comparison PASS (98 Draft/128 Revision).
+Initial local recovery lacked a dump client; a runtime-only container shim fixed
+it. Restored disposable-site DB port was explicitly retained after temporary
+common configuration was restored. No hosted staging/GCP changes occurred.
+
+Further CI supplement: run38042698405 at523922d passed all306 native tests
+(82.997s) before exposing a Phase1 migration-proof seed defect: that baseline
+has no ERPNext Company masters. The new proof now snapshots the existing
+registry-seeded legacy sentinels, asserting they exist, without creating rows.
+The separate exactPR22 seed remains unchanged. New exact-head CI must still
+pass migration and browser gates; this failed run is preserved as evidence.
+
+Proof-baseline correction supplement: run38043128374 again passed native tests,
+then exposed that the real Phase1 registry has populated Deal/Evidence but
+zero Container rows. The proof now requires those actual legacy sentinels;
+exactPR22 separately requires populated Container/Evidence. Snapshot reads
+bypass table-list caches, assert preserved row identities/counts/values, and
+reject invented rows in new business tables. Seven offline proof regressions
+bring scripts to56 PASS. A fresh isolated exactPhase1 native site executed all
+seven registry proofs: seed, first migration/verification and repeated
+migration/verification PASS. ExactPR22 first/repeated proof re-verification PASS.
+No existing site was reset or legacy truth manufactured. Final CI remains a
+separate exact-head gate. The retained-QA full306 repeat failed3assertions/10errors
+due existing fixed source/provenance and bank-account fixtures; preserved logs,
+no unrelated tests weakened. Fresh-site306 CI passes are distinct evidence.
+
+
+### 2026-10-10 — Group1B browser fixture capacity closure
+
+Head5095a75 CI38044259546 passed306 native tests102.368s and all seven migration proofs, then failed before browser execution: the new native authenticated matrix exhausted pinned Frappe's60-user/hour creation throttle. Browser assertions never ran in that failed run.
+
+The correction is confined to the non-whitelisted synthetic browser fixture: each User insert may reserve one process-local slot only after all three disposable/test flags, Administrator and@example.invalid checks. Prior throttle configuration is restored in finally on success/failure; nothing is persisted or changed for HTTP workers. Four offline regression tests prove restoration and denial of ordinary-site/real-user calls; full offline352PASS. Actual pinned MariaDB/Frappe insertion with an exhausted threshold, restoration, rollback and ordinary-site denial PASS. No intake/business/permission runtime or browser assertions changed. Fresh exact-headCI required. Independent review of predecessor5095a75 found no verified in-scope defect; final narrow correction needs its own review.
