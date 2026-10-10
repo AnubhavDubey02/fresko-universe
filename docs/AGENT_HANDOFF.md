@@ -1305,3 +1305,40 @@ No local Bench CLI/site was available; new native tenant, Supplier, authenticate
 HTTP and concurrency proof remains NOT RUN. RG-15 remains BLOCKED for native
 import/report delivery. Pure contract is ready for independent review only;
 no staging or production readiness is claimed.
+
+## 2026-10-10 Group 1B native intake integration checkpoint
+
+Isolated branch `codex/group-1b-native-auth-integration` is based on PR22 exact
+`cf05fb145c8135fb3cfa40a01c79f4bb75566a29`. Original worktrees/untracked files
+are preserved. The Batch4 ZIP and all 63 manifest entries were hash verified.
+The additive patch applied; its reconstructed hooks patch failed actual hooks
+and was reconciled additively, preserving every existing authorization hook.
+
+Native testing reproduced and repaired missing-row concurrent replay deadlocks,
+consistent-read predecessor visibility after waiting for another commit, strict
+RPC kwargs rejecting Frappe's cmd marker, and legitimate multiple File rows for
+one attachment. Independent review identified native DocShare/File-controller
+bypasses; direct/list/count/v2/RPC/download/ZIP/alias fences and early source
+privacy protection were added with role-separated regression assertions.
+See `GROUP1B_NATIVE_INTAKE_RUNTIME.md` for authority, lifecycle and limits.
+
+A disposable WSL Bench uses pinned upstream versions, separate MariaDB/Redis
+containers on loopback and synthetic records only. Fresh/repeated migrations and
+exact PR22 upgrade proof passed without fabricating intake or business rows.
+Earlier focused native11 and authenticated8 tests passed; a full native305-test
+run passed before final File closure changes. Final closure tests/CI must be read
+from the exact Draft PR head; these earlier passes are not substituted for them.
+Offline app348 and scripts49 tests, Node/guards/schema checks are re-executed for
+final publication. Snapshot now26DocTypes/sevenmigrationproofs. No GCP, deployment,
+merge, real business migration or automatic posting occurred. RG-16 stays BLOCKED
+for live provider verification and remaining pilot/independent-review gates.
+
+Final local closure supplement: 12 native MariaDB/service tests PASS (5.701s),
+9 genuine authenticated WSGI/security tests PASS (44.122s), offline app348 PASS
+(0.481s), scripts49 PASS (0.973s), three Node suites and guards/fixtures/snapshot
+PASS. The nine-request-test module includes positive ZIP readback and negative
+File aliases, v1/v2 controller/download/count, generic source privacy changes,
+Supplier/Guest/mixed/ambiguous/company/revocation, four-channel UNKNOWN and
+conflict-source privacy checks. Native full305 PASS was run before this final
+closure supplement; fresh exact-head CI must certify all306 tests and browser.
+Final independent closure review and physical devices remain pending.

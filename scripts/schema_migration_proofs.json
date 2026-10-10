@@ -24,6 +24,10 @@
     {
       "id": "money_reconciliation_ledger",
       "path": "scripts/prove_money_upgrade.py"
+    },
+    {
+      "id": "unified_intake_drafts",
+      "path": "scripts/prove_intake_upgrade.py"
     }
   ]
 }

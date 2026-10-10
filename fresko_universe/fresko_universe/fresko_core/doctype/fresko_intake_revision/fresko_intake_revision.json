@@ -1,0 +1,156 @@
+{
+  "doctype": "DocType",
+  "name": "Fresko Intake Revision",
+  "module": "Fresko Core",
+  "engine": "InnoDB",
+  "autoname": "field:revision_key",
+  "track_changes": 0,
+  "allow_rename": 0,
+  "fields": [
+    {
+      "fieldname": "revision_key",
+      "fieldtype": "Data",
+      "label": "Revision Key",
+      "reqd": 1,
+      "unique": 1
+    },
+    {
+      "fieldname": "draft",
+      "fieldtype": "Link",
+      "label": "Draft",
+      "reqd": 1,
+      "options": "Fresko Intake Draft"
+    },
+    {
+      "fieldname": "evidence",
+      "fieldtype": "Link",
+      "label": "Evidence",
+      "reqd": 1,
+      "options": "Fresko Evidence"
+    },
+    {
+      "fieldname": "evidence_version",
+      "fieldtype": "Data",
+      "label": "Evidence Version",
+      "reqd": 1
+    },
+    {
+      "fieldname": "content_fingerprint",
+      "fieldtype": "Data",
+      "label": "Content Fingerprint",
+      "reqd": 1
+    },
+    {
+      "fieldname": "review_state",
+      "fieldtype": "Select",
+      "label": "Review State",
+      "reqd": 1,
+      "options": "NEEDS_SOURCE\nNEEDS_IDENTITY\nNEEDS_REVIEW\nCONFLICT\nREVIEWED\nREJECTED"
+    },
+    {
+      "fieldname": "payload_json",
+      "fieldtype": "Long Text",
+      "label": "Payload Json",
+      "reqd": 1
+    },
+    {
+      "fieldname": "capture_actor",
+      "fieldtype": "Link",
+      "label": "Capture Actor",
+      "reqd": 1,
+      "options": "User"
+    },
+    {
+      "fieldname": "can_post",
+      "fieldtype": "Check",
+      "label": "Can Post",
+      "reqd": 0,
+      "default": 0,
+      "read_only": 1
+    },
+    {
+      "fieldname": "sequence",
+      "fieldtype": "Int",
+      "label": "Sequence",
+      "reqd": 1,
+      "read_only": 1
+    },
+    {
+      "fieldname": "sequence_key",
+      "fieldtype": "Data",
+      "label": "Sequence Key",
+      "unique": 1,
+      "reqd": 1,
+      "read_only": 1
+    },
+    {
+      "fieldname": "previous_revision",
+      "fieldtype": "Link",
+      "label": "Previous Revision",
+      "options": "Fresko Intake Revision",
+      "read_only": 1
+    },
+    {
+      "fieldname": "action",
+      "fieldtype": "Select",
+      "label": "Action",
+      "options": "CAPTURE\nCONFLICT\nACKNOWLEDGE\nREQUEST_EVIDENCE\nREJECT",
+      "reqd": 1,
+      "read_only": 1
+    },
+    {
+      "fieldname": "reason",
+      "fieldtype": "Small Text",
+      "label": "Review Reason",
+      "read_only": 1
+    }
+  ],
+  "permissions": [
+    {
+      "role": "Fresko Accounts",
+      "read": 1,
+      "write": 0,
+      "create": 0,
+      "delete": 0,
+      "report": 0,
+      "export": 0,
+      "share": 0
+    },
+    {
+      "role": "Fresko Approver",
+      "read": 1,
+      "write": 0,
+      "create": 0,
+      "delete": 0,
+      "report": 0,
+      "export": 0,
+      "share": 0
+    },
+    {
+      "role": "Fresko Salesperson",
+      "read": 1,
+      "write": 0,
+      "create": 0,
+      "delete": 0,
+      "report": 0,
+      "export": 0,
+      "share": 0
+    }
+  ],
+  "field_order": [
+    "revision_key",
+    "draft",
+    "evidence",
+    "evidence_version",
+    "content_fingerprint",
+    "review_state",
+    "payload_json",
+    "capture_actor",
+    "can_post",
+    "sequence",
+    "sequence_key",
+    "previous_revision",
+    "action",
+    "reason"
+  ]
+}

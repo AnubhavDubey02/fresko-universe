@@ -1512,6 +1512,130 @@
    },
    "module": "Fresko Core"
   },
+  "Fresko Intake Draft": {
+   "autoname": "field:proposal_key",
+   "engine": "InnoDB",
+   "fields": {
+    "capture_actor": {
+     "fieldtype": "Link",
+     "options": "User",
+     "reqd": 1
+    },
+    "company": {
+     "fieldtype": "Link",
+     "options": "Company",
+     "reqd": 1
+    },
+    "content_fingerprint": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "current_revision": {
+     "fieldtype": "Link",
+     "options": "Fresko Intake Revision"
+    },
+    "evidence": {
+     "fieldtype": "Link",
+     "options": "Fresko Evidence",
+     "reqd": 1
+    },
+    "possible_duplicate": {
+     "fieldtype": "Check"
+    },
+    "proposal_key": {
+     "fieldtype": "Data",
+     "reqd": 1,
+     "unique": 1
+    },
+    "review_state": {
+     "fieldtype": "Select",
+     "options": "NEEDS_SOURCE\nNEEDS_IDENTITY\nNEEDS_REVIEW\nCONFLICT\nREVIEWED\nREJECTED",
+     "reqd": 1
+    },
+    "source_sha256": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "source_version": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "version": {
+     "default": "1",
+     "fieldtype": "Int",
+     "reqd": 1
+    }
+   },
+   "module": "Fresko Core"
+  },
+  "Fresko Intake Revision": {
+   "autoname": "field:revision_key",
+   "engine": "InnoDB",
+   "fields": {
+    "action": {
+     "fieldtype": "Select",
+     "options": "CAPTURE\nCONFLICT\nACKNOWLEDGE\nREQUEST_EVIDENCE\nREJECT",
+     "reqd": 1
+    },
+    "can_post": {
+     "fieldtype": "Check"
+    },
+    "capture_actor": {
+     "fieldtype": "Link",
+     "options": "User",
+     "reqd": 1
+    },
+    "content_fingerprint": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "draft": {
+     "fieldtype": "Link",
+     "options": "Fresko Intake Draft",
+     "reqd": 1
+    },
+    "evidence": {
+     "fieldtype": "Link",
+     "options": "Fresko Evidence",
+     "reqd": 1
+    },
+    "evidence_version": {
+     "fieldtype": "Data",
+     "reqd": 1
+    },
+    "payload_json": {
+     "fieldtype": "Long Text",
+     "reqd": 1
+    },
+    "previous_revision": {
+     "fieldtype": "Link",
+     "options": "Fresko Intake Revision"
+    },
+    "reason": {
+     "fieldtype": "Small Text"
+    },
+    "review_state": {
+     "fieldtype": "Select",
+     "options": "NEEDS_SOURCE\nNEEDS_IDENTITY\nNEEDS_REVIEW\nCONFLICT\nREVIEWED\nREJECTED",
+     "reqd": 1
+    },
+    "revision_key": {
+     "fieldtype": "Data",
+     "reqd": 1,
+     "unique": 1
+    },
+    "sequence": {
+     "fieldtype": "Int",
+     "reqd": 1
+    },
+    "sequence_key": {
+     "fieldtype": "Data",
+     "reqd": 1,
+     "unique": 1
+    }
+   },
+   "module": "Fresko Core"
+  },
   "Fresko Integrity Seal": {
    "autoname": "hash",
    "engine": "InnoDB",
@@ -2318,7 +2442,8 @@
   "physical_variance_exception",
   "integrity_seal_ledger",
   "commercial_sale_ledger",
-  "money_reconciliation_ledger"
+  "money_reconciliation_ledger",
+  "unified_intake_drafts"
  ],
  "schema_sources": {
   "install.py": "7440fe0db2e91ecae3feea8097b055a0d7474fafefd45f506087e721bd81d509",

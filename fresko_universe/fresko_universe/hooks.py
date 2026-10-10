@@ -10,7 +10,7 @@ app_logo_url = "/assets/fresko_universe/images/fresko-logo.svg"
 
 required_apps = ["frappe", "erpnext"]
 
-auth_hooks = ["fresko_universe.permissions.deny_supplier_http_access"]
+auth_hooks = ["fresko_universe.permissions.deny_supplier_http_access", "fresko_universe.intake_native.guard_http_access"]
 extend_bootinfo = "fresko_universe.boot.extend_bootinfo"
 
 app_include_js = "/assets/fresko_universe/js/fresko_shell.js"
@@ -41,6 +41,9 @@ fixtures = [
 
 # FSEC-003 — row-level + document ACL (Salesperson owner/salesperson scoped)
 permission_query_conditions = {
+    "Fresko Intake Draft": "fresko_universe.intake_native.draft_permission_query",
+    "Fresko Intake Revision": "fresko_universe.intake_native.revision_permission_query",
+    "File": "fresko_universe.intake_native.file_permission_query",
     "Fresko Adjustment Application": "fresko_universe.fresko_core.services.money_service.adjustment_application_permission_query",
     "Fresko Receivable Adjustment": "fresko_universe.fresko_core.services.money_service.receivable_adjustment_permission_query",
     "Fresko Payment Allocation": "fresko_universe.fresko_core.services.money_service.payment_allocation_permission_query",
@@ -60,6 +63,9 @@ permission_query_conditions = {
 }
 
 has_permission = {
+    "Fresko Intake Draft": "fresko_universe.intake_native.draft_has_permission",
+    "Fresko Intake Revision": "fresko_universe.intake_native.revision_has_permission",
+    "File": "fresko_universe.intake_native.file_has_permission",
     "Fresko Adjustment Application": "fresko_universe.fresko_core.services.money_service.money_has_permission",
     "Fresko Receivable Adjustment": "fresko_universe.fresko_core.services.money_service.money_has_permission",
     "Fresko Payment Allocation": "fresko_universe.fresko_core.services.money_service.money_has_permission",
@@ -81,11 +87,17 @@ has_permission = {
 # FSEC-004 / FSEC-005 — Protect captured original files and evidence records
 doc_events = {
     "File": {
-        "on_trash": ["fresko_universe.fresko_core.services.evidence_service.prevent_captured_file_deletion", "fresko_universe.fresko_core.services.money_service.protect_money_file_on_trash"],
-        "before_save": ["fresko_universe.fresko_core.services.evidence_service.prevent_captured_file_modification", "fresko_universe.fresko_core.services.money_service.protect_money_file_before_save"],
+        "on_trash": ["fresko_universe.intake_native.protect_intake_source", "fresko_universe.fresko_core.services.evidence_service.prevent_captured_file_deletion", "fresko_universe.fresko_core.services.money_service.protect_money_file_on_trash"],
+        "before_validate": "fresko_universe.intake_native.protect_intake_source",
+        "before_save": [ "fresko_universe.fresko_core.services.evidence_service.prevent_captured_file_modification", "fresko_universe.fresko_core.services.money_service.protect_money_file_before_save"],
+    },
+    "Fresko Evidence Attachment": {
+        "before_save": "fresko_universe.intake_native.protect_intake_source",
+        "on_trash": "fresko_universe.intake_native.protect_intake_source",
     },
     "Fresko Evidence": {
-        "on_trash": "fresko_universe.fresko_core.services.evidence_service.prevent_captured_evidence_deletion",
+        "on_trash": ["fresko_universe.intake_native.protect_intake_source", "fresko_universe.fresko_core.services.evidence_service.prevent_captured_evidence_deletion"],
+        "before_save": "fresko_universe.intake_native.protect_intake_source",
     },
 }
 
@@ -95,3 +107,11 @@ scheduler_events = {
     ],
 }
 
+
+# File controller ownership/DocShare grants must not expose intake source bytes.
+# Preserve the pinned public query contracts, filtering before pagination/counts.
+override_whitelisted_methods = {
+    "frappe.core.api.file.get_files_in_folder": "fresko_universe.intake_native.get_files_in_folder",
+    "frappe.core.api.file.get_files_by_search_text": "fresko_universe.intake_native.get_files_by_search_text",
+    "frappe.core.api.file.get_attached_images": "fresko_universe.intake_native.get_attached_images",
+}
