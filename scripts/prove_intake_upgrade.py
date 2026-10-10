@@ -47,7 +47,13 @@ def _seed():
 
 
 def seed_phase1():
-    _seed()
+    """Phase1 precedes ERPNext masters; reuse registry-seeded legacy sentinels."""
+    frappe.set_user('Administrator')
+    for doctype in DOCTYPES:
+        assert not frappe.db.table_exists(doctype), f'Unexpected baseline table: {doctype}'
+    legacy = _snapshot()
+    assert legacy.get('Fresko Container') and legacy.get('Fresko Evidence'), 'Registry legacy sentinels required'
+    _write(STATE, legacy)
 
 
 def seed_current_baseline():

@@ -1357,3 +1357,10 @@ independent complete intake-row restore comparison PASS (98 Draft/128 Revision).
 Initial local recovery lacked a dump client; a runtime-only container shim fixed
 it. Restored disposable-site DB port was explicitly retained after temporary
 common configuration was restored. No hosted staging/GCP changes occurred.
+
+Further CI supplement: run38042698405 at523922d passed all306 native tests
+(82.997s) before exposing a Phase1 migration-proof seed defect: that baseline
+has no ERPNext Company masters. The new proof now snapshots the existing
+registry-seeded legacy sentinels, asserting they exist, without creating rows.
+The separate exactPR22 seed remains unchanged. New exact-head CI must still
+pass migration and browser gates; this failed run is preserved as evidence.
