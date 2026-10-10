@@ -1364,3 +1364,17 @@ has no ERPNext Company masters. The new proof now snapshots the existing
 registry-seeded legacy sentinels, asserting they exist, without creating rows.
 The separate exactPR22 seed remains unchanged. New exact-head CI must still
 pass migration and browser gates; this failed run is preserved as evidence.
+
+Proof-baseline correction supplement: run38043128374 again passed native tests,
+then exposed that the real Phase1 registry has populated Deal/Evidence but
+zero Container rows. The proof now requires those actual legacy sentinels;
+exactPR22 separately requires populated Container/Evidence. Snapshot reads
+bypass table-list caches, assert preserved row identities/counts/values, and
+reject invented rows in new business tables. Seven offline proof regressions
+bring scripts to56 PASS. A fresh isolated exactPhase1 native site executed all
+seven registry proofs: seed, first migration/verification and repeated
+migration/verification PASS. ExactPR22 first/repeated proof re-verification PASS.
+No existing site was reset or legacy truth manufactured. Final CI remains a
+separate exact-head gate. The retained-QA full306 repeat failed3assertions/10errors
+due existing fixed source/provenance and bank-account fixtures; preserved logs,
+no unrelated tests weakened. Fresh-site306 CI passes are distinct evidence.

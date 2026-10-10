@@ -18,7 +18,7 @@ LEGACY = ('Fresko Container', 'Fresko Container Lot', 'Fresko Deal', 'Fresko Evi
 def _snapshot():
     result = {}
     for doctype in LEGACY:
-        if frappe.db.table_exists(doctype):
+        if frappe.db.table_exists(doctype, cached=False):
             rows = frappe.db.sql(f'SELECT * FROM `tab{doctype}` ORDER BY name', as_dict=True)
             result[doctype] = json.loads(json.dumps(rows, sort_keys=True, default=str))
     return result
@@ -43,7 +43,9 @@ def _seed():
         'container': container.name, 'notes': 'Synthetic upgrade sentinel, unresolved',
         'content_sha256': sha256(b'intake synthetic migration sentinel').hexdigest()}).insert(ignore_permissions=True)
     frappe.db.commit()
-    _write(STATE, _snapshot())
+    legacy = _snapshot()
+    assert legacy.get('Fresko Container') and legacy.get('Fresko Evidence'), 'Current baseline sentinels required'
+    _write(STATE, legacy)
 
 
 def seed_phase1():
@@ -52,7 +54,9 @@ def seed_phase1():
     for doctype in DOCTYPES:
         assert not frappe.db.table_exists(doctype), f'Unexpected baseline table: {doctype}'
     legacy = _snapshot()
-    assert legacy.get('Fresko Container') and legacy.get('Fresko Evidence'), 'Registry legacy sentinels required'
+    # Phase1 registry deliberately has populated Deal/Evidence, no ERPNext
+    # Company/Container masters. Exact PR22 additionally proves Container rows.
+    assert legacy.get('Fresko Deal') and legacy.get('Fresko Evidence'), 'Registry legacy sentinels required'
     _write(STATE, legacy)
 
 
@@ -78,10 +82,14 @@ def verify_first_migrate():
     current = _snapshot()
     # Later baseline-to-current proofs may add columns to legacy tables: compare
     # precisely the columns/rows present at seed, without inventing old values.
-    for doctype, original in _read(STATE).items():
+    seeded = _read(STATE)
+    for doctype, original in seeded.items():
         actual = {r['name']: r for r in current[doctype]}
+        assert set(actual) == {r['name'] for r in original}, f'Migration changed row identities: {doctype}'
         for row in original:
             assert {k: actual[row['name']][k] for k in row} == row, doctype
+    for doctype in current.keys() - seeded.keys():
+        assert not current[doctype], f'Migration fabricated legacy truth: {doctype}'
     _write(FIRST, current)
 
 
