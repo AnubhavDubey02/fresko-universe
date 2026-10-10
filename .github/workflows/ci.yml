@@ -43,6 +43,7 @@ jobs:
           python3 -m unittest tests.test_pilot_safety_contract -v
           python3 -m unittest tests.test_quantity_assertion_static tests.test_integrity_static -v
           python3 -m unittest tests.test_ask_fresko_contract -v
+          python3 -m unittest tests.test_ask_fresko_v03 tests.test_ask_fresko_native_bridge_contract -v
           python3 -m unittest tests.test_workspace_contract -v
           python3 -m unittest tests.test_operator_contract -v
           python3 -m unittest tests.test_intake_contract -v

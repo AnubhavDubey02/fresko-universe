@@ -1305,3 +1305,44 @@ No local Bench CLI/site was available; new native tenant, Supplier, authenticate
 HTTP and concurrency proof remains NOT RUN. RG-15 remains BLOCKED for native
 import/report delivery. Pure contract is ready for independent review only;
 no staging or production readiness is claimed.
+
+## 2026-10-10 Track A: Batch 4 realistic Ask Fresko router integration
+
+Isolated branch `codex/ask-fresko-v04-realistic-routing` starts at exact PR #22
+head `cf05fb145c8135fb3cfa40a01c79f4bb75566a29`. Draft child PR targets
+`codex/group-1a-unified-intake`; no merge, deployment, schema change or Qwen work.
+Applied the archive's additive Track A patch after verifying 26 relevant
+manifest entries. Patch-root history was not merged. Existing ten-tool catalog,
+Physical, Commercial, Money, Evidence and operator UI remain unchanged.
+
+Frozen source `ask_fresko_router_v03.py` remains byte-identical SHA-256
+`8e4d05abc655decaff7c80b800f7adfef014642b61c05ae5a32a167c61b7110a`.
+The historic v0.3 filename is preserved for Batch 4 provenance. Router proposes
+only allowlisted read operations; no financial numbers are inferred. Native
+bridge independently derives the enabled user, current role children and a
+single explicit Company User Permission, resolves shipping IDs within that
+company, checks record ACLs and invokes existing canonical read tools.
+Supplier/mixed Supplier and Guest precedence, ambiguous company denial and
+Salesperson Money denial remain mandatory. No caller authority flags accepted.
+
+Reproduced candidate stale-role defect in a controlled fake: revoked User role
+children with stale `get_roles` cache still authorized. Corrected by uncached
+User/role-child reads (including disabled-user denial), repeated immediately
+before dispatch. Isolated fake tests restore imported modules and exercise the
+actual ten-tool catalog. These are NOT native authenticated HTTP evidence.
+
+Executed offline: 32 focused router/bridge tests, 368 full app tests, 49 scripts,
+three Node suites, protected-write guard, shadow fixture, 24-DocType snapshot and
+six-proof registry validation PASS. Compilation and whitespace checks PASS.
+Actual frozen router holdout remains 50/51 strict, 33/33 exact ready reads, zero
+negative mock dispatches; A4FINAL-047 (P&L/tax clarification vs unsupported)
+is retained without tuning/relabeling. Holdout SHA-256
+`616234595662aef282d26a75b17c633c940607eb0c6ca2fe7fed3e98e22db823`.
+Local routing-only p50 0.071568 ms, p95 0.335354 ms; no network/DB timing claim.
+
+Added eight native Bench tests for real users, User Permissions, canonical read,
+row scope, Supplier/Guest, revocation/disabled identity, Company B and ambiguous
+company, and unchanged ledger counts. Native tests and signed-in HTTP acceptance
+remain NOT RUN at this commit checkpoint. Exact-head CI must certify them;
+independent security review and external signed-in HTTP proof remain separate.
+Track is ready for independent review/native certification, NOT staging.
