@@ -1305,3 +1305,29 @@ No local Bench CLI/site was available; new native tenant, Supplier, authenticate
 HTTP and concurrency proof remains NOT RUN. RG-15 remains BLOCKED for native
 import/report delivery. Pure contract is ready for independent review only;
 no staging or production readiness is claimed.
+
+## 2026-10-10 Track C reporting read contracts
+
+Isolated branch `codex/reporting-read-contracts` starts at PR #22 exact head
+`cf05fb145c8135fb3cfa40a01c79f4bb75566a29` and targets that branch. Applied
+`track_c_additive.patch` after `git apply --check`; verified patch SHA-256
+`136178b0b849702225a2977712691c1e332505aacdf93debfabf99d63d08e5e3`
+and its source/test manifest entries. No patch-root merge or predecessor changes.
+
+Reviewed all eleven descriptors against actual Ask Fresko ten-tool signatures
+and Commercial/Money projections. Reproduced stock/movement descriptors incorrectly
+claiming coverage through commercial Container reconciliation and explicit blank
+as-of silently becoming live. Corrected both: five missing capabilities now return
+NOT_IMPLEMENTED with a reason; six supported descriptors retain exact tool argument
+sets. Invalid/blank values fail clarification, missing tenant context denies, and
+opaque IDs are preserved. No Frappe queries, dispatch, posting, schemas or existing
+service changes. Native Company/session authority is explicitly outside this pure
+proposal module, not conferred by its server-context parameter.
+
+23 focused tests PASS (original ten plus thirteen adversarial) on CPython 3.14.4
+and 3.13.12; 359 full offline app tests PASS; 49 script tests PASS; three Node suites,
+protected-write guard, 19 readiness fixtures, shadow fixture, six-proof registry
+and unchanged 24-DocType schema snapshot versus exact base PASS. CI explicitly runs
+the new suite. Native reporting execution/authenticated HTTP, database values and
+mobile validation are NOT RUN by these offline tests. Ready for independent review;
+not staging certification. No merge, deployment or real business record changes.
