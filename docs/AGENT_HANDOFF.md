@@ -1378,3 +1378,10 @@ No existing site was reset or legacy truth manufactured. Final CI remains a
 separate exact-head gate. The retained-QA full306 repeat failed3assertions/10errors
 due existing fixed source/provenance and bank-account fixtures; preserved logs,
 no unrelated tests weakened. Fresh-site306 CI passes are distinct evidence.
+
+
+### 2026-10-10 — Group1B browser fixture capacity closure
+
+Head5095a75 CI38044259546 passed306 native tests102.368s and all seven migration proofs, then failed before browser execution: the new native authenticated matrix exhausted pinned Frappe's60-user/hour creation throttle. Browser assertions never ran in that failed run.
+
+The correction is confined to the non-whitelisted synthetic browser fixture: each User insert may reserve one process-local slot only after all three disposable/test flags, Administrator and@example.invalid checks. Prior throttle configuration is restored in finally on success/failure; nothing is persisted or changed for HTTP workers. Four offline regression tests prove restoration and denial of ordinary-site/real-user calls; full offline352PASS. Actual pinned MariaDB/Frappe insertion with an exhausted threshold, restoration, rollback and ordinary-site denial PASS. No intake/business/permission runtime or browser assertions changed. Fresh exact-headCI required. Independent review of predecessor5095a75 found no verified in-scope defect; final narrow correction needs its own review.

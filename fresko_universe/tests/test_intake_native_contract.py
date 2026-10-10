@@ -105,3 +105,60 @@ class NativeSourceContract(unittest.TestCase):
                 self.assertEqual(fields['can_post']['default'], 0)
             for permission in doc['permissions']:
                 self.assertFalse(any(permission.get(k) for k in ('write', 'create', 'delete', 'export', 'share')))
+
+
+class BrowserFixtureCapacityContract(unittest.TestCase):
+    def setUp(self):
+        from types import SimpleNamespace
+        class Config(dict):
+            def __setattr__(self, name, value):
+                self[name] = value
+        self.conf = Config(allow_tests=True, fresko_browser_fixture_only=True,
+                           fresko_disposable_browser_site=True)
+        self.seen = []
+        def insert(**kwargs):
+            self.seen.append(self.conf['throttle_user_limit'])
+            if self.fail:
+                raise RuntimeError('synthetic insert failure')
+            return 'created'
+        def throw(message, exception):
+            raise exception(message)
+        self.fail = False
+        frappe = SimpleNamespace(conf=self.conf, session=SimpleNamespace(user='Administrator'),
+            PermissionError=PermissionError, throw=throw,
+            db=SimpleNamespace(get_creation_count=lambda *args: 80),
+            get_doc=lambda values: SimpleNamespace(insert=insert))
+        source = (PACKAGE / 'tests/browser_fixture.py').read_text()
+        function = next(n for n in ast.parse(source).body if isinstance(n, ast.FunctionDef)
+                        and n.name == '_insert_browser_user')
+        scope = {'frappe': frappe}
+        exec(compile(ast.Module(body=[function], type_ignores=[]), '<fixture>', 'exec'), scope)
+        self.insert = scope['_insert_browser_user']
+        self.values = {'doctype': 'User', 'email': 'synthetic@example.invalid'}
+
+    def test_exhausted_capacity_restored_after_success(self):
+        self.assertEqual(self.insert(self.values), 'created')
+        self.assertEqual(self.seen, [81])
+        self.assertNotIn('throttle_user_limit', self.conf)
+
+    def test_existing_setting_restored_after_failure(self):
+        self.conf['throttle_user_limit'] = 7
+        self.fail = True
+        with self.assertRaises(RuntimeError):
+            self.insert(self.values)
+        self.assertEqual(self.seen, [81])
+        self.assertEqual(self.conf['throttle_user_limit'], 7)
+
+    def test_ordinary_site_is_denied_without_configuration_change(self):
+        self.conf['fresko_disposable_browser_site'] = False
+        before = dict(self.conf)
+        with self.assertRaises(PermissionError):
+            self.insert(self.values)
+        self.assertEqual(self.conf, before)
+        self.assertFalse(self.seen)
+
+    def test_real_user_is_denied_without_configuration_change(self):
+        with self.assertRaises(PermissionError):
+            self.insert({'doctype': 'User', 'email': 'real@example.com'})
+        self.assertFalse(self.seen)
+        self.assertNotIn('throttle_user_limit', self.conf)
