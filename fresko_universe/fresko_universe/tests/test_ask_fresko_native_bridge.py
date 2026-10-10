@@ -15,6 +15,9 @@ class TestAskFreskoNativeBridge(CommercialSaleFixtures, FrappeTestCase):
                         "apply_to_all_doctypes": 1}).insert(ignore_permissions=True)
 
     def test_current_account_scope_and_canonical_company_read(self):
+        # Compare persisted snapshots on both sides; insert retains string
+        # timestamps whereas a fresh database load returns datetime values.
+        self.container.reload()
         before = self.container.as_dict()
         truth_counts = {dt: frappe.db.count(dt) for dt in ("Fresko Outward", "Fresko Commercial Sale", "Fresko Collection", "Fresko Payment Allocation")}
         frappe.set_user(self.reader)

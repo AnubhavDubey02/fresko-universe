@@ -1346,3 +1346,11 @@ company, and unchanged ledger counts. Native tests and signed-in HTTP acceptance
 remain NOT RUN at this commit checkpoint. Exact-head CI must certify them;
 independent security review and external signed-in HTTP proof remain separate.
 Track is ready for independent review/native certification, NOT staging.
+
+Track A first exact-head CI `38038594959` ran 293 native tests: 292 passed,
+one snapshot test failed. The freshly inserted Container held string timestamps;
+its post-read reload returned datetime values, making equal persisted state fail
+the full-dict comparison. The bounded correction reloads the Container before
+capturing the baseline. The full state and authoritative ledger-count assertions
+remain unchanged. No runtime authorization or frozen-router change. Fresh-head
+native results remain pending; the failed run is preserved as evidence.
