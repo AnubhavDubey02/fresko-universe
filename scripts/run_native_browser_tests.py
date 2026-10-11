@@ -3,13 +3,15 @@ import io
 import json
 import os
 import pathlib
+import subprocess
 import sys
 import time
 from decimal import Decimal
 from playwright.sync_api import sync_playwright
 
-BASE_URL = "http://127.0.0.1:18080"
-EVIDENCE_DIR = pathlib.Path(__file__).resolve().parents[1] / "evidence" / "native_browser"
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
+BASE_URL = os.environ.get("FRESKO_BROWSER_URL", "http://127.0.0.1:18080")
+EVIDENCE_DIR = pathlib.Path(os.environ.get("FRESKO_BROWSER_ARTIFACTS", str(REPO_ROOT / "evidence" / "native_browser")))
 SCREENSHOTS_DIR = EVIDENCE_DIR / "screenshots"
 VIDEO_DIR = EVIDENCE_DIR / "video"
 TRACES_DIR = EVIDENCE_DIR / "traces"
@@ -19,13 +21,32 @@ LOGS_DIR = EVIDENCE_DIR / "logs"
 for d in (SCREENSHOTS_DIR, VIDEO_DIR, TRACES_DIR, CSV_DIR, LOGS_DIR):
     d.mkdir(parents=True, exist_ok=True)
 
-PASSWORD = "SyntheticQA_Pass123!"
-CONTAINER_A = "CON-2026-00479"
+CREDS_FILE = pathlib.Path(os.environ.get(
+    "FRESKO_QA_CREDENTIALS_FILE",
+    "/home/dshri/.local/state/fresko-control/group-1b/runtime/secrets/qa_reporting_credentials.json"
+))
+
+CONTAINER_A = os.environ.get("FRESKO_REPORT_CONTAINER", "CON-2026-00479")
 
 VIEWPORTS = {
     "DESKTOP": {"width": 1440, "height": 900},
     "MOBILE": {"width": 390, "height": 844, "is_mobile": True, "has_touch": True}
 }
+
+def load_credentials():
+    if not CREDS_FILE.exists():
+        raise FileNotFoundError(f"Missing private credentials file: {CREDS_FILE}")
+    data = json.loads(CREDS_FILE.read_text())
+    creds = {}
+    for role_label, info in data.get("users", {}).items():
+        creds[info["email"]] = info["password"]
+    return creds
+
+def get_git_sha():
+    try:
+        return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=str(REPO_ROOT), text=True).strip()
+    except Exception:
+        return "UNKNOWN"
 
 cases = [
     {
@@ -53,7 +74,16 @@ cases = [
         "report": "sales",
         "viewport": "DESKTOP",
         "expect_error": False,
-        "export_csv": False
+        "export_csv": True
+    },
+    {
+        "id": "NATIVE-SALES-MOBILE",
+        "user": "group1b-http-accounts@example.invalid",
+        "container": CONTAINER_A,
+        "report": "sales",
+        "viewport": "MOBILE",
+        "expect_error": False,
+        "export_csv": True
     },
     {
         "id": "NATIVE-RECEIVABLES-DESKTOP",
@@ -62,7 +92,16 @@ cases = [
         "report": "receivables",
         "viewport": "DESKTOP",
         "expect_error": False,
-        "export_csv": False
+        "export_csv": True
+    },
+    {
+        "id": "NATIVE-RECEIVABLES-MOBILE",
+        "user": "group1b-http-accounts@example.invalid",
+        "container": CONTAINER_A,
+        "report": "receivables",
+        "viewport": "MOBILE",
+        "expect_error": False,
+        "export_csv": True
     },
     {
         "id": "NATIVE-TENANT_DENIAL-DESKTOP",
@@ -76,17 +115,28 @@ cases = [
 ]
 
 def run_suite():
+    creds = load_credentials()
+    sha = os.environ.get("FRESKO_DEPLOYED_SHA", get_git_sha())
+    selected = set(filter(None, os.environ.get("FRESKO_BROWSER_CASES", "").split(",")))
+    selected_cases = [case for case in cases if not selected or case["id"] in selected]
+    if not selected_cases or selected - {case["id"] for case in cases}:
+        raise ValueError("Unknown or empty browser case selection")
     results = []
     start_total = time.time()
 
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True)
 
-        for case in cases:
+        for case in selected_cases:
             case_id = case["id"]
             vp_name = case["viewport"]
             vp = VIEWPORTS[vp_name]
-            print(f"--- Running {case_id} ---")
+            user_email = case["user"]
+            if user_email not in creds:
+                raise KeyError(f"No password found for user {user_email} in {CREDS_FILE}")
+            password = creds[user_email]
+
+            print(f"--- Running {case_id} ({vp_name}) ---")
             t0 = time.time()
 
             # Record video into case-specific dir
@@ -109,9 +159,10 @@ def run_suite():
             record = {
                 "id": case_id,
                 "scope": "REAL NATIVE FRAPPE v15 + MARIADB 10.6 OVER LOOPBACK HTTP",
+                "source_sha": sha,
                 "report": case["report"],
                 "viewport": vp_name.lower(),
-                "user": case["user"],
+                "user": user_email,
                 "status": "PENDING",
                 "error": None,
                 "csv_path": None,
@@ -120,15 +171,18 @@ def run_suite():
 
             try:
                 # 1. Login
-                page.goto(f"{BASE_URL}/login", wait_until="networkidle")
-                page.locator("#login_email").fill(case["user"])
-                page.locator("#login_password").fill(PASSWORD)
+                page.goto(f"{BASE_URL}/login", wait_until="domcontentloaded")
+                page.locator("#login_email").fill(user_email)
+                page.locator("#login_password").fill(password)
                 page.locator("button.btn-login").first.click()
-                page.wait_for_url("**/app/**", timeout=20000)
+                page.wait_for_url("**/app/**", wait_until="domcontentloaded", timeout=60000)
 
                 # 2. Go to Reports Desk Page via client-side routing
                 page.evaluate("frappe.set_route('fresko-reports')")
-                page.locator("#frp-run").wait_for(timeout=15000)
+                page.locator("#frp-run").wait_for(timeout=20000)
+
+                # Wait for initial context load
+                time.sleep(1)
 
                 # Capture before screenshot
                 shot_before = SCREENSHOTS_DIR / f"{case_id}_before.png"
@@ -152,7 +206,7 @@ def run_suite():
                     record["status"] = "PASS_NATIVE_DENIAL"
                 else:
                     # Wait for success status
-                    page.get_by_text("Read-only report ready", exact=False).wait_for(timeout=20000)
+                    page.get_by_text("Read-only report ready", exact=False).wait_for(timeout=25000)
                     time.sleep(1)
                     shot_after = SCREENSHOTS_DIR / f"{case_id}_after.png"
                     page.screenshot(path=str(shot_after))
@@ -214,6 +268,7 @@ def run_suite():
     out = {
         "format": "FRESKO_NATIVE_BROWSER_E2E_EVIDENCE_V1",
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "source_sha": sha,
         "base_url": BASE_URL,
         "total_cases": len(results),
         "passed_cases": sum(1 for r in results if r["status"].startswith("PASS")),
