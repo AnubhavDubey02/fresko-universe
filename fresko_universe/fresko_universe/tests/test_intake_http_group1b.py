@@ -7,6 +7,7 @@ Synthetic fixtures only. This is HTTP contract proof, not a mobile UI/device tes
 from __future__ import annotations
 
 import json
+import base64
 import secrets
 from concurrent.futures import ThreadPoolExecutor
 from hashlib import sha256
@@ -395,3 +396,273 @@ class TestGroup1BAuthenticatedHTTP(FrappeTestCase):
         self.assertEqual(status, 403)
         status, body = self._request(client, 'GET', '/api/method/frappe.core.api.file.zip_files', data={'files': json.dumps([file.name])})
         self.assertEqual(status, 200)
+
+    def _create_unassigned(self, client, token, extra=None):
+        values = {'doctype': 'Fresko Evidence', 'evidence_type': 'Note',
+                  'notes': 'Unassigned HTTP synthetic ' + self.token}
+        values.update(extra or {})
+        return self._request(client, 'POST', '/api/resource/Fresko%20Evidence',
+                             data=json.dumps(values), token=token)
+
+    def test_unassigned_company_binding_capture_replay_and_future_link(self):
+        maker, token = self._login('maker')
+        status, body = self._create_unassigned(maker, token)
+        self.assertEqual(status, 200, body.decode()[:1500])
+        evidence = json.loads(body)['data']
+        self.assertEqual(evidence['evidence_company'], self.company)
+        self.assertFalse(evidence.get('container'))
+        self.assertFalse(evidence.get('deal'))
+        self.assertEqual(evidence['content_sha256'], sha256(evidence['notes'].encode()).hexdigest())
+        one_status, one = self._capture(maker, token, evidence=evidence['name'])
+        two_status, two = self._capture(maker, token, evidence=evidence['name'])
+        self.assertEqual((one_status, two_status), (200, 200))
+        self.assertEqual(json.loads(one)['message']['state'], 'CREATED')
+        self.assertEqual(json.loads(two)['message']['state'], 'IDENTICAL')
+        reviewer, review_token = self._login('reviewer')
+        status, body = self._request(reviewer, 'POST',
+            '/api/method/fresko_universe.evidence_scope.link_unassigned_evidence',
+            data={'evidence_name': evidence['name'], 'container': self.container.name}, token=review_token)
+        self.assertEqual(status, 200, body.decode()[:1500])
+        status, body = self._capture(maker, token, evidence=evidence['name'])
+        self.assertEqual(status, 200, body.decode()[:1500])
+        self.assertEqual(json.loads(body)['message']['state'], 'IDENTICAL')
+        frappe.db.commit()
+        saved = frappe.get_doc('Fresko Evidence', evidence['name'])
+        self.assertEqual(saved.evidence_company, self.company)
+        self.assertEqual(saved.notes, evidence['notes'])
+        self.assertEqual(saved.content_sha256, evidence['content_sha256'])
+
+    def test_unassigned_denial_matrix_shares_lists_and_selected_export(self):
+        maker, token = self._login('maker')
+        status, body = self._create_unassigned(maker, token)
+        self.assertEqual(status, 200)
+        name = json.loads(body)['data']['name']
+        frappe.share.add('Fresko Evidence', name, self.users['other'][0], read=1, write=1,
+                         flags={'ignore_share_permission': True})
+        frappe.db.commit()
+        for label in ('other', 'supplier', 'mixed', 'ambiguous'):
+            client, csrf = self._login(label)
+            for prefix in ('/api/resource/', '/api/v2/document/'):
+                status, body = self._request(client, 'GET', prefix + 'Fresko%20Evidence/' + name)
+                self.assertEqual(status, 403, label)
+                self.assertNotIn(name.encode(), body)
+            status, _ = self._request(client, 'PUT', '/api/resource/Fresko%20Evidence/' + name,
+                data=json.dumps({'notes': 'forged'}), token=csrf)
+            self.assertEqual(status, 403, label)
+            status, body = self._request(client, 'GET', '/api/resource/Fresko%20Evidence',
+                data={'fields': json.dumps(['name', 'evidence_company'])})
+            self.assertIn(status, (200, 403), label)
+            self.assertNotIn(name.encode(), body)
+            status, _ = self._capture(client, csrf, evidence=name)
+            self.assertEqual(status, 403, label)
+        guest = get_test_client()
+        status, _ = self._request(guest, 'GET', '/api/resource/Fresko%20Evidence/' + name)
+        self.assertEqual(status, 403)
+        other, _ = self._login('other')
+        status, body = self._request(other, 'GET', '/api/method/frappe.desk.reportview.export_query', data={
+            'doctype': 'Fresko Evidence', 'selected_items': json.dumps([name]),
+            'fields': json.dumps(['name', 'notes']), 'file_format_type': 'CSV'})
+        self.assertEqual(status, 403)
+        self.assertNotIn(name.encode(), body)
+
+    def test_unassigned_forged_tenant_payload_and_ambiguous_create_roll_back(self):
+        maker, token = self._login('maker')
+        frappe.db.commit()
+        before = frappe.db.count('Fresko Evidence')
+        for extra in ({'evidence_company': self.company}, {'evidence_company': self.company_b},
+                      {'company': self.company_b},
+                      {'message_payload_sha256': 'a' * 64, 'content_sha256': 'b' * 64},
+                      {'provider': 'forged', 'provider_account_id': 'forged'},
+                      {'human_verified': 1}, {'linked_doctype': 'Company', 'linked_name': self.company_b}):
+            status, _ = self._create_unassigned(maker, token, extra)
+            self.assertEqual(status, 403, extra)
+        for label in ('ambiguous', 'supplier', 'mixed', 'accounts'):
+            client, csrf = self._login(label)
+            status, _ = self._create_unassigned(client, csrf)
+            self.assertEqual(status, 403, label)
+        status, _ = self._create_unassigned(get_test_client(), None)
+        self.assertEqual(status, 403)
+        frappe.db.commit()
+        self.assertEqual(frappe.db.count('Fresko Evidence'), before)
+
+    def test_unassigned_shared_accounts_cannot_link_or_mutate_provenance(self):
+        maker, token = self._login('maker')
+        status, body = self._create_unassigned(maker, token)
+        self.assertEqual(status, 200)
+        name = json.loads(body)['data']['name']
+        frappe.share.add('Fresko Evidence', name, self.users['accounts'][0], read=1, write=1,
+                         flags={'ignore_share_permission': True})
+        frappe.share.add('Fresko Container', self.container.name, self.users['accounts'][0], read=1, write=1,
+                         flags={'ignore_share_permission': True})
+        frappe.db.commit()
+        client, csrf = self._login('accounts')
+        status, _ = self._request(client, 'POST', '/api/method/fresko_universe.evidence_scope.link_unassigned_evidence',
+            data={'evidence_name': name, 'container': self.container.name}, token=csrf)
+        self.assertEqual(status, 403)
+        reviewer, review_token = self._login('reviewer')
+        for extra in ({'evidence_company': self.company_b}, {'notes': 'rewrite'}, {'container': self.container.name},
+                      {'content_sha256': 'a' * 64}):
+            status, _ = self._request(reviewer, 'PUT', '/api/resource/Fresko%20Evidence/' + name,
+                                     data=json.dumps(extra), token=review_token)
+            self.assertEqual(status, 403, extra)
+        status, _ = self._request(reviewer, 'GET', '/api/method/fresko_universe.evidence_scope.link_unassigned_evidence',
+                                  data={'evidence_name': name, 'container': self.container.name})
+        self.assertEqual(status, 403)
+        frappe.db.commit()
+        self.assertFalse(frappe.db.get_value('Fresko Evidence', name, 'container'))
+        self.assertEqual(frappe.db.get_value('Fresko Evidence', name, 'evidence_company'), self.company)
+
+    def test_unassigned_creator_revocation_does_not_change_tenant(self):
+        maker, token = self._login('maker')
+        status, body = self._create_unassigned(maker, token)
+        self.assertEqual(status, 200)
+        name = json.loads(body)['data']['name']
+        user = self.users['maker'][0]
+        permissions = frappe.get_all('User Permission', filters={'user': user, 'allow': 'Company'}, pluck='name')
+        try:
+            for permission in permissions:
+                frappe.delete_doc('User Permission', permission, ignore_permissions=True)
+            frappe.get_doc({'doctype': 'User Permission', 'user': user, 'allow': 'Company',
+                            'for_value': self.company_b}).insert(ignore_permissions=True)
+            frappe.db.commit()
+            status, _ = self._request(maker, 'GET', '/api/resource/Fresko%20Evidence/' + name)
+            self.assertEqual(status, 403)
+            status, _ = self._capture(maker, token, evidence=name)
+            self.assertEqual(status, 403)
+            frappe.db.commit()
+            self.assertEqual(frappe.db.get_value('Fresko Evidence', name, 'evidence_company'), self.company)
+        finally:
+            frappe.set_user('Administrator')
+            for permission in frappe.get_all('User Permission', filters={'user': user, 'allow': 'Company'}, pluck='name'):
+                frappe.delete_doc('User Permission', permission, ignore_permissions=True)
+            frappe.get_doc({'doctype': 'User Permission', 'user': user, 'allow': 'Company',
+                            'for_value': self.company}).insert(ignore_permissions=True)
+            frappe.db.commit()
+
+    def test_unassigned_owned_private_upload_and_foreign_url_denial(self):
+        # Synthetic private upload, unattached until Evidence creation succeeds.
+        frappe.set_user(self.users['maker'][0])
+        content = ('unassigned-upload-' + self.token).encode()
+        file = save_file('unassigned-' + self.token + '.txt', content, None, None, is_private=1)
+        frappe.db.commit()
+        frappe.set_user('Administrator')
+        maker, token = self._login('maker')
+        status, body = self._create_unassigned(maker, token, {'file': file.file_url})
+        self.assertEqual(status, 200, body.decode()[:1500])
+        evidence = json.loads(body)['data']
+        self.assertEqual(evidence['content_sha256'], sha256(content).hexdigest())
+        status, body = self._capture(maker, token, evidence=evidence['name'])
+        self.assertEqual(status, 200, body.decode()[:1500])
+        frappe.db.commit()
+        self.assertEqual(frappe.db.get_value('File', file.name, 'attached_to_name'), evidence['name'])
+        frappe.share.add('File', file.name, self.users['other'][0], read=1,
+                         flags={'ignore_share_permission': True})
+        frappe.db.commit()
+        other, _ = self._login('other')
+        status, _ = self._request(other, 'GET', file.file_url)
+        self.assertEqual(status, 403)
+        # A foreign URL must not become a new durable tenant association.
+        frappe.set_user(self.users['other'][0])
+        foreign = save_file('foreign-' + self.token + '.txt', ('foreign-' + self.token).encode(), None, None, is_private=1)
+        frappe.db.commit()
+        frappe.set_user('Administrator')
+        before = frappe.db.count('Fresko Evidence')
+        status, _ = self._create_unassigned(maker, token, {'file': foreign.file_url})
+        self.assertEqual(status, 403)
+        frappe.db.commit()
+        self.assertEqual(frappe.db.count('Fresko Evidence'), before)
+        status, _ = self._request(other, 'GET', foreign.file_url)
+        self.assertEqual(status, 200)
+
+    def test_unassigned_foreign_file_alias_cannot_poison_owner_access(self):
+        maker, token = self._login('maker')
+        status, body = self._create_unassigned(maker, token)
+        self.assertEqual(status, 200, body.decode()[:1500])
+        name = json.loads(body)['data']['name']
+        frappe.set_user(self.users['other'][0])
+        foreign = save_file('alias-foreign-' + self.token + '.txt',
+            ('alias-foreign-' + self.token).encode(), None, None, is_private=1)
+        frappe.db.commit()
+        frappe.set_user('Administrator')
+        before = frappe.db.count('File', {'file_url': foreign.file_url})
+        status, body = self._request(maker, 'POST', '/api/resource/File', token=token,
+            data=json.dumps({'doctype': 'File', 'file_url': foreign.file_url, 'is_private': 1,
+                'attached_to_doctype': 'Fresko Evidence', 'attached_to_name': name}))
+        self.assertEqual(status, 403, body.decode()[:1500])
+        frappe.db.commit()
+        self.assertEqual(frappe.db.count('File', {'file_url': foreign.file_url}), before)
+        other, _ = self._login('other')
+        status, _ = self._request(other, 'GET', foreign.file_url)
+        self.assertEqual(status, 200)
+
+    def test_unassigned_existing_file_alias_cannot_poison_owner_access(self):
+        maker, token = self._login('maker')
+        status, body = self._create_unassigned(maker, token)
+        self.assertEqual(status, 200, body.decode()[:1500])
+        name = json.loads(body)['data']['name']
+        frappe.set_user(self.users['maker'][0])
+        own = save_file('alias-own-' + self.token + '.txt',
+            ('alias-own-' + self.token).encode(), None, None, is_private=1)
+        frappe.set_user(self.users['other'][0])
+        foreign = save_file('alias-put-foreign-' + self.token + '.txt',
+            ('alias-put-foreign-' + self.token).encode(), None, None, is_private=1)
+        frappe.db.commit()
+        frappe.set_user('Administrator')
+        status, body = self._request(maker, 'PUT', '/api/resource/File/' + own.name, token=token,
+            data=json.dumps({'file_url': foreign.file_url,
+                'attached_to_doctype': 'Fresko Evidence', 'attached_to_name': name}))
+        self.assertEqual(status, 403, body.decode()[:1500])
+        frappe.db.commit()
+        self.assertEqual(frappe.db.get_value('File', own.name, 'file_url'), own.file_url)
+        self.assertFalse(frappe.db.get_value('File', own.name, 'attached_to_name'))
+        other, _ = self._login('other')
+        status, _ = self._request(other, 'GET', foreign.file_url)
+        self.assertEqual(status, 200)
+
+    def test_unassigned_foreign_upload_dedup_cannot_alias_protected_bytes(self):
+        content = ('dedup-protected-' + self.token).encode()
+        frappe.set_user(self.users['maker'][0])
+        file = save_file('dedup-protected-' + self.token + '.txt', content, None, None, is_private=1)
+        frappe.db.commit()
+        frappe.set_user('Administrator')
+        maker, token = self._login('maker')
+        status, body = self._create_unassigned(maker, token, {'file': file.file_url})
+        self.assertEqual(status, 200, body.decode()[:1500])
+        other, csrf = self._login('other')
+        before = frappe.db.count('File', {'file_url': file.file_url})
+        status, body = self._request(other, 'POST', '/api/resource/File', token=csrf,
+            data=json.dumps({'doctype': 'File', 'file_name': 'duplicate-' + self.token + '.txt',
+                'content': base64.b64encode(content).decode(), 'decode': 1, 'is_private': 1}))
+        self.assertEqual(status, 403, body.decode()[:1500])
+        frappe.db.commit()
+        self.assertEqual(frappe.db.count('File', {'file_url': file.file_url}), before)
+        status, body = self._request(maker, 'GET', file.file_url)
+        self.assertEqual(status, 200)
+        self.assertEqual(body, content)
+
+    def test_unassigned_failed_foreign_link_and_relink_leave_no_partial_writes(self):
+        maker, token = self._login('maker')
+        status, body = self._create_unassigned(maker, token)
+        self.assertEqual(status, 200)
+        name = json.loads(body)['data']['name']
+        foreign = make_container({**self.masters, 'company': self.company_b},
+                                 container_no='UNASSIGNED-FOREIGN-' + self.token)
+        replacement = make_container(self.masters, container_no='UNASSIGNED-RELINK-' + self.token)
+        frappe.db.commit()
+        reviewer, csrf = self._login('reviewer')
+        endpoint = '/api/method/fresko_universe.evidence_scope.link_unassigned_evidence'
+        status, _ = self._request(reviewer, 'POST', endpoint,
+                                 data={'evidence_name': name, 'container': foreign.name}, token=csrf)
+        self.assertEqual(status, 403)
+        frappe.db.commit()
+        self.assertFalse(frappe.db.get_value('Fresko Evidence', name, 'container'))
+        status, _ = self._request(reviewer, 'POST', endpoint,
+                                 data={'evidence_name': name, 'container': self.container.name}, token=csrf)
+        self.assertEqual(status, 200)
+        status, _ = self._request(reviewer, 'POST', endpoint,
+                                 data={'evidence_name': name, 'container': replacement.name}, token=csrf)
+        self.assertEqual(status, 403)
+        frappe.db.commit()
+        saved = frappe.get_doc('Fresko Evidence', name)
+        self.assertEqual(saved.container, self.container.name)
+        self.assertEqual(saved.evidence_company, self.company)

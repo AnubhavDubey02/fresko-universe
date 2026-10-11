@@ -58,6 +58,9 @@ def _get(doctype, name, *, for_update=True):
 
 
 def _evidence_company(evidence, user, company):
+    binding = evidence.get('evidence_company')
+    if binding and binding != company:
+        _deny()
     if not frappe.has_permission('Fresko Evidence', doc=evidence, ptype='read', user=user):
         _deny()
     parents = []
@@ -67,7 +70,7 @@ def _evidence_company(evidence, user, company):
             if parent.company != company or not frappe.has_permission(doctype, doc=parent, ptype='read', user=user):
                 _deny()
             parents.append(parent)
-    if not parents:
+    if not parents and not binding:
         _deny()
     if evidence.deal and evidence.container and parents[0].container != evidence.container:
         _deny()
@@ -208,6 +211,8 @@ def _source_urls():
     if not frappe.db.table_exists(DRAFT) or not frappe.db.table_exists(REVISION):
         return {}
     evidence = set(frappe.get_all(DRAFT, pluck='evidence'))
+    # Protect new bound sources before the first draft exists.
+    evidence.update(frappe.get_all('Fresko Evidence', filters={'evidence_company': ['is', 'set']}, pluck='name'))
     evidence.update(frappe.get_all(REVISION, pluck='evidence'))
     evidence.discard(None)
     if not evidence:
@@ -330,6 +335,36 @@ def get_attached_images(doctype, names):
     return result
 
 
+def validate_source_file(doc, method=None):
+    """Check the final URL after File's byte deduplication, before insertion.
+
+    Bound Evidence obtains its initial File through the owned upload service.
+    Arbitrary new attachment rows cannot add or replace its durable source.
+    """
+    if doc.is_folder or not frappe.db.table_exists(DRAFT):
+        return
+    previous = None if doc.is_new() else frappe.get_doc('File', doc.name)
+    evidence = None
+    if doc.attached_to_doctype == 'Fresko Evidence':
+        evidence = doc.attached_to_name
+    elif doc.attached_to_doctype == 'Fresko Evidence Attachment' and doc.attached_to_name:
+        evidence = frappe.db.get_value('Fresko Evidence Attachment', doc.attached_to_name, 'evidence')
+    changed = previous is None or any(doc.get(field) != previous.get(field)
+        for field in ('file_url', 'attached_to_doctype', 'attached_to_name'))
+    if evidence and frappe.db.get_value('Fresko Evidence', evidence, 'evidence_company') and changed:
+        scoped = (previous is not None and not previous.attached_to_doctype
+            and not previous.attached_to_name and previous.file_url == doc.file_url
+            and getattr(doc.flags, 'bind_unassigned_evidence', None) == evidence)
+        if not scoped:
+            _deny()
+    sources = {source for source in _source_evidence_for_url(doc.file_url)
+        if frappe.db.get_value('Fresko Evidence', source, 'evidence_company')}
+    if sources and changed:
+        actor, company = _principal()
+        for source in sources:
+            _evidence_company(_get('Fresko Evidence', source), actor, company)
+
+
 def protect_intake_source(doc, method=None):
     """Keep durable intake provenance reachable; corrections use new evidence."""
     if not frappe.db.table_exists(DRAFT) or doc.is_new():
@@ -346,6 +381,18 @@ def protect_intake_source(doc, method=None):
         fields = ('notes', 'file', 'content_sha256', 'message_payload_sha256', 'container', 'deal',
             'provider', 'provider_account_id', 'conversation_id', 'provider_message_id') if doc.doctype == 'Fresko Evidence' else (
             'evidence', 'file_url', 'content_sha256', 'capture_status', 'readback_verified')
+    if (doc.doctype == 'File' and getattr(doc.flags, 'bind_unassigned_evidence', None)
+            and not previous.attached_to_name and not previous.attached_to_doctype
+            and doc.attached_to_doctype == 'Fresko Evidence'
+            and doc.attached_to_name == doc.flags.bind_unassigned_evidence):
+        source = _get('Fresko Evidence', doc.attached_to_name)
+        actor, company = _principal()
+        if source.get('evidence_company') != company or previous.owner != actor or not previous.is_private:
+            _deny()
+        fields = tuple(f for f in fields if f not in ('attached_to_doctype', 'attached_to_name'))
+    if (doc.doctype == 'Fresko Evidence' and previous.get('evidence_company')
+            and getattr(doc.flags, 'link_unassigned_evidence', False)):
+        fields = tuple(f for f in fields if f not in ('container', 'deal'))
     if protected and (method == 'on_trash' or any(doc.get(f) != previous.get(f) for f in fields)):
         _deny()
 
@@ -599,10 +646,52 @@ def guard_http_access():
             name = _get(REVISION, name).draft
         _authorized_draft(name)
 
+    # Bound Evidence and children require an independent HTTP denial: DocShare
+    # can override a negative has_permission hook in pinned Frappe.
+    if doctype in ('Fresko Evidence', 'Fresko Evidence Attachment', 'Fresko Evidence Attempt'):
+        from fresko_universe.evidence_scope import bound_has_permission
+        selected = form.get('selected_items') or []
+        selected = json.loads(selected) if isinstance(selected, str) else selected
+        if type(selected) is not list or not all(type(item) is str for item in selected):
+            _deny()
+        for item in selected:
+            source = _get(doctype, item)
+            evidence = source if doctype == 'Fresko Evidence' else _get('Fresko Evidence', source.evidence)
+            if bound_has_permission(evidence, 'read', frappe.session.user) is False:
+                _deny()
+        if name:
+            source = _get(doctype, name)
+            evidence = source if doctype == 'Fresko Evidence' else _get('Fresko Evidence', source.evidence)
+            if bound_has_permission(evidence, 'read', frappe.session.user) is False:
+                _deny()
+            command = form.get('cmd') or request.path.rsplit('/', 1)[-1]
+            if evidence.get('evidence_company') and command in ('run_doc_method', 'frappe.handler.run_doc_method'):
+                _deny()
+        else:
+            hidden = []
+            for row in frappe.get_all('Fresko Evidence', filters={'evidence_company': ['is', 'set']}, pluck='name'):
+                if bound_has_permission(_get('Fresko Evidence', row), 'read', frappe.session.user) is False:
+                    hidden.append(row)
+            if hidden:
+                filters = form.get('filters') or []
+                filters = json.loads(filters) if isinstance(filters, str) else filters
+                if type(filters) is dict:
+                    filters = [[k, '=', v] for k, v in filters.items()]
+                if type(filters) is not list:
+                    _deny()
+                column = 'name' if doctype == 'Fresko Evidence' else 'evidence'
+                form.filters = json.dumps(filters + [[column, 'not in', hidden]])
+
     # Framework DocShare fallback may override has_permission=False. This fence
     # runs before private downloads and direct File fetches, even for owners/shared
     # recipients, preserving tenant denial independently of positive framework ACL.
     file_names = []
+    if doctype == 'File' and form.get('selected_items'):
+        selected = form.selected_items
+        selected = json.loads(selected) if isinstance(selected, str) else selected
+        if type(selected) is not list or not all(type(item) is str for item in selected):
+            _deny()
+        file_names.extend(selected)
     command = form.get('cmd') or request.path.rsplit('/', 1)[-1]
     if command == 'frappe.core.api.file.zip_files':
         files = form.get('files') or []

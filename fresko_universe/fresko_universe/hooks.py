@@ -89,6 +89,7 @@ doc_events = {
     "File": {
         "on_trash": ["fresko_universe.intake_native.protect_intake_source", "fresko_universe.fresko_core.services.evidence_service.prevent_captured_file_deletion", "fresko_universe.fresko_core.services.money_service.protect_money_file_on_trash"],
         "before_validate": "fresko_universe.intake_native.protect_intake_source",
+        "validate": "fresko_universe.intake_native.validate_source_file",
         "before_save": [ "fresko_universe.fresko_core.services.evidence_service.prevent_captured_file_modification", "fresko_universe.fresko_core.services.money_service.protect_money_file_before_save"],
     },
     "Fresko Evidence Attachment": {

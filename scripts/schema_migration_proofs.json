@@ -28,6 +28,10 @@
     {
       "id": "unified_intake_drafts",
       "path": "scripts/prove_intake_upgrade.py"
+    },
+    {
+      "id": "unassigned_evidence_company",
+      "path": "scripts/prove_unassigned_evidence_upgrade.py"
     }
   ]
 }

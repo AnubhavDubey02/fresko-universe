@@ -1038,6 +1038,9 @@
      "fieldtype": "Link",
      "options": "Fresko Deal"
     },
+    "evidence_company": {
+     "fieldtype": "Data"
+    },
     "evidence_type": {
      "default": "Note",
      "fieldtype": "Select",
@@ -2443,7 +2446,8 @@
   "integrity_seal_ledger",
   "commercial_sale_ledger",
   "money_reconciliation_ledger",
-  "unified_intake_drafts"
+  "unified_intake_drafts",
+  "unassigned_evidence_company"
  ],
  "schema_sources": {
   "install.py": "7440fe0db2e91ecae3feea8097b055a0d7474fafefd45f506087e721bd81d509",
