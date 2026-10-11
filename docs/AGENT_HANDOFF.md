@@ -1460,3 +1460,60 @@ and unchanged 24-DocType schema snapshot versus exact base PASS. CI explicitly r
 the new suite. Native reporting execution/authenticated HTTP, database values and
 mobile validation are NOT RUN by these offline tests. Ready for independent review;
 not staging certification. No merge, deployment or real business record changes.
+
+## 2026-10-11 Combined MVP Integration & Native Reporting Acceptance
+
+Isolated branch `flash/combined-mvp-integration` integrates PR #22 baseline (`cf05fb145c8135fb3cfa40a01c79f4bb75566a29`), PR #25 Group 1B (`fbe78747394037964c63158460a687bb73ea92a3`), PR #24 Ask Fresko Batch 4 (`1c1ed20ad8b85bc3ceb0bd65f9845fc4affa4fe8`), and PR #23 reporting contracts (`6537e3a3a223d5b18c733fd65bf478bbae0cfead`) at merge commit `80cfc0a873ea35d8b937a9afaf47748295b0664d`.
+
+Applied the real reporting engine implementation patch (`Fresko_Real_Reporting_Engine_2026-10-11_PR23_c929323.zip`, commit `c929323`) to form commit `ce1ea04790bec4fdbbc4675dc10a50e5bd589d8d`.
+
+### Reporting Desk jQuery Compatibility Correction
+In `fresko_universe/fresko_universe/fresko_core/page/fresko_reports/fresko_reports.js`, Frappe v15 Desk wraps `page.main` in a jQuery object. Calling `page.main.innerHTML` or `root.querySelector` directly threw `TypeError: root.querySelector is not a function`. Implemented `_root()` helper normalizing jQuery wrapper objects `(m.jquery || m.get) ? (m[0] || m.get(0)) : m`, allowing identical code to operate across native Frappe Desk SPA routing and headless DOM contexts.
+
+### Native Environment Configuration
+- Pinned Bench: `/home/dshri/.local/state/fresko-control/group-1b/runtime/frappe-bench`
+- Disposable Site: `group1b-qa.localhost` (database `fresko_group1b_qa` on MariaDB 10.6 `127.0.0.1:13306`, Redis 7 `127.0.0.1:16379`)
+- App symlink: `frappe-bench/apps/fresko_universe` -> `/mnt/c/Users/dshri/Downloads/fresko-mvp-integration/fresko_universe`
+- Desk Page: Reloaded via `frappe.reload_doc("fresko_core", "page", "fresko_reports", force=True)`
+- HTTP Service: Dedicated Gunicorn WSGI running on `127.0.0.1:18080` (`qa_wsgi:application`)
+
+### Verification Outcomes
+1. Priority 1 — Native HTTP Reporting API:
+   - Guest/unauthenticated requests: Blocked HTTP 403.
+   - Company A (`Wind Power LLC`) authenticated login: HTTP 200 (`group1b-http-accounts@example.invalid`).
+   - `get_report_context`: HTTP 200, returns `Wind Power LLC`, 100 accessible containers, supported reports `['container_stock', 'receivables', 'sales']`.
+   - `execute_report`:
+     - Container Stock (`CON-2026-00479`): 2 rows (LOT, TOTAL), missing assertions yield `UNKNOWN`, remaining `UNKNOWN`.
+     - Sales (`CON-2026-00479`): HTTP 200.
+     - Receivables (`CON-2026-00077`): 2 rows, `row_type='COMPANY_BANK_PENDING_UNATTRIBUTED'`, `bank_state='AUTHORIZATION_INPROCESS'`, `state='BANK_PENDING_NOT_CLEARED'`, amounts `None` (preserved as bank-pending, never represented as cleared or allocated).
+   - Server-side CSV Export (`export_report_csv`): HTTP 200, UTF-8 BOM, formula injection escaping (`'=`, `'+`, `'-`, `'@`).
+   - Multi-tenant boundary: Company B user (`group1b-http-other@example.invalid`) attempting to access Company A container rejected with HTTP 403 `Report access unavailable`.
+   - Supplier & Mixed-role boundary: `group1b-http-supplier` and `group1b-http-mixed` rejected by `deny_supplier_http_access` hook with HTTP 403 `Not permitted to access internal Fresko HTTP resources`.
+
+2. Priority 2 — Native Playwright Browser Verification:
+   Executed via `scripts/run_native_browser_tests.py` against `http://127.0.0.1:18080` (5/5 PASS in 97.168s):
+   - `NATIVE-CONTAINER_STOCK-DESKTOP` (1440×900) -> PASS_NATIVE (29.89s)
+   - `NATIVE-CONTAINER_STOCK-MOBILE` (390×844) -> PASS_NATIVE (14.94s)
+   - `NATIVE-SALES-DESKTOP` (1440×900) -> PASS_NATIVE (16.70s)
+   - `NATIVE-RECEIVABLES-DESKTOP` (1440×900) -> PASS_NATIVE (18.02s)
+   - `NATIVE-TENANT_DENIAL-DESKTOP` (1440×900) -> PASS_NATIVE_DENIAL (13.07s)
+   Evidence captured in `evidence/native_browser/`: 10 PNG screenshots (before and after/denial), 5 WebM video recordings, 5 Playwright trace ZIPs, 2 downloaded CSVs, and `logs/native_browser_results.json`.
+
+3. Priority 3 — Numerical Reconciliation:
+   Executed via `scripts/verify_numerical_reconciliation.py`:
+   - Exact Decimal arithmetic verified: `Inward - Outward = Remaining` across container lots; `Gross - Applied - Adjustments = Outstanding` across invoices.
+   - Missing assertions preserve `UNKNOWN` without zero substitution.
+   - Bank-pending receipts preserve `BANK_PENDING_NOT_CLEARED` with unallocated balances.
+   Report saved at `evidence/numerical_reconciliation_report.json`.
+
+4. Offline Regression Suites:
+   - 48 reporting offline unit tests PASS (0.28s).
+   - 304 core unittest suites PASS (0.86s).
+   - 19 WhatsApp readiness fixtures PASS.
+   - Protected DocType write guard, real data shadow fixture, schema migration proof registry (7 registered proofs) PASS.
+   - 3 Node.js UI suites PASS.
+
+### Open Escalations & Unresolved Blockers for Codex
+- FR-INTAKE-002: Parentless Evidence rejection in `intake_native.py` (`_evidence_company`: `if not parents: _deny()`). Source evidence uploaded before Deal/Container creation is rejected with `PermissionError: Intake access unavailable`. Per CTO instructions, this authorization change is held for independent Codex/CTO review and has NOT been modified in runtime code.
+- Branch `flash/combined-mvp-integration` remains isolated and Draft; no merge into main or deployment to production.
+

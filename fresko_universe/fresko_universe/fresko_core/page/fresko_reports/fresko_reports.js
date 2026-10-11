@@ -12,9 +12,15 @@ frappe.pages['fresko-reports'].on_page_show = function() {
 var fresko_reports = {
     page: null, generation: 0, in_flight: false, current: null,
     method: 'fresko_universe.reporting_engine.',
+    _root: function() {
+        var m = this.page ? this.page.main : null;
+        if (!m) return document;
+        return (m.jquery || m.get) ? (m[0] || m.get(0)) : m;
+    },
     mount: function(page) {
         var me = this; me.page = page;
-        page.main.innerHTML = '<section class="frp-root" aria-label="Fresko authenticated reports">' +
+        var root = me._root();
+        root.innerHTML = '<section class="frp-root" aria-label="Fresko authenticated reports">' +
           '<p class="frp-notice">Read-only reports from authorized Fresko ledgers. UNKNOWN is not zero; bank pending is not bank cleared.</p>' +
           '<div class="frp-filters">' +
           '<label>Company <output id="frp-company" aria-live="polite">Loading…</output></label>' +
@@ -27,7 +33,6 @@ var fresko_reports = {
           '<p id="frp-status" class="frp-status" role="status" aria-live="polite">Checking permitted company and containers…</p>' +
           '<section id="frp-warnings" aria-label="Report limitations"></section>' +
           '<section id="frp-output" aria-label="Results"></section></section>';
-        var root = page.main;
         function el(id) { return root.querySelector('#' + id); }
         ['frp-type', 'frp-container', 'frp-cutoff'].forEach(function(id) {
             el(id).addEventListener('input', function() { me.clear_results('Filters changed. Run the report again.'); });
@@ -37,7 +42,7 @@ var fresko_reports = {
         el('frp-refresh').addEventListener('click', function() { me.load_context(); });
         me.load_context();
     },
-    el: function(id) { return this.page.main.querySelector('#' + id); },
+    el: function(id) { return this._root().querySelector('#' + id); },
     status: function(text) { this.el('frp-status').textContent = text; },
     clear_results: function(message) {
         ++this.generation; this.current = null;
