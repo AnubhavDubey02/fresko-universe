@@ -26,6 +26,9 @@ from fresko_universe.permissions import (
     evidence_attachment_permission_query,
     evidence_attempt_has_permission,
     evidence_attempt_permission_query,
+    evidence_permission_query,
+    _legacy_evidence_attachment_permission_query,
+    _legacy_evidence_attempt_permission_query,
     deny_supplier_http_access,
 )
 from fresko_universe.tests.utils import ensure_masters, make_container, make_deal
@@ -101,15 +104,26 @@ class TestFSECPermissions(FrappeTestCase):
                 self.assertFalse(evidence_attachment_has_permission(attachment, "write", user))
                 self.assertFalse(evidence_attempt_has_permission(attempt, "read", user))
 
-            self.assertEqual(evidence_attachment_permission_query("accounts"), "")
-            self.assertEqual(evidence_attachment_permission_query("approver"), "")
-            self.assertNotEqual(evidence_attempt_permission_query("accounts"), "1=0")
-            self.assertNotEqual(evidence_attempt_permission_query("approver"), "1=0")
+            # Preserve the original unbound policy independently of the new
+            # tenant fence. The public hook cannot impersonate these aliases.
+            self.assertEqual(_legacy_evidence_attachment_permission_query("accounts"), "")
+            self.assertEqual(_legacy_evidence_attachment_permission_query("approver"), "")
+            self.assertNotEqual(_legacy_evidence_attempt_permission_query("accounts"), "1=0")
+            self.assertNotEqual(_legacy_evidence_attempt_permission_query("approver"), "1=0")
             attachment = SimpleNamespace(evidence=evidence.name)
             attempt = SimpleNamespace(evidence=evidence.name)
             for user in ("accounts", "approver"):
                 self.assertTrue(evidence_attachment_has_permission(attachment, "read", user))
                 self.assertTrue(evidence_attempt_has_permission(attempt, "read", user))
+
+    def test_bound_evidence_queries_reject_principal_override(self):
+        # Administrator is the real session here. Supplying another principal
+        # must not turn role-only legacy grants into a positive tenant grant.
+        with patch("fresko_universe.permissions.current_roles", return_value={"Fresko Accounts"}):
+            for query in (evidence_permission_query, evidence_attachment_permission_query,
+                          evidence_attempt_permission_query):
+                self.assertEqual(query("fsec_accounts@example.com"), "1=0")
+                self.assertIn("evidence_company", query("Administrator"))
 
     def test_pinned_validate_auth_resolves_api_identity_before_supplier_hook(self):
         from frappe.auth import validate_auth
