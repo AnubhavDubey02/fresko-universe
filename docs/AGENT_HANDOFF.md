@@ -1077,3 +1077,455 @@ Root cause:
   via `expect_response`, and poll `context.request.get` for `frappe.auth.get_logged_user`
   with bounded retries until the session identity matches the expected user.
 - Offline unit tests (228/228) and script suites (49/49) remain fully green.
+
+## 2026-10-08 PR 19 Fresko Clear Operator UX P0 implementation checkpoint
+
+Branch `flash/operator-ux-p0` created from merged `main` at `c01707708c69d880a829ebf670a2cfc8e76edb42`.
+PR #18 is confirmed merged; post-merge CI run 37420490326 passed 100% green.
+
+PR #19 P0 Implementation scope and contract reconciliation:
+1. Architecture & Capabilities:
+   - Implemented single deliberate `extend_bootinfo` hook in `fresko_universe/boot.py` exporting `bootinfo.fresko = {persona, capabilities, default_route, is_operator}`.
+   - Enforced Supplier-first denial precedence: any role containing "supplier" immediately returns `persona: "supplier_denied"`, empty capabilities, and `is_operator: False`.
+   - Preserved System Manager standard technical Frappe desk (`is_operator: False`, `default_route: "Workspaces"`).
+   - Applied command-specific operational capabilities across Salesperson, Accounts, and Approver roles, with Approver > Accounts > Salesperson landing precedence and a safe non-operator fallback.
+   - Guaranteed zero financial balances or counts in boot data.
+2. Shell Branding & Desk Chrome Suppression:
+   - Added SVG brand assets (`fresko-logo.svg`, `fresko-favicon.svg`).
+   - Implemented scoped `fresko_shell.css` suppressing technical Desk chrome (`.search-bar`, `.dropdown-help`, `.dropdown-notifications`, `.layout-side-section`, `.page-breadcrumbs`) strictly when `body.fresko-operator-shell` is present. System Manager retains standard Frappe chrome.
+   - Implemented `fresko_login.css` with clean produce-trade styling.
+   - Implemented `fresko_shell.js` with reversible user-scoped router guard (`fresko_initial_routed_<user>`), dynamic soft-keyboard collision avoidance, and body class tagging.
+3. Needs My Action Feed Service (`operator_service.py`):
+   - Created `fresko_universe.fresko_core.services.operator_service` strictly using `frappe.get_list` and authorized read getters.
+   - Enforced AST-guarded prohibition on `frappe.db.sql`, `frappe.get_all`, and `ignore_permissions=True`.
+   - Enforced Supplier-first denial, permitted company validation, and individual record read permission checks.
+   - Scoped linked Evidence authorization: restricted evidence references are omitted (`evidence_state: "RESTRICTED"`).
+   - Rebuilt action feed lifecycle states (`REVIEW_PENDING` collections, derived `eligible_available_amount`, non-cash bank clearance, actual `Open`/`In Progress` exceptions, superseding sale revision rate proposals, approved-but-unpriced sales).
+   - Pure segregation-of-duties `check_action_eligibility` enforcing maker-verifier-approver isolation and read-only historical projections.
+4. UI & Workspace Integration:
+   - Integrated "Needs My Action" tab and Linear-style split pane (60% action feed left, 40% details & evidence inspector right) into `fresko_workspace.js` and `fresko_workspace.css`.
+   - Mobile touch targets meet the >= 44px (>= 48px primary) floor, with full horizontal overflow containment.
+5. Verification Evidence:
+   - 260/260 offline smoke and contract unit tests pass (including 32/32 tests in `tests.test_operator_contract` covering boot capabilities, AST bans, segregation of duties, positive company scoping, strictly live-only enforcement, and schema field mapping).
+   - 49/49 script tests pass under WSL Linux.
+   - Node VM offline UI test suites pass (`test_workspace_ui.cjs`, `test_money_ui.cjs`).
+   - Protected DocType write guard, schema migration proofs, and schema snapshot checks pass.
+
+
+## 2026-10-08 PR 19 QA remediation pass — Operator UX P0 defect closure
+
+Branch: `flash/operator-ux-p0`
+Draft PR: #19 (https://github.com/AnubhavDubey02/fresko-universe/pull/19)
+Base commit: `c01707708c69d880a829ebf670a2cfc8e76edb42` (PR #18 merged `main`)
+
+Addressed all defect findings from the independent QA audit without modifying database schema, financial calculation rules, or Supplier deny-first invariants:
+
+1. **FR-QA-008 (Native 403 Page Heading Preservation)**:
+   - Scoped `.page-card-head::after` ("Produce Trade OS") and `.page-card` styling in `fresko_universe/public/css/fresko_login.css` strictly to `body.login-page`, `body[data-route="login"]`, `.for-login`, and `.page-card.for-login`.
+   - Native Frappe error pages (such as 403 Not Permitted `<span class="page-card-title">Not Permitted</span>`) retain their original DOM title and accessible names without pseudo-element decoration.
+
+2. **FR-QA-009 (Outward Schema Alignment)**:
+   - Removed nonexistent `version` field from `Fresko Outward` query in `operator_service.py`. No synthetic version token is generated for physical movements.
+
+3. **FR-QA-010 (Real Workflow Status and Verification Tracking)**:
+   - Querying real persisted `status` and `state` columns, along with `prepared_by`, `proposed_by`, `verified_by`, and `verified_at` across Collections, Aliases, Allocations, and Payment Allocations.
+   - Removed synthetic `"PROPOSED"` fallback in `check_action_eligibility`; missing workflow state fails closed with `"Missing workflow status"`.
+
+4. **FR-QA-011 (Strict Segregation of Duties for Outward Allocations)**:
+   - In `check_action_eligibility("approve_sale_outward_allocation")`: enforced `state == "PROPOSED"`, prior recorded Accounts verification (`verified_by` nonempty), distinct maker/verifier (`maker != verifier`), and distinct approver (`actor not in (maker, verifier)`).
+
+5. **FR-QA-012 (Accurate Outward Capacity Computation)**:
+   - Implemented `compute_outward_capacity(outward_name, active_company)`: reads physical lines, verifies reversals, sums active approved allocations (`state == "APPROVED"` and not reversed).
+   - Handles restricted linked sales without exposing identity or inflating free capacity.
+   - Fully allocated outwards (`remaining <= 0`) are excluded from `unassigned_outwards`.
+
+6. **FR-QA-013 (Mobile Money Navigation Scope)**:
+   - Added `allowed_routes` (`fresko-workspace`, `fresko-money`) to `bootinfo["fresko"]` based on command capabilities (`view_operations`, `view_money`).
+   - Shell mobile navigation bar checks both `capabilities.includes('view_money')` and `allowed_routes.includes('fresko-money')`.
+
+7. **FR-QA-014 (Feed Live-Only State & Return to Live)**:
+   - In `fresko_workspace.js`: when `as_of_value` is active, `get_operator_action_feed` is suppressed. Displays read-only notice "Needs My Action is Live-Only" with a functional "Return to Live" button that clears the cutoff filter.
+
+8. **FR-QA-015 (Count and Completeness Contract)**:
+   - Feed metadata exposes `records_loaded`, `actionable_records`, `blocked_records`, `informational_records`, `truncated`, `completeness_state`, and `all_clear`.
+   - `all_clear` is strictly `True` only when `actionable_records == 0` and `truncated` is `False`. Counts deduplicate distinct records by `doc_ref`.
+
+9. **FR-QA-016 (Target Dispatch & State Re-Verification)**:
+   - For Outward allocation proposals (`propose_commercial_allocation`): switches directly to the `outwards` tab and inspects the specific outward.
+   - For allocation reviews (`verify_sale_outward_allocation`, `approve_sale_outward_allocation`): fetches fresh state via `frappe.client.get` before action execution, failing closed if status has transitioned.
+   - For money actions: writes target record to `sessionStorage` and routes to `fresko-money`.
+
+10. **FR-QA-019 (Confidential Sale Title Redaction)**:
+    - In `operator_service.py`: checks `frappe.has_permission("Fresko Commercial Sale", doc=al.sale, ptype="read")`. If unauthorized, redacts title to `[Restricted Sale]`.
+
+11. **FR-QA-020 (Action Card Keyboard Accessibility)**:
+    - In `fresko_workspace.js`: `.fresko-action-card` elements have `role="button"`, `tabindex="0"`, and Enter/Space `keydown` listeners.
+
+12. **UI Polish & Resilience (FR-QA-002, 003, 004, 005)**:
+    - Idempotent panel rendering across all tabs (`content_panel.innerHTML = ''`).
+    - Workflow actions strictly role-scoped (Salesperson for Prepare/Submit, Accounts for Verify, Approver for Approve).
+    - `+ Prepare Sale` disabled in historical cutoff mode.
+    - Alias queue network failures display error alert with a functional "Retry" button.
+
+Verification Evidence:
+- 275/275 offline Python unit tests pass (100% green, `test_operator_contract.py` extended with 47 tests).
+- 49/49 script tests pass under WSL Linux.
+- Node VM UI tests pass: `test_workspace_ui.cjs` (14 assertions) and `test_money_ui.cjs`.
+- Schema checks pass: `check_protected_doctype_writes.py`, `validate_real_data_shadow_fixture.py`, `check_schema_snapshot.py` (24 DocTypes, 6 proofs).
+- Exact-Head CI Run 37794614508 (commit 2325f1f):
+  - Smoke unit (Gate 1 / D4 / constants): PASS in 12s
+  - Bench install + migrate + run-tests (pinned v15): PASS in 25m23s (275/275 pinned bench tests, migrations, desktop/mobile 390px/360px browser acceptance, Supplier/Mixed denial tests, and synthetic recovery proofs 100% green).
+
+## 2026-10-09 isolated PR 19 QA stock, Money target and privacy correction
+
+Branch: `codex/pr19-qa-stock-money-privacy`.
+Base: `e0a918f7271a508c4a104835f986655ce6528180` from Draft PR #19,
+`flash/operator-ux-p0`. No changes were pushed to Flash's branch, merged or deployed.
+
+Read the connected Drive Independent QA Report, Complete QA Evidence Pack and
+Master QA Ledger (Issue Register, Release Gates and Agent Handoffs), in order.
+FR-QA-001/012 now share an authorized Company/Container/Outward capacity projection
+in the commercial domain service. All effective approved allocations consume their
+physical line/UOM quantity, irrespective of Sale or Allocation detail permissions.
+Container physical totals and direct Outward remaining quantities use that
+projection; the operator adapter cannot turn permission-filtered absence into free
+stock. Historical snapshots/reversals are preserved. Missing historical decisions
+for an existing allocation, invalid consumption and mixed-unit cards fail closed.
+UNKNOWN capacity prevents an All Clear claim. No persisted schema or posted truth
+is edited.
+
+FR-QA-016 now has a typed, authorized receiving-side Money target read. Initial
+and cached Page visits focus the exact current record, preserve current versions
+and maker/verifier/approver rules, and never execute a mutation on navigation.
+Changed, denied and stale targets fail safely; newer handoffs survive older
+responses. The panel offers existing workflow controls and a record/evidence link.
+
+FR-QA-019 allocation cards omit unreadable linked Outward identifiers and block
+link-dependent actions. Reconciliation detail lists also apply Frappe record read
+permissions. Canonical Allocation access already checks its linked Sale and
+Outward; the synthetic split is not claimed reachable in native Frappe.
+
+Executed locally: 299 offline application/contract tests PASS; 49 Linux script
+tests PASS; Workspace/Money Node suites PASS, including receiving-side focus,
+cached Page, typed input, current token, changed state, denied targets, Supplier
+precedence, stale context and superseding handoffs. Protected-write guard,
+shadow fixture, schema snapshot against the exact base (24 DocTypes) and six-proof
+migration registry validation PASS. Python compilation and git diff whitespace
+checks PASS. New stock/privacy assertions reproduce failures against original
+base source executed only in memory and pass against the correction.
+
+Added, NOT EXECUTED HERE: two pinned Bench commercial permission/capacity tests,
+one native Money target permission/SOD test, one cached native Desk target browser
+test, and the new endpoint in Supplier/mixed HTTP negatives. The existing actual
+concurrent-writer tests remain in place. No local running Bench site was found;
+no new Bench, native browser, concurrency, hosted staging, device or exact-head CI
+pass is claimed. RG-02/RG-06 and the relevant security gates require corrected-head
+Bench/browser evidence and independent review before closure. Prior reports are
+retained unchanged. No new milestone was started.
+
+
+## 2026-10-09 PR20 native allocation authorization coverage
+
+Child branch: `codex/pr20-native-allocation-auth`, based on exact Draft PR20
+head `d5e9d42daa5d3f2115704802e09a20339c63d061`. PR20 remains Draft; no
+runtime, schema, permission or production-data change.
+
+Read the Drive handoff `1-zwvDld4JN4nKe43Dd7h_UZsgmD1xOQX` start document
+first, then reconciled the 55-scenario matrix
+`14VC93Fp9NN0Kx1CND0uV4CnlAHk9N08Q`, current-head stress report
+`1C0Y7fMmYFiV1O-RbcMaKzUexWkJCL9LE`, historical red-team report
+`19Z6I-6jYNjJowyU_9BincyRCt03SHNuB` and historical Apply/Verify
+`10dhESSshogFg0LBV592ORkiEzhwpYDKF`. The historical Money patch is already
+superseded by current source; no old patch was reapplied.
+
+Existing native `test_allocation_needs_approved_sale_and_three_actor_review`
+already rejects approval before verification and provides a positive control.
+`test_allocation_replay_and_digest_conflict_do_not_duplicate_quantity` and the
+two-connection overdraw tests retain their existing assertions. The new
+`test_p0_authorization` module adds four targeted tests covering the gap:
+
+- Missing verifier: assert exact ValidationError and unchanged full persistence.
+- Unauthorized approval: wrong role, System Manager, Supplier/mixed Supplier,
+  maker-with-Approver and verifier-with-Approver; assert PermissionError and no
+  related changes. The canonical three-actor policy justifies self-approval denial.
+- Explicit stale allocation token: unchanged persistence.
+- Authorized approval and current-token replay: one APPROVE event/version
+  increment, exactly 30 allocated units, distinct actors, unchanged physical
+  Container/Outward/Evidence and no duplicate persisted effect.
+
+Reuse existing commercial factories via a shared mixin (no inherited test
+duplication). Snapshots freshly reload Sale, physical/source truth, every
+Container Allocation/Exception, linked Version and Comment rows, before any
+rollback. No `frappe.db.flush`, mocked permission, forged verifier or invented
+state is used. Administrator only provisions/inspects synthetic fixtures; all
+mutation attempts run as real role-bearing users.
+
+Local evidence: 299 offline application tests and 49 script tests PASS;
+Workspace/Money/target-order Node checks PASS; Python compile and diff checks
+PASS; unchanged schema snapshot (24 DocTypes, 6 proofs) PASS against exact base.
+Native new-module and complete pinned Bench/browser results are PENDING CI at
+this checkpoint. Direct Python actor checks are not claimed as signed-in HTTP
+proof. Broader cross-company HTTP, physical Android/iOS, staging/shadow business
+cycles and independent release review remain separate gates. No merge/deploy.
+
+## 2026-10-09 Group 1A: pure unified intake contract
+
+Branch `codex/group-1a-unified-intake` starts from PR #21 exact head
+`b259561ed2782c20a5ff386ee2c627420302de06`; nested Draft PR targets
+`codex/pr20-native-allocation-auth`. Prior branches, untracked work and records
+are preserved. No merge, deployment, GCP or native business-data mutation.
+
+Read the authoritative Group 1A design and candidate code in connected Drive,
+and HND-019 / FR-IMP-001 / QA-T072 / RG-15 in the Engineering QA & Release Ledger.
+Candidate's original 14 tests passed, but independently reproduced mutable input
+fields changing a frozen Proposal and preview locator dictionaries mutating the
+frozen Envelope. Corrected these with copied read-only mappings, slotted frozen
+nested values and detached snapshots. Added bounded strings/collections, strict
+ASCII numeric grammar preserving exact scale without floating-point conversion
+or arithmetic, parser/uncertainty provenance, scoped identities, content/revision
+fingerprints and pure replay classification. Default representations, errors and
+safe summaries omit source values. Full previews require future native read ACLs.
+
+Four channels share this contract. No Frappe import, I/O, HTTP endpoint, whitelist,
+posting or approval path exists. Company/evidence/source strings are data, NOT
+verified authority; no `company_verified` flag is accepted. The authenticated
+Group 1B adapter must resolve tenants, validate provider identities and qualified
+worksheet/attachment locators, authorize Evidence and verify actual capture bytes.
+It must enforce persistent uniqueness, replay conflicts, append-only revisions
+and concurrent transactions. Hashing alone claims none of those guarantees.
+
+Executed in isolated WSL worktree: 37 focused tests PASS on Python 3.14.4 and
+3.13.12; 336 full offline app tests PASS (includes the 37); 49 script tests PASS;
+three Node suites PASS; protected-write guard, 19 readiness fixtures, shadow
+fixture, 24-DocType snapshot versus exact base and six-proof registry validation
+PASS. Compilation and diff whitespace checks PASS. No persisted schema change;
+no new migration proof needed. CI explicitly runs the new contract suite.
+Existing Physical, Commercial, Money, Evidence services and UI are unchanged.
+No local Bench CLI/site was available; new native tenant, Supplier, authenticated
+HTTP and concurrency proof remains NOT RUN. RG-15 remains BLOCKED for native
+import/report delivery. Pure contract is ready for independent review only;
+no staging or production readiness is claimed.
+
+## 2026-10-10 Group 1B native intake integration checkpoint
+
+Isolated branch `codex/group-1b-native-auth-integration` is based on PR22 exact
+`cf05fb145c8135fb3cfa40a01c79f4bb75566a29`. Original worktrees/untracked files
+are preserved. The Batch4 ZIP and all 63 manifest entries were hash verified.
+The additive patch applied; its reconstructed hooks patch failed actual hooks
+and was reconciled additively, preserving every existing authorization hook.
+
+Native testing reproduced and repaired missing-row concurrent replay deadlocks,
+consistent-read predecessor visibility after waiting for another commit, strict
+RPC kwargs rejecting Frappe's cmd marker, and legitimate multiple File rows for
+one attachment. Independent review identified native DocShare/File-controller
+bypasses; direct/list/count/v2/RPC/download/ZIP/alias fences and early source
+privacy protection were added with role-separated regression assertions.
+See `GROUP1B_NATIVE_INTAKE_RUNTIME.md` for authority, lifecycle and limits.
+
+A disposable WSL Bench uses pinned upstream versions, separate MariaDB/Redis
+containers on loopback and synthetic records only. Fresh/repeated migrations and
+exact PR22 upgrade proof passed without fabricating intake or business rows.
+Earlier focused native11 and authenticated8 tests passed; a full native305-test
+run passed before final File closure changes. Final closure tests/CI must be read
+from the exact Draft PR head; these earlier passes are not substituted for them.
+Offline app348 and scripts49 tests, Node/guards/schema checks are re-executed for
+final publication. Snapshot now26DocTypes/sevenmigrationproofs. No GCP, deployment,
+merge, real business migration or automatic posting occurred. RG-16 stays BLOCKED
+for live provider verification and remaining pilot/independent-review gates.
+
+Final local closure supplement: 12 native MariaDB/service tests PASS (5.701s),
+9 genuine authenticated WSGI/security tests PASS (44.122s), offline app348 PASS
+(0.481s), scripts49 PASS (0.973s), three Node suites and guards/fixtures/snapshot
+PASS. The nine-request-test module includes positive ZIP readback and negative
+File aliases, v1/v2 controller/download/count, generic source privacy changes,
+Supplier/Guest/mixed/ambiguous/company/revocation, four-channel UNKNOWN and
+conflict-source privacy checks. Native full305 PASS was run before this final
+closure supplement; fresh exact-head CI must certify all306 tests and browser.
+Final independent closure review and physical devices remain pending.
+
+CI closure supplement: run38041148735 at47e07863 failed306 tests with20 errors.
+The first private-file denial reached the correct PermissionError but Frappe's
+HTML error renderer crashed because assets were not built before native tests.
+Its failed WSGI worker retained a connection, cascading into Container fixture
+lock waits. CI now builds real assets before native HTTP tests, and the test
+worker closes its connection even if rendering raises. Runtime permission and
+business logic and all denial assertions are unchanged. Fresh exact-head CI
+is required; this failed run remains historical evidence.
+
+Local unchanged browser8 PASS (944.631s), synthetic four-component recovery PASS;
+independent complete intake-row restore comparison PASS (98 Draft/128 Revision).
+Initial local recovery lacked a dump client; a runtime-only container shim fixed
+it. Restored disposable-site DB port was explicitly retained after temporary
+common configuration was restored. No hosted staging/GCP changes occurred.
+
+Further CI supplement: run38042698405 at523922d passed all306 native tests
+(82.997s) before exposing a Phase1 migration-proof seed defect: that baseline
+has no ERPNext Company masters. The new proof now snapshots the existing
+registry-seeded legacy sentinels, asserting they exist, without creating rows.
+The separate exactPR22 seed remains unchanged. New exact-head CI must still
+pass migration and browser gates; this failed run is preserved as evidence.
+
+Proof-baseline correction supplement: run38043128374 again passed native tests,
+then exposed that the real Phase1 registry has populated Deal/Evidence but
+zero Container rows. The proof now requires those actual legacy sentinels;
+exactPR22 separately requires populated Container/Evidence. Snapshot reads
+bypass table-list caches, assert preserved row identities/counts/values, and
+reject invented rows in new business tables. Seven offline proof regressions
+bring scripts to56 PASS. A fresh isolated exactPhase1 native site executed all
+seven registry proofs: seed, first migration/verification and repeated
+migration/verification PASS. ExactPR22 first/repeated proof re-verification PASS.
+No existing site was reset or legacy truth manufactured. Final CI remains a
+separate exact-head gate. The retained-QA full306 repeat failed3assertions/10errors
+due existing fixed source/provenance and bank-account fixtures; preserved logs,
+no unrelated tests weakened. Fresh-site306 CI passes are distinct evidence.
+
+
+### 2026-10-10 — Group1B browser fixture capacity closure
+
+Head5095a75 CI38044259546 passed306 native tests102.368s and all seven migration proofs, then failed before browser execution: the new native authenticated matrix exhausted pinned Frappe's60-user/hour creation throttle. Browser assertions never ran in that failed run.
+
+The correction is confined to the non-whitelisted synthetic browser fixture: each User insert may reserve one process-local slot only after all three disposable/test flags, Administrator and@example.invalid checks. Prior throttle configuration is restored in finally on success/failure; nothing is persisted or changed for HTTP workers. Four offline regression tests prove restoration and denial of ordinary-site/real-user calls; full offline352PASS. Actual pinned MariaDB/Frappe insertion with an exhausted threshold, restoration, rollback and ordinary-site denial PASS. No intake/business/permission runtime or browser assertions changed. Fresh exact-headCI required. Independent review of predecessor5095a75 found no verified in-scope defect; final narrow correction needs its own review.
+
+## 2026-10-10 Track A: Batch 4 realistic Ask Fresko router integration
+
+Isolated branch `codex/ask-fresko-v04-realistic-routing` starts at exact PR #22
+head `cf05fb145c8135fb3cfa40a01c79f4bb75566a29`. Draft child PR targets
+`codex/group-1a-unified-intake`; no merge, deployment, schema change or Qwen work.
+Applied the archive's additive Track A patch after verifying 26 relevant
+manifest entries. Patch-root history was not merged. Existing ten-tool catalog,
+Physical, Commercial, Money, Evidence and operator UI remain unchanged.
+
+Frozen source `ask_fresko_router_v03.py` remains byte-identical SHA-256
+`8e4d05abc655decaff7c80b800f7adfef014642b61c05ae5a32a167c61b7110a`.
+The historic v0.3 filename is preserved for Batch 4 provenance. Router proposes
+only allowlisted read operations; no financial numbers are inferred. Native
+bridge independently derives the enabled user, current role children and a
+single explicit Company User Permission, resolves shipping IDs within that
+company, checks record ACLs and invokes existing canonical read tools.
+Supplier/mixed Supplier and Guest precedence, ambiguous company denial and
+Salesperson Money denial remain mandatory. No caller authority flags accepted.
+
+Reproduced candidate stale-role defect in a controlled fake: revoked User role
+children with stale `get_roles` cache still authorized. Corrected by uncached
+User/role-child reads (including disabled-user denial), repeated immediately
+before dispatch. Isolated fake tests restore imported modules and exercise the
+actual ten-tool catalog. These are NOT native authenticated HTTP evidence.
+
+Executed offline: 32 focused router/bridge tests, 368 full app tests, 49 scripts,
+three Node suites, protected-write guard, shadow fixture, 24-DocType snapshot and
+six-proof registry validation PASS. Compilation and whitespace checks PASS.
+Actual frozen router holdout remains 50/51 strict, 33/33 exact ready reads, zero
+negative mock dispatches; A4FINAL-047 (P&L/tax clarification vs unsupported)
+is retained without tuning/relabeling. Holdout SHA-256
+`616234595662aef282d26a75b17c633c940607eb0c6ca2fe7fed3e98e22db823`.
+Local routing-only p50 0.071568 ms, p95 0.335354 ms; no network/DB timing claim.
+
+Added eight native Bench tests for real users, User Permissions, canonical read,
+row scope, Supplier/Guest, revocation/disabled identity, Company B and ambiguous
+company, and unchanged ledger counts. Native tests and signed-in HTTP acceptance
+remain NOT RUN at this commit checkpoint. Exact-head CI must certify them;
+independent security review and external signed-in HTTP proof remain separate.
+Track is ready for independent review/native certification, NOT staging.
+
+Track A first exact-head CI `38038594959` ran 293 native tests: 292 passed,
+one snapshot test failed. The freshly inserted Container held string timestamps;
+its post-read reload returned datetime values, making equal persisted state fail
+the full-dict comparison. The bounded correction reloads the Container before
+capturing the baseline. The full state and authoritative ledger-count assertions
+remain unchanged. No runtime authorization or frozen-router change. Fresh-head
+native results remain pending; the failed run is preserved as evidence.
+
+## 2026-10-10 Track C reporting read contracts
+
+Isolated branch `codex/reporting-read-contracts` starts at PR #22 exact head
+`cf05fb145c8135fb3cfa40a01c79f4bb75566a29` and targets that branch. Applied
+`track_c_additive.patch` after `git apply --check`; verified patch SHA-256
+`136178b0b849702225a2977712691c1e332505aacdf93debfabf99d63d08e5e3`
+and its source/test manifest entries. No patch-root merge or predecessor changes.
+
+Reviewed all eleven descriptors against actual Ask Fresko ten-tool signatures
+and Commercial/Money projections. Reproduced stock/movement descriptors incorrectly
+claiming coverage through commercial Container reconciliation and explicit blank
+as-of silently becoming live. Corrected both: five missing capabilities now return
+NOT_IMPLEMENTED with a reason; six supported descriptors retain exact tool argument
+sets. Invalid/blank values fail clarification, missing tenant context denies, and
+opaque IDs are preserved. No Frappe queries, dispatch, posting, schemas or existing
+service changes. Native Company/session authority is explicitly outside this pure
+proposal module, not conferred by its server-context parameter.
+
+23 focused tests PASS (original ten plus thirteen adversarial) on CPython 3.14.4
+and 3.13.12; 359 full offline app tests PASS; 49 script tests PASS; three Node suites,
+protected-write guard, 19 readiness fixtures, shadow fixture, six-proof registry
+and unchanged 24-DocType schema snapshot versus exact base PASS. CI explicitly runs
+the new suite. Native reporting execution/authenticated HTTP, database values and
+mobile validation are NOT RUN by these offline tests. Ready for independent review;
+not staging certification. No merge, deployment or real business record changes.
+
+## 2026-10-11 Combined MVP Integration & Native Reporting Acceptance
+
+Isolated branch `flash/combined-mvp-integration` integrates PR #22 baseline (`cf05fb145c8135fb3cfa40a01c79f4bb75566a29`), PR #25 Group 1B (`fbe78747394037964c63158460a687bb73ea92a3`), PR #24 Ask Fresko Batch 4 (`1c1ed20ad8b85bc3ceb0bd65f9845fc4affa4fe8`), and PR #23 reporting contracts (`6537e3a3a223d5b18c733fd65bf478bbae0cfead`) at merge commit `80cfc0a873ea35d8b937a9afaf47748295b0664d`.
+
+Applied the real reporting engine implementation patch (`Fresko_Real_Reporting_Engine_2026-10-11_PR23_c929323.zip`, commit `c929323`) to form commit `ce1ea04790bec4fdbbc4675dc10a50e5bd589d8d`.
+
+### Reporting Desk jQuery Compatibility Correction
+In `fresko_universe/fresko_universe/fresko_core/page/fresko_reports/fresko_reports.js`, Frappe v15 Desk wraps `page.main` in a jQuery object. Calling `page.main.innerHTML` or `root.querySelector` directly threw `TypeError: root.querySelector is not a function`. Implemented `_root()` helper normalizing jQuery wrapper objects `(m.jquery || m.get) ? (m[0] || m.get(0)) : m`, allowing identical code to operate across native Frappe Desk SPA routing and headless DOM contexts.
+
+### Native Environment Configuration
+- Pinned Bench: `/home/dshri/.local/state/fresko-control/group-1b/runtime/frappe-bench`
+- Disposable Site: `group1b-qa.localhost` (database `fresko_group1b_qa` on MariaDB 10.6 `127.0.0.1:13306`, Redis 7 `127.0.0.1:16379`)
+- App symlink: `frappe-bench/apps/fresko_universe` -> `/mnt/c/Users/dshri/Downloads/fresko-mvp-integration/fresko_universe`
+- Desk Page: Reloaded via `frappe.reload_doc("fresko_core", "page", "fresko_reports", force=True)`
+- HTTP Service: Dedicated Gunicorn WSGI running on `127.0.0.1:18080` (`qa_wsgi:application`)
+
+### Verification Outcomes
+1. Priority 1 — Native HTTP Reporting API:
+   - Guest/unauthenticated requests: Blocked HTTP 403.
+   - Company A (`Wind Power LLC`) authenticated login: HTTP 200 (`group1b-http-accounts@example.invalid`).
+   - `get_report_context`: HTTP 200, returns `Wind Power LLC`, 100 accessible containers, supported reports `['container_stock', 'receivables', 'sales']`.
+   - `execute_report`:
+     - Container Stock (`CON-2026-00479`): 2 rows (LOT, TOTAL), missing assertions yield `UNKNOWN`, remaining `UNKNOWN`.
+     - Sales (`CON-2026-00479`): HTTP 200.
+     - Receivables (`CON-2026-00077`): 2 rows, `row_type='COMPANY_BANK_PENDING_UNATTRIBUTED'`, `bank_state='AUTHORIZATION_INPROCESS'`, `state='BANK_PENDING_NOT_CLEARED'`, amounts `None` (preserved as bank-pending, never represented as cleared or allocated).
+   - Server-side CSV Export (`export_report_csv`): HTTP 200, UTF-8 BOM, formula injection escaping (`'=`, `'+`, `'-`, `'@`).
+   - Multi-tenant boundary: Company B user (`group1b-http-other@example.invalid`) attempting to access Company A container rejected with HTTP 403 `Report access unavailable`.
+   - Supplier & Mixed-role boundary: `group1b-http-supplier` and `group1b-http-mixed` rejected by `deny_supplier_http_access` hook with HTTP 403 `Not permitted to access internal Fresko HTTP resources`.
+
+2. Priority 2 — Native Playwright Browser Verification:
+   Executed via `scripts/run_native_browser_tests.py` against `http://127.0.0.1:18080` (5/5 PASS in 97.168s):
+   - `NATIVE-CONTAINER_STOCK-DESKTOP` (1440×900) -> PASS_NATIVE (29.89s)
+   - `NATIVE-CONTAINER_STOCK-MOBILE` (390×844) -> PASS_NATIVE (14.94s)
+   - `NATIVE-SALES-DESKTOP` (1440×900) -> PASS_NATIVE (16.70s)
+   - `NATIVE-RECEIVABLES-DESKTOP` (1440×900) -> PASS_NATIVE (18.02s)
+   - `NATIVE-TENANT_DENIAL-DESKTOP` (1440×900) -> PASS_NATIVE_DENIAL (13.07s)
+   Evidence captured in `evidence/native_browser/`: 10 PNG screenshots (before and after/denial), 5 WebM video recordings, 5 Playwright trace ZIPs, 2 downloaded CSVs, and `logs/native_browser_results.json`.
+
+3. Priority 3 — Numerical Reconciliation:
+   Executed via `scripts/verify_numerical_reconciliation.py`:
+   - Exact Decimal arithmetic verified: `Inward - Outward = Remaining` across container lots; `Gross - Applied - Adjustments = Outstanding` across invoices.
+   - Missing assertions preserve `UNKNOWN` without zero substitution.
+   - Bank-pending receipts preserve `BANK_PENDING_NOT_CLEARED` with unallocated balances.
+   Report saved at `evidence/numerical_reconciliation_report.json`.
+
+4. Offline Regression Suites:
+   - 48 reporting offline unit tests PASS (0.28s).
+   - 304 core unittest suites PASS (0.86s).
+   - 19 WhatsApp readiness fixtures PASS.
+   - Protected DocType write guard, real data shadow fixture, schema migration proof registry (7 registered proofs) PASS.
+   - 3 Node.js UI suites PASS.
+
+### Open Escalations & Unresolved Blockers for Codex
+- FR-INTAKE-002: Parentless Evidence rejection in `intake_native.py` (`_evidence_company`: `if not parents: _deny()`). Source evidence uploaded before Deal/Container creation is rejected with `PermissionError: Intake access unavailable`. Per CTO instructions, this authorization change is held for independent Codex/CTO review and has NOT been modified in runtime code.
+- Branch `flash/combined-mvp-integration` remains isolated and Draft; no merge into main or deployment to production.
+
+
+## 2026-10-12 IST — Codex parentless Evidence security candidate
+
+Separate branch `codex/fresko-integrated-staging-20261017` starts at Flash's exact integrated `584c12d118d06cdbcec06d1508b04718f3530a0d`. This section supersedes the parentless Evidence P0 diagnosis only for this candidate; it does not certify GCP staging or broader provider ingress.
+
+New manual parentless Evidence receives a server-derived immutable `evidence_company` from the uncached enabled principal's sole unrestricted Company grant. Supplier precedence and ambiguous/revoked grants deny access. Historical rows remain unbound; neither owner nor defaults infer a tenant. Creator-owned private uploads bind their actual byte hash and File attachment under a scoped server transition. Fresh Approver permission controls one-time parent linking; foreign/replaced parents deny without partial writes. Bound provenance cannot be rewritten or deleted. Independent HTTP guards prevent DocShare, direct/v2 reads, selected-item exports, attachment aliases and duplicate-upload URL changes from bypassing the tenant boundary.
+
+Codex independently reproduced and corrected new-File and existing-File alias poisoning. Native authenticated WSGI/MariaDB suite: **19/19 PASS**, 128.203 seconds; offline application **455/455 PASS**; script checks **56/56 PASS**; three existing Node UI suites and protected-write/shadow/schema checks PASS. These runs precede this commit; exact-SHA certification is recorded separately. Earlier overlapping native runs were invalid because shared synthetic passwords rotated; their failed logs are retained, not counted as passing evidence.
+
+Gemini 3.8 Flash High restored the pre-change QA backup into `flash-disposable-restore.localhost` on the existing bench, with explicit disposable markers and private credentials outside git. Seed, first migration and repeated migration succeeded. Codex independently compared all **456** legacy Evidence identities and original fields and reran the repeated-migration assertion: PASS; all 456 ownership values remain unbound. Recovery evidence lives in Flash's separate `/home/dshri/agy-worktrees/fresko-staging-execution-20261017/execution` checkout. Database/config archives remain private and must never be uploaded as QA evidence.
+
+Independent reviewer accepts the narrow fix on source review, conditional on native suite PASS (now satisfied). Reporting nonzero Decimal/browser exports and exact remote deployment acceptance remain PENDING. Existing GCP VM `fresko-staging-vm`, `asia-south1-a`, is the sole reuse candidate. Billing is enabled and the user confirms sufficient credits; exact remaining credit/billing continuation remains UNKNOWN. Flash's initial cost estimate needs correction: static IPv4, retained disks and snapshots can continue charging; stopping a VM does not establish zero cost. No staging GO is established by this checkpoint.

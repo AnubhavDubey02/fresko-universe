@@ -82,6 +82,33 @@ class TestMoneyReconciliation(FrappeTestCase):
         frappe.set_user(user or self.maker)
         return self._doc(COLLECTION, money.create_collection(**args))
 
+    def test_operator_money_target_current_record_sod_and_supplier_denial(self):
+        from fresko_universe.fresko_core.services import operator_service
+        receipt = self._collection()
+        money.submit_collection(receipt.name)
+        receipt.reload()
+        truth = receipt.as_dict()
+        maker_view = operator_service.get_money_action_target(COLLECTION, receipt.name, "verify_collection")
+        self.assertFalse(maker_view["allowed"])
+        frappe.set_user(self.checker)
+        checker_view = operator_service.get_money_action_target(COLLECTION, receipt.name, "verify_collection")
+        self.assertTrue(checker_view["allowed"])
+        self.assertEqual(checker_view["record"]["name"], receipt.name)
+        self.assertEqual(checker_view["record"]["version"], receipt.version)
+        self.assertNotIn("source_evidence", checker_view["record"])
+        receipt.reload()
+        self.assertEqual(receipt.as_dict(), truth, "Navigation must not record a Money decision")
+        money.verify_collection(receipt.name, expected_version=receipt.version)
+        self.assertFalse(operator_service.get_money_action_target(COLLECTION, receipt.name, "approve_collection")["allowed"])
+        frappe.set_user(self.approver)
+        self.assertTrue(operator_service.get_money_action_target(COLLECTION, receipt.name, "approve_collection")["allowed"])
+        frappe.set_user(self.supplier)
+        with self.assertRaises(frappe.PermissionError):
+            operator_service.get_money_action_target(COLLECTION, receipt.name, "approve_collection")
+        frappe.set_user(self.salesperson)
+        with self.assertRaises(frappe.PermissionError):
+            operator_service.get_money_action_target(COLLECTION, receipt.name, "verify_collection")
+
     def _review(self, doc, kind):
         frappe.set_user(doc.prepared_by)
         getattr(money, f"submit_{kind}")(doc.name)

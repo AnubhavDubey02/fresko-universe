@@ -18,6 +18,7 @@ conflicting proposal without rewriting the historical record.
 | Subject | Canonical document | Rule |
 |---|---|---|
 | Real-data shadow-replay gate | `docs/REAL_DATA_SHADOW_REPLAY_CONTRACT.md` plus `fresko_universe/fresko_universe/fixtures/real_data_shadow/manifest.json` | Sanitized source-hash/range-bound acceptance truth for the reviewed Plum/Grapes/CA cut-offs. It is a deterministic fixture gate, not runtime, bank, accounting, or CA proof. |
+| Operator UX and Fresko Clear shell | `docs/OPERATOR_UX_GUIDE.md` | Authoritative architecture for Fresko Clear shell, extend_bootinfo capabilities, Supplier-first denial, Needs My Action feeds, and segregation of duties. |
 | Money runtime, receipt review and noncash receivables | `docs/MONEY_RECONCILIATION_RUNTIME.md` | Collections preserve received assertions separately from bank clearance; approved cash declarations need no bank deposit. Explicit reviewed applications alone discharge Sale debt. |
 | Native operations workspace and read tools | `docs/OPERATIONS_WORKSPACE.md` and `fresko_universe/fresko_universe/ask_fresko.py` | Native Frappe Pages; deterministic allowlisted read tools preserve service permissions. Live LLM/OCR/WhatsApp remain deferred. |
 | Commercial Sale runtime and alias architecture | `docs/COMMERCIAL_SALE_RUNTIME.md` | Authoritative documentation for the implemented Commercial Sale ledger, multi-lot lines, approved party aliases, many-to-many physical Outward allocations, and segregation-of-duties role controls. |
@@ -66,3 +67,10 @@ Two important resolved conflicts are:
 - Cite an immutable commit SHA for CI evidence and verify that exact SHA.
 - Never turn missing evidence into zero, success, matched, received, or verified.
 - Do not merge, retarget, or close predecessor PRs without explicit repository-owner authorization. Keep Phase 2A work on its focused branch/PR.
+
+## 2026-10-10 additive Group 1B runtime reference
+
+`docs/GROUP1B_NATIVE_INTAKE_RUNTIME.md` defines the implemented authenticated
+proposal persistence and review boundary. It supplements the pure Group1A
+contract; it does not supersede Physical, Commercial, Money or live-provider
+Evidence authority. Exact test/CI evidence belongs to the current Draft PR head.

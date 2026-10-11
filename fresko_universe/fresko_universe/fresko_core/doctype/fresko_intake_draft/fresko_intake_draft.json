@@ -1,0 +1,130 @@
+{
+  "doctype": "DocType",
+  "name": "Fresko Intake Draft",
+  "module": "Fresko Core",
+  "engine": "InnoDB",
+  "autoname": "field:proposal_key",
+  "track_changes": 0,
+  "allow_rename": 0,
+  "fields": [
+    {
+      "fieldname": "proposal_key",
+      "fieldtype": "Data",
+      "label": "Proposal Key",
+      "reqd": 1,
+      "unique": 1
+    },
+    {
+      "fieldname": "company",
+      "fieldtype": "Link",
+      "label": "Company",
+      "reqd": 1,
+      "options": "Company"
+    },
+    {
+      "fieldname": "evidence",
+      "fieldtype": "Link",
+      "label": "Evidence",
+      "reqd": 1,
+      "options": "Fresko Evidence"
+    },
+    {
+      "fieldname": "source_sha256",
+      "fieldtype": "Data",
+      "label": "Source Sha256",
+      "reqd": 1
+    },
+    {
+      "fieldname": "source_version",
+      "fieldtype": "Data",
+      "label": "Source Version",
+      "reqd": 1
+    },
+    {
+      "fieldname": "content_fingerprint",
+      "fieldtype": "Data",
+      "label": "Content Fingerprint",
+      "reqd": 1
+    },
+    {
+      "fieldname": "review_state",
+      "fieldtype": "Select",
+      "label": "Review State",
+      "reqd": 1,
+      "options": "NEEDS_SOURCE\nNEEDS_IDENTITY\nNEEDS_REVIEW\nCONFLICT\nREVIEWED\nREJECTED"
+    },
+    {
+      "fieldname": "possible_duplicate",
+      "fieldtype": "Check",
+      "label": "Possible Duplicate",
+      "reqd": 0
+    },
+    {
+      "fieldname": "capture_actor",
+      "fieldtype": "Link",
+      "label": "Capture Actor",
+      "reqd": 1,
+      "options": "User"
+    },
+    {
+      "fieldname": "version",
+      "fieldtype": "Int",
+      "label": "Version",
+      "reqd": 1,
+      "default": "1",
+      "read_only": 1
+    },
+    {
+      "fieldname": "current_revision",
+      "fieldtype": "Link",
+      "label": "Current Revision",
+      "options": "Fresko Intake Revision",
+      "read_only": 1
+    }
+  ],
+  "permissions": [
+    {
+      "role": "Fresko Accounts",
+      "read": 1,
+      "write": 0,
+      "create": 0,
+      "delete": 0,
+      "report": 0,
+      "export": 0,
+      "share": 0
+    },
+    {
+      "role": "Fresko Approver",
+      "read": 1,
+      "write": 0,
+      "create": 0,
+      "delete": 0,
+      "report": 0,
+      "export": 0,
+      "share": 0
+    },
+    {
+      "role": "Fresko Salesperson",
+      "read": 1,
+      "write": 0,
+      "create": 0,
+      "delete": 0,
+      "report": 0,
+      "export": 0,
+      "share": 0
+    }
+  ],
+  "field_order": [
+    "proposal_key",
+    "company",
+    "evidence",
+    "source_sha256",
+    "source_version",
+    "content_fingerprint",
+    "review_state",
+    "possible_duplicate",
+    "capture_actor",
+    "version",
+    "current_revision"
+  ]
+}

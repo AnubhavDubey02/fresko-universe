@@ -381,7 +381,7 @@ def _deal_status(doc) -> str | None:
     return getattr(doc, "status", None) or (doc.get("status") if hasattr(doc, "get") else None)
 
 
-def evidence_permission_query(user: str | None = None) -> str:
+def _legacy_evidence_permission_query(user: str | None = None) -> str:
     """Salesperson: evidence linked to own deals; Approver/Accounts/SM: unrestricted."""
     user = user or frappe.session.user
     if user != "Administrator" and any("supplier" in role.casefold() for role in current_roles(user)):
@@ -403,6 +403,10 @@ def evidence_permission_query(user: str | None = None) -> str:
 
 
 def evidence_has_permission(doc, ptype: str | None = None, user: str | None = None) -> bool:
+    from fresko_universe.evidence_scope import bound_has_permission
+    bound = bound_has_permission(doc, ptype, user)
+    if bound is not None:
+        return bound
     user = user or frappe.session.user
     if user != "Administrator" and any("supplier" in role.casefold() for role in current_roles(user)):
         return False
@@ -429,7 +433,7 @@ def evidence_has_permission(doc, ptype: str | None = None, user: str | None = No
     return False
 
 
-def evidence_attachment_permission_query(user: str | None = None) -> str:
+def _legacy_evidence_attachment_permission_query(user: str | None = None) -> str:
     user = user or frappe.session.user
     if user != "Administrator" and any("supplier" in role.casefold() for role in current_roles(user)):
         return "1=0"
@@ -473,7 +477,7 @@ def evidence_attachment_has_permission(doc, ptype: str | None = None, user: str 
     return evidence_has_permission(evidence_name, "read", user=user)
 
 
-def evidence_attempt_permission_query(user: str | None = None) -> str:
+def _legacy_evidence_attempt_permission_query(user: str | None = None) -> str:
     user = user or frappe.session.user
     if user != "Administrator" and any("supplier" in role.casefold() for role in current_roles(user)):
         return "1=0"
@@ -661,3 +665,30 @@ def customer_internal_has_permission(doc, ptype=None, user=None):
     if user != "Administrator" and any("supplier" in role.casefold() for role in current_roles(user)):
         return False
     return None  # Preserve ERPNext permissions for every other role.
+
+
+def evidence_permission_query(user=None):
+    from fresko_universe.evidence_scope import query_condition
+    if user and user != frappe.session.user:
+        return '1=0'
+    legacy = _legacy_evidence_permission_query(user)
+    scope = query_condition()
+    return '(' + legacy + ') AND ' + scope if legacy else scope
+
+
+def evidence_attachment_permission_query(user=None):
+    from fresko_universe.evidence_scope import query_condition
+    if user and user != frappe.session.user:
+        return '1=0'
+    legacy = _legacy_evidence_attachment_permission_query(user)
+    scope = '`tabFresko Evidence Attachment`.evidence IN (SELECT name FROM `tabFresko Evidence` WHERE ' + query_condition() + ')'
+    return '(' + legacy + ') AND ' + scope if legacy else scope
+
+
+def evidence_attempt_permission_query(user=None):
+    from fresko_universe.evidence_scope import query_condition
+    if user and user != frappe.session.user:
+        return '1=0'
+    legacy = _legacy_evidence_attempt_permission_query(user)
+    scope = '`tabFresko Evidence Attempt`.evidence IN (SELECT name FROM `tabFresko Evidence` WHERE ' + query_condition() + ')'
+    return '(' + legacy + ') AND ' + scope if legacy else scope

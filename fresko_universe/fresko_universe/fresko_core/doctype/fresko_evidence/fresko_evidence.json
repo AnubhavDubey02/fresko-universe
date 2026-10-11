@@ -8,6 +8,13 @@
  "allow_rename": 0,
  "fields": [
   {
+   "fieldname": "evidence_company",
+   "fieldtype": "Data",
+   "label": "Evidence Company",
+   "read_only": 1,
+   "description": "Server-bound tenant of unassigned operator evidence. Immutable; legacy NULL remains unknown."
+  },
+  {
    "fieldname": "evidence_type",
    "fieldtype": "Select",
    "label": "Evidence Type",

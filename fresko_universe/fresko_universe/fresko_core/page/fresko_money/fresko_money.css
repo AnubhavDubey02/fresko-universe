@@ -100,4 +100,15 @@
 	.fm-tabs {
 		overflow-x: auto;
 	}
+	.fm-action-btn,
+	.fm-tab-btn {
+		min-height: 44px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.fm-table-wrap {
+		border: 1px solid #dfe2e5;
+		border-radius: 6px;
+	}
 }

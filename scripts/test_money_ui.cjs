@@ -113,3 +113,114 @@ assert.equal(notices.length, 1);
 pending[2].callback({ message: {} });
 assert.equal(raceUI.in_flight, false);
 console.log('Money delayed-read and duplicate-write checks passed');
+
+// FR-QA-016: exercise the receiving page, not only sessionStorage transport.
+async function testExactMoneyTargets() {
+  const nodes = new Map(), storage = new Map(), requests = [], warnings = [], writes = [];
+  let focused = null, activeCompany = 'Company A';
+  class Element {
+    constructor() { this.attrs = {}; this.children = []; this[0] = { focus: () => { focused = this; }, scrollIntoView() {} }; }
+    find(selector) { if (!nodes.has(selector)) nodes.set(selector, new Element()); return nodes.get(selector); }
+    remove() { this.children = []; nodes.delete('#fm-target-record'); return this; }
+    attr(key, value) { this.attrs[key] = value; return this; }
+    append(value) { this.children.push(value); return this; }
+    prepend(value) { this.children.unshift(value); nodes.set('#fm-target-record', value); return this; }
+    text(value) { this.label = value; return this; }
+    on(event, handler) { this.handler = handler; return this; }
+    trigger(event) { this.triggered = event; return this; }
+  }
+  const root = new Element();
+  const targetFrappe = {
+    ...frappe, user_roles: ['Fresko Accounts', 'Fresko Approver'],
+    call: (request) => { requests.push(request); return targetFrappe.response(request); },
+    get_route: () => ['fresko-money'], msgprint: (message) => warnings.push(message)
+  };
+  const targetContext = vm.createContext({
+    frappe: targetFrappe, __: (value) => value, console,
+    $: (value) => value === root ? root : new Element(),
+    sessionStorage: { getItem: (key) => storage.get(key) || null, setItem: (key, value) => storage.set(key, value), removeItem: (key) => storage.delete(key) }
+  });
+  vm.runInContext(source, targetContext);
+  const targetUI = vm.runInContext('fresko_money', targetContext);
+  targetUI.page = { main: root };
+  targetUI.get_company = () => activeCompany;
+  targetUI.get_container = () => null;
+  targetUI.get_cutoff = () => null;
+  targetUI.company_field = { set_value: (value) => { activeCompany = value; } };
+  targetUI.call_api = (method, args) => writes.push({ method, args });
+  function prepare(doctype, name, action, status, allowed = true) {
+    storage.set('fresko_money_target', JSON.stringify({ doctype, document_name: name, action }));
+    targetFrappe.response = () => Promise.resolve({ message: {
+      doctype, action, allowed, blocked_reason: allowed ? null : 'Action changed',
+      record: { name, company: 'Company B', status, version: 9, prepared_by: 'maker', verified_by: 'verifier' }
+    } });
+  }
+  prepare('Fresko Collection', 'COLLECTION-OUTSIDE-FIRST-25', 'verify_collection', 'REVIEW_PENDING');
+  await targetUI.consume_action_target();
+  let panel = nodes.get('#fm-target-record');
+  assert.equal(panel.attrs['data-document-name'], 'COLLECTION-OUTSIDE-FIRST-25');
+  assert.equal(panel.attrs['data-doctype'], 'Fresko Collection');
+  assert.equal(activeCompany, 'Company B', 'company follows authorized server record');
+  assert.equal(focused, panel, 'exact record panel receives focus');
+  assert.equal(storage.has('fresko_money_target'), false, 'handled target consumed');
+  const verify = panel.children.at(-1).children.find((element) => element.label === 'Verify');
+  assert.ok(verify, 'fresh authorized record renders the intended action');
+  assert.equal(writes.length, 0, 'navigation never executes a mutation');
+  verify.handler();
+  assert.deepEqual(JSON.parse(JSON.stringify(writes[0])), {
+    method: 'fresko_universe.money.verify_collection', args: { collection_name: 'COLLECTION-OUTSIDE-FIRST-25', expected_version: 9 }
+  });
+
+  prepare('Fresko Payment Allocation', 'PAL-EXACT', 'approve_payment_allocation', 'VERIFIED');
+  targetFrappe.pages['fresko-money'].on_page_show();
+  await new Promise((resolve) => setImmediate(resolve));
+  panel = nodes.get('#fm-target-record');
+  assert.equal(panel.attrs['data-doctype'], 'Fresko Payment Allocation', 'cached Page handles a new typed target');
+  assert.equal(panel.attrs['data-document-name'], 'PAL-EXACT');
+
+  prepare('Fresko Collection', 'MOVED-STATE', 'verify_collection', 'APPROVED', false);
+  await targetUI.consume_action_target();
+  assert.equal(nodes.get('#fm-target-record').children.at(-1).children.length, 1);
+  assert.equal(nodes.get('#fm-target-record').children.at(-1).children[0].label, 'Action changed');
+
+  prepare('Fresko Collection', 'HIDDEN-COLL', 'verify_collection', 'REVIEW_PENDING');
+  targetFrappe.response = () => Promise.reject(new Error('Permission denied'));
+  await targetUI.consume_action_target();
+  assert.equal(nodes.has('#fm-target-record'), false, 'denied record never gets a detail panel');
+  assert.ok(warnings.at(-1).includes('unavailable'));
+  assert.ok(!warnings.at(-1).includes('HIDDEN-COLL'), 'failure message does not echo untrusted identifier');
+
+  const requestsBeforeInvalid = requests.length;
+  storage.set('fresko_money_target', JSON.stringify({ doctype: 'User', document_name: 'Administrator', action: 'verify_collection' }));
+  await targetUI.consume_action_target();
+  assert.equal(requests.length, requestsBeforeInvalid, 'invalid target never issues an arbitrary document request');
+
+  prepare('Fresko Collection', 'SUPPLIER-TARGET', 'verify_collection', 'REVIEW_PENDING');
+  targetFrappe.user_roles = ['Fresko Accounts', 'Fresko Supplier Viewer'];
+  await targetUI.consume_action_target();
+  assert.equal(requests.length, requestsBeforeInvalid, 'Supplier-first denial applies before target fetch');
+  targetFrappe.user_roles = ['Fresko Accounts'];
+
+  prepare('Fresko Collection', 'OLD-CONTEXT', 'verify_collection', 'REVIEW_PENDING');
+  let release;
+  const oldResponse = targetFrappe.response;
+  targetFrappe.response = () => new Promise((resolve) => { release = resolve; });
+  const obsolete = targetUI.consume_action_target();
+  activeCompany = 'New Manual Context';
+  release(await oldResponse());
+  await obsolete;
+  assert.equal(nodes.has('#fm-target-record'), false, 'stale target cannot overwrite newer Company selection');
+  assert.equal(activeCompany, 'New Manual Context');
+
+  prepare('Fresko Collection', 'SUPERSEDED-TARGET', 'verify_collection', 'REVIEW_PENDING');
+  const firstResponse = targetFrappe.response;
+  targetFrappe.response = () => new Promise((resolve) => { release = resolve; });
+  const firstRequest = targetUI.consume_action_target();
+  prepare('Fresko Payment Allocation', 'LATEST-TARGET', 'approve_payment_allocation', 'VERIFIED');
+  targetFrappe.user_roles = ['Fresko Approver'];
+  release(await firstResponse());
+  await firstRequest;
+  assert.equal(nodes.get('#fm-target-record').attrs['data-document-name'], 'LATEST-TARGET', 'newer handoff survives an older response and is selected');
+  console.log('Money exact-target receiver checks passed (selection, cached Page, current token, changed state, denial, typed input, Supplier, stale context)');
+}
+testExactMoneyTargets().catch((error) => { console.error(error); process.exitCode = 1; });

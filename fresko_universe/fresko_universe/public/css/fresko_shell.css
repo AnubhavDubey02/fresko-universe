@@ -1,0 +1,162 @@
+/* Fresko Clear — Operator Shell & Tokens */
+:root {
+  --fresko-primary: #16a34a;
+  --fresko-primary-hover: #15803d;
+  --fresko-primary-light: #dcfce7;
+  --fresko-bg: #f8fafc;
+  --fresko-surface: #ffffff;
+  --fresko-border: #e2e8f0;
+  --fresko-text: #0f172a;
+  --fresko-text-muted: #64748b;
+  --fresko-min-touch: 44px;
+  --fresko-primary-touch: 48px;
+}
+
+/* Scoped Desk Chrome Suppression — Active strictly for Fresko Operator personas */
+body.fresko-operator-shell .navbar .search-bar,
+body.fresko-operator-shell .navbar .dropdown-help,
+body.fresko-operator-shell .navbar .dropdown-notifications,
+body.fresko-operator-shell .layout-side-section,
+body.fresko-operator-shell .page-breadcrumbs {
+  display: none !important;
+}
+
+body.fresko-operator-shell .layout-main-section-wrapper {
+  margin-left: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+/* Scoped Operator Navbar Branding */
+body.fresko-operator-shell .navbar {
+  border-bottom: 1px solid var(--fresko-border);
+  background-color: var(--fresko-surface);
+}
+
+body.fresko-operator-shell .navbar-brand {
+  display: flex;
+  align-items: center;
+  font-weight: 700;
+  color: var(--fresko-text);
+}
+
+/* Touch-Target Floor for Mobile Controls */
+@media (max-width: 768px) {
+  body.fresko-operator-shell .btn,
+  body.fresko-operator-shell .form-control,
+  body.fresko-operator-shell .input-with-feedback,
+  body.fresko-operator-shell select {
+    min-height: var(--fresko-min-touch);
+    font-size: 16px !important; /* Prevents iOS auto-zoom on input focus */
+  }
+
+  body.fresko-operator-shell .btn-primary {
+    min-height: var(--fresko-primary-touch);
+  }
+}
+
+/* State Vocabulary Badges */
+.fresko-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.fresko-badge-pending,
+.fresko-badge-review_pending {
+  background-color: #f8fafc;
+  border-color: #cbd5e1;
+  color: #475569;
+}
+
+.fresko-badge-unknown {
+  background-color: #f1f5f9;
+  border-color: #94a3b8;
+  color: #334155;
+}
+
+.fresko-badge-conflict {
+  background-color: #fef2f2;
+  border-color: #f87171;
+  color: #991b1b;
+}
+
+.fresko-badge-blocked {
+  background-color: #f8fafc;
+  border-color: #e2e8f0;
+  color: #64748b;
+}
+
+.fresko-badge-confirmed,
+.fresko-badge-approved,
+.fresko-badge-posted {
+  background-color: #f0fdf4;
+  border-color: #86efac;
+  color: #166534;
+}
+
+.fresko-badge-verified {
+  background-color: #eff6ff;
+  border-color: #93c5fd;
+  color: #1e40af;
+}
+
+/* Mobile Bottom Navigation Bar */
+@media (min-width: 769px) {
+  .fresko-bottom-nav {
+    display: none !important;
+  }
+}
+
+.fresko-bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 56px;
+  background-color: #ffffff;
+  border-top: 1px solid var(--fresko-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  z-index: 1020;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.fresko-bottom-nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-height: 48px;
+  color: var(--fresko-text-muted);
+  text-decoration: none;
+  font-size: 11px;
+  font-weight: 500;
+  transition: color 0.15s ease;
+}
+
+.fresko-bottom-nav-item.active {
+  color: var(--fresko-primary);
+  font-weight: 700;
+}
+
+.fresko-bottom-nav-item svg {
+  width: 20px;
+  height: 20px;
+  margin-bottom: 2px;
+}
+
+/* Soft-Keyboard Collision Prevention */
+body.fresko-operator-shell.keyboard-open .fresko-bottom-nav {
+  display: none !important;
+}

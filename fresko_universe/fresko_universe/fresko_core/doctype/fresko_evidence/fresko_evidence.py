@@ -18,6 +18,8 @@ class FreskoEvidence(Document):
     """
 
     def before_insert(self):
+        from fresko_universe.evidence_scope import bind_new
+        bind_new(self)
         # Default operational statuses if not set
         if not self.overall_verification_status:
             self.overall_verification_status = "PENDING"
@@ -53,7 +55,13 @@ class FreskoEvidence(Document):
                 )
                 self.scoped_message_key = hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
+    def after_insert(self):
+        from fresko_universe.evidence_scope import attach_new_file
+        attach_new_file(self)
+
     def validate(self):
+        from fresko_universe.evidence_scope import validate_existing
+        validate_existing(self)
         if self.is_new():
             # Desk/API callers cannot forge verified state
             if not getattr(self.flags, "in_service", False):
@@ -121,6 +129,9 @@ class FreskoEvidence(Document):
                 )
 
     def on_trash(self):
+        if self.get("evidence_company"):
+            from fresko_universe.intake_native import _deny
+            _deny()
         from fresko_universe.fresko_core.services.evidence_service import prevent_captured_evidence_deletion
 
         prevent_captured_evidence_deletion(self)

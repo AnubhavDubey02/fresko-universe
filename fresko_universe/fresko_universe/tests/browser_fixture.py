@@ -18,6 +18,30 @@ from fresko_universe import outward
 from fresko_universe.tests.utils import make_container
 
 
+def _insert_browser_user(values):
+    """Reserve one synthetic-user slot only in this local provisioning call."""
+    if (not all(frappe.conf.get(flag) for flag in
+                ("allow_tests", "fresko_browser_fixture_only", "fresko_disposable_browser_site"))
+            or frappe.session.user != "Administrator"
+            or values.get("doctype") != "User"
+            or not values.get("email", "").endswith("@example.invalid")):
+        frappe.throw("Synthetic user provisioning denied", frappe.PermissionError)
+    present = "throttle_user_limit" in frappe.conf
+    previous = frappe.conf.get("throttle_user_limit")
+    try:
+        # Native matrices can exhaust the 60-user limit before browser setup.
+        # This capacity never persists or changes an HTTP worker's threshold.
+        frappe.conf.throttle_user_limit = max(
+            int(previous if previous is not None else 60),
+            frappe.db.get_creation_count("User", 60) + 1)
+        return frappe.get_doc(values).insert(ignore_permissions=True)
+    finally:
+        if present:
+            frappe.conf.throttle_user_limit = previous
+        else:
+            frappe.conf.pop("throttle_user_limit", None)
+
+
 def seed(manifest_path: str, browser_origin: str = "http://127.0.0.1:8000"):
     if not frappe.conf.get("fresko_browser_fixture_only") or not frappe.conf.get("allow_tests") or not frappe.conf.get("fresko_disposable_browser_site"):
         frappe.throw("Browser fixture requires both explicit synthetic-site flags")
@@ -55,9 +79,9 @@ def seed(manifest_path: str, browser_origin: str = "http://127.0.0.1:8000"):
                 frappe.get_doc({"doctype": "Role", "role_name": role, "desk_access": 1}).insert(ignore_permissions=True)
         email = f"browser-{label}-{token}@example.invalid"
         password = secrets.token_urlsafe(24)
-        frappe.get_doc({"doctype": "User", "email": email, "first_name": f"Browser {label}",
+        _insert_browser_user({"doctype": "User", "email": email, "first_name": f"Browser {label}",
             "enabled": 1, "user_type": "System User", "send_welcome_email": 0,
-            "roles": [{"role": role} for role in assigned]}).insert(ignore_permissions=True)
+            "roles": [{"role": role} for role in assigned]})
         update_password(email, password)
         frappe.defaults.set_user_default("Company", company, user=email)
         users[label] = {"email": email, "password": password, "roles": assigned}
