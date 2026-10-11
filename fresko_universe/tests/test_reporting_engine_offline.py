@@ -185,6 +185,16 @@ class RealSourceReportingTest(unittest.TestCase):
         self.assertIsNone(rows[1]['approved_qty']);self.assertIsNone(rows[1]['final_amount'])
     def test_sales_canonical_api_and_as_of(self):
         self.report('sales','2026-09-25');self.assertIn(('commercial','SYN-CONT-1','2026-09-25 23:59:59'),self.scene.calls)
+    def test_sales_resolves_canonical_lot_identity_within_authorized_container(self):
+        self.scene.container.lots[0].name = 'CHILD-LOT-A'
+        line = self.scene.commercial_view['sales'][0]['lines'][0]
+        line.pop('lot_no')
+        line['container_lot'] = 'CHILD-LOT-A'
+        self.assertEqual(self.report('sales')['rows'][0]['lot'], 'LOT-A')
+        line['container_lot'] = 'FOREIGN-LOT'
+        self.assertIsNone(self.report('sales')['rows'][0]['lot'])
+        line['container_lot'], line['lot_state'] = 'CHILD-LOT-A', 'UNKNOWN'
+        self.assertIsNone(self.report('sales')['rows'][0]['lot'])
     def test_sales_never_projects_invisible_company(self):
         self.scene.commercial_view['sales'][0]['company']='SYN-COMPANY-B'
         with self.assertRaises(self.f.PermissionError):self.report('sales')

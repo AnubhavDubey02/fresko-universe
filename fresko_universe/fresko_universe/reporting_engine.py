@@ -246,6 +246,9 @@ def _stock(doc, company, cutoff):
 
 def _sales(doc, company, cutoff):
     from fresko_universe import commercial
+    # Canonical sale lines carry the linked child identity, not a lot_no field.
+    # Resolve it only within the container already authorized for this request.
+    lot_names = {row.name: row.lot_no for row in doc.lots if getattr(row, 'name', None)}
     view = commercial.get_container_reconciliation(doc.name, cutoff.isoformat(sep=' ') if cutoff else None)
     if view.get('view_scope') != 'INTERNAL' or view.get('container') != doc.name:
         _deny()
@@ -263,7 +266,7 @@ def _sales(doc, company, cutoff):
             amount = _display(_number(line['amount'], 'sale amount')) if rate_final and line.get('amount') is not None else None
             rows.append(_row(row_type='SALE_LINE', company=company, container=doc.name, sale=sale['name'],
                              line_key=line.get('line_key'), customer=sale.get('customer'), status=status,
-                             lot=line.get('lot_no') if line.get('lot_state') == 'KNOWN' else None,
+                             lot=lot_names.get(line.get('container_lot')) if line.get('lot_state') == 'KNOWN' else None,
                              uom=line.get('uom'),approved_qty=qty,
                              allocated_qty=_display(_number(line['allocated_qty'])) if qty is not None and line.get('allocated_qty') is not None else None,
                              final_amount=amount,currency=sale.get('currency'),
