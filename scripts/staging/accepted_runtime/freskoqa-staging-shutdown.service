@@ -1,0 +1,5 @@
+[Unit]
+Description=Stop only disposable Fresko staging components
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/lib/freskoqa-staging/stop_disposable.py

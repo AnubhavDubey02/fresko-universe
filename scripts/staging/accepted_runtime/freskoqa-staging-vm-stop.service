@@ -1,0 +1,12 @@
+[Unit]
+Description=Approved stop of existing staging VM before credit expiry
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=5
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/lib/freskoqa-staging/stop_vm_at_deadline.py
+Restart=on-failure
+RestartSec=30
+UMask=0077

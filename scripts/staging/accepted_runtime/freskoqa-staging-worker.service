@@ -1,0 +1,20 @@
+[Unit]
+Requires=freskoqa-staging-network-guard.service
+After=freskoqa-staging-network-guard.service
+Description=Fresko disposable staging worker
+After=freskoqa-staging-mariadb.service freskoqa-staging-redis-cache.service freskoqa-staging-redis-queue.service
+[Service]
+User=freskoqa
+Group=freskoqa
+WorkingDirectory=/home/freskoqa/fresko-private-staging-20261017/sites
+Environment=PYTHONPATH=/home/freskoqa/fresko-private-staging-20261017/private
+Environment=PATH=/home/freskoqa/fresko-private-staging-20261017/env/bin:/home/freskoqa/fresko-private-staging-20261017/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/freskoqa/fresko-private-staging-20261017/env/bin/python -m frappe.utils.bench_helper frappe worker --queue short,default,long
+Restart=on-failure
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/freskoqa/fresko-private-staging-20261017
+InaccessiblePaths=/home/frappe

@@ -1,0 +1,6 @@
+[Unit]
+Description=Network isolation only for disposable Fresko app UID
+[Service]
+Type=oneshot
+RemainAfterExit=true
+ExecStart=/usr/bin/python3 /usr/local/lib/freskoqa-staging/network_guard.py

@@ -1,0 +1,12 @@
+[Unit]
+Description=Fresko private loopback HTTPS gateway
+After=freskoqa-staging-web.service
+[Service]
+ExecStart=/usr/sbin/nginx -c /usr/local/lib/freskoqa-staging/private-nginx.conf -p /home/freskoqa/fresko-private-staging-20261017 -g "daemon off;"
+Restart=on-failure
+UMask=0077
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/freskoqa/fresko-private-staging-20261017
+InaccessiblePaths=/home/frappe

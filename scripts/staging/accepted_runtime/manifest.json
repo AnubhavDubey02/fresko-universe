@@ -1,0 +1,96 @@
+{
+  "candidate_sha": "27f859a4135f739513cc103d5fe93e9f8a3be796",
+  "scope": "Accepted nonsecret deployed control files only; no site config, credential, certificate-key or database bytes",
+  "files": [
+    {
+      "remote": "/etc/systemd/system/freskoqa-staging-web.service",
+      "snapshot": "scripts/staging/accepted_runtime/freskoqa-staging-web.service",
+      "sha256": "096815d401218b5af97d93e59b667d5bcfb3d9e5ad6f07e1999af375015dc51e",
+      "bytes": 1121
+    },
+    {
+      "remote": "/etc/systemd/system/freskoqa-staging-worker.service",
+      "snapshot": "scripts/staging/accepted_runtime/freskoqa-staging-worker.service",
+      "sha256": "9af8cf72f65774c09e23642fda38479afb5e416bda2bb86d6dd37f469bcb02dc",
+      "bytes": 942
+    },
+    {
+      "remote": "/etc/systemd/system/freskoqa-staging-https.service",
+      "snapshot": "scripts/staging/accepted_runtime/freskoqa-staging-https.service",
+      "sha256": "34d387a369f333ad41eb58caa72c03819b1f45677d45e300b54f992d862fdcb3",
+      "bytes": 431
+    },
+    {
+      "remote": "/etc/systemd/system/freskoqa-staging-mariadb.service",
+      "snapshot": "scripts/staging/accepted_runtime/freskoqa-staging-mariadb.service",
+      "sha256": "f6da416ac1850c7937e99664bdf4ceadd809bf17de29e4e723335c3439abe9d9",
+      "bytes": 630
+    },
+    {
+      "remote": "/etc/systemd/system/freskoqa-staging-redis-cache.service",
+      "snapshot": "scripts/staging/accepted_runtime/freskoqa-staging-redis-cache.service",
+      "sha256": "4ce99cd85678b78d3fc4dab8ae812aedee666e8165464920ea7e728050fd1d56",
+      "bytes": 668
+    },
+    {
+      "remote": "/etc/systemd/system/freskoqa-staging-redis-queue.service",
+      "snapshot": "scripts/staging/accepted_runtime/freskoqa-staging-redis-queue.service",
+      "sha256": "dea18daa5cc78b959e955cb3c9af3afeb0220c58e48fe0145c4b460128b6e67c",
+      "bytes": 668
+    },
+    {
+      "remote": "/etc/systemd/system/freskoqa-staging-network-guard.service",
+      "snapshot": "scripts/staging/accepted_runtime/freskoqa-staging-network-guard.service",
+      "sha256": "250d792d8697f9dc346a878baa050f3a09eacd3042f6030e5342ef103aa7982c",
+      "bytes": 192
+    },
+    {
+      "remote": "/etc/systemd/system/freskoqa-staging-shutdown.service",
+      "snapshot": "scripts/staging/accepted_runtime/freskoqa-staging-shutdown.service",
+      "sha256": "1211fafa1af382ddada5dabb6a48e10dc4a9c3b9c9075848de5515416ace39e8",
+      "bytes": 167
+    },
+    {
+      "remote": "/etc/systemd/system/freskoqa-staging-shutdown.timer",
+      "snapshot": "scripts/staging/accepted_runtime/freskoqa-staging-shutdown.timer",
+      "sha256": "7cf9f930cfbbe6cca044d5d948a6173c438c0a20d486a4414bca2d194b751b9d",
+      "bytes": 185
+    },
+    {
+      "remote": "/etc/systemd/system/freskoqa-staging-vm-stop.service",
+      "snapshot": "scripts/staging/accepted_runtime/freskoqa-staging-vm-stop.service",
+      "sha256": "d0227dfcc1b2f304d8342cd1fc03fc49eeaa61e257811c6c91533997a5408bf4",
+      "bytes": 326
+    },
+    {
+      "remote": "/etc/systemd/system/freskoqa-staging-vm-stop.timer",
+      "snapshot": "scripts/staging/accepted_runtime/freskoqa-staging-vm-stop.timer",
+      "sha256": "a47f23c6c35b966ab8a27b5a7842548176e68858a486c637b0b523788919ef4a",
+      "bytes": 183
+    },
+    {
+      "remote": "/usr/local/lib/freskoqa-staging/stop_disposable.py",
+      "snapshot": "scripts/staging/accepted_runtime/stop_disposable.py",
+      "sha256": "c930276cdba5424f4e4a0c4e4cc31042d9855a21fe68522af4ce954a8a1c2946",
+      "bytes": 310
+    },
+    {
+      "remote": "/usr/local/lib/freskoqa-staging/stop_vm_at_deadline.py",
+      "snapshot": "scripts/staging/accepted_runtime/stop_vm_at_deadline.py",
+      "sha256": "4929dd3243cc7362a461adfb225af8285046d541bb00a8fc9497b06f71bedc62",
+      "bytes": 1133
+    },
+    {
+      "remote": "/usr/local/lib/freskoqa-staging/network_guard.py",
+      "snapshot": "scripts/staging/accepted_runtime/network_guard.py",
+      "sha256": "e5c420d1c9339d0d227e219458d8848c54310d1eb4e6ef5d1095f82a7c0868bf",
+      "bytes": 477
+    },
+    {
+      "remote": "/usr/local/lib/freskoqa-staging/private-nginx.conf",
+      "snapshot": "scripts/staging/accepted_runtime/private-nginx.conf",
+      "sha256": "efb6b6e8e95f56ff3cbfbda1c32d7ceeae900f4d5c4de83fa12f4289bb909a13",
+      "bytes": 1059
+    }
+  ]
+}

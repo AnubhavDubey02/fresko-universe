@@ -1,0 +1,8 @@
+[Unit]
+Description=Fresko disposable staging deadline
+[Timer]
+OnCalendar=2026-10-17 18:29:00 UTC
+Persistent=true
+Unit=freskoqa-staging-shutdown.service
+[Install]
+WantedBy=timers.target

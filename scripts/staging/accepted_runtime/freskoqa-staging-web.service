@@ -1,0 +1,20 @@
+[Unit]
+Requires=freskoqa-staging-network-guard.service
+After=freskoqa-staging-network-guard.service
+Description=Fresko disposable staging web
+After=freskoqa-staging-mariadb.service freskoqa-staging-redis-cache.service freskoqa-staging-redis-queue.service
+[Service]
+User=freskoqa
+Group=freskoqa
+WorkingDirectory=/home/freskoqa/fresko-private-staging-20261017/sites
+Environment=PYTHONPATH=/home/freskoqa/fresko-private-staging-20261017/private
+Environment=PATH=/home/freskoqa/fresko-private-staging-20261017/env/bin:/home/freskoqa/fresko-private-staging-20261017/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/freskoqa/fresko-private-staging-20261017/env/bin/python -m gunicorn --bind 127.0.0.1:18081 --workers 2 --timeout 180 --access-logfile /home/freskoqa/fresko-private-staging-20261017/logs/web-access.log --error-logfile /home/freskoqa/fresko-private-staging-20261017/logs/web-error.log private_wsgi:application
+Restart=on-failure
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/freskoqa/fresko-private-staging-20261017
+InaccessiblePaths=/home/frappe
